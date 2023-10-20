@@ -111,7 +111,7 @@ function uploadFileToImmich( params, pathOrMessage )
 
 	local result, hdrs = LrHttp.postMultipart( postUrl, mimeChunks, headerChunks )
 
-	LrDialogs.message( 'result', result )
+	-- LrDialogs.message( 'result', result )
 	-- LrDialogs.message( 'hdrs', hdrs )
 
 	if not result then
