@@ -1,6 +1,6 @@
 # lrc-immich-plugin
 
-A Lightroom Classic plugin created with Lightroom SDK which enables you to create a Lightroom Export preset which uploads images to an Immich Server via the Immich API.
+A Lightroom Classic plugin created with Lightroom SDK which uploads images to an Immich Server via the Immich API.
 
 
 ## Installation
