@@ -10,8 +10,13 @@ local LrDate = import 'LrDate'
 --============================================================================--
 
 ImmichUploadTask = {}
+local log = import 'LrLogger'( 'ImmichUploadTask' )
+log:enable ( 'logfile' )
+
 
 --------------------------------------------------------------------------------
+
+
 
 function ImmichUploadTask.processRenderedPhotos( functionContext, exportContext )
 
@@ -82,44 +87,91 @@ end
 
 function uploadFileToImmich( params, pathOrMessage )
 
-
-	-- LrDialogs.message( 'params' , params )
-	-- LrDialogs.message( 'pathOrMessage', pathOrMessage )
+	log:trace( 'uploadFileToImmmich: params: ',  dumpTable ( params ) )
+	log:trace( 'uploadFileToImmmich: pathOrMessage: ', pathOrMessage )
 
 	local postUrl = params.url .. '/api/asset/upload'
-	-- LrDialogs.message( 'postURL', postUrl )
-	local contents = LrFileUtils.readFile( pathOrMessage )
-	-- local size, creationDate, modificationDate = LrFileUtils.fileAttributes( pathOrMessage )
+	log:trace( 'uploadFileToImmmich: postURL: ', postUrl )
 
 	local submitDate = LrDate.timeToIsoDate( LrDate.currentTime() )
 	local filePath = assert( pathOrMessage )
+	log:trace( 'uploadFileToImmmich: filePath', filePath )
 	local fileName = LrPathUtils.leafName( filePath )
 
 	local headerChunks = {}
 	headerChunks[ #headerChunks + 1 ] = { field = 'x-api-key', value = params.apiKey }
 	
 	local mimeChunks = {}
-	-- LrDialogs.message( 'filePath', filePath )
-	-- LrDialogs.message( 'fileName', fileName )
 	mimeChunks[ #mimeChunks + 1 ] = { name = 'assetData', filePath = filePath, fileName = fileName, contentType = 'application/octet-stream' }
 	mimeChunks[ #mimeChunks + 1 ] = { name = 'deviceAssetId', value = fileName }
 	mimeChunks[ #mimeChunks + 1 ] = { name = 'deviceId', value = 'Lightroom Immich Upload Plugin' }
 	mimeChunks[ #mimeChunks + 1 ] = { name = 'fileCreatedAt', value = submitDate }
 	mimeChunks[ #mimeChunks + 1 ] = { name = 'fileModifiedAt', value = submitDate }
 	mimeChunks[ #mimeChunks + 1 ] = { name = 'isFavorite', value = 'false' }
-	-- mimeChunks[ #mimeChunks + 1 ] = { name = 'key', value = params.apiKey }
 
 	local result, hdrs = LrHttp.postMultipart( postUrl, mimeChunks, headerChunks )
-
-	-- LrDialogs.message( 'result', result )
-	-- LrDialogs.message( 'hdrs', hdrs )
 
 	if not result then
 	
 		if hdrs and hdrs.error then
-			LrErrors.throwUserError( formatError( hdrs.error.nativeCode ) )
+			log:error( 'POST response headers: ', dumpTable ( hdrs ) )
+			LrErrors.throwUserError( "Error uploading some assets, please consult logs." )
+			
+		elseif hdrs then
+			log:trace( 'POST response headers: ', dumpTable ( hdrs ) )
 		end
-		
+	else
+		log:trace( 'POST response body: ', result)
 	end
 
+end
+
+-- Taken from https://gist.github.com/marcotrosi/163b9e890e012c6a460a
+-- Copyright https://gist.github.com/marcotrosi
+
+function dumpTable(t)
+	local result = ''
+
+	local function printTableHelper(obj, cnt)
+	
+		local cnt = cnt or 0
+	
+		if type(obj) == "table" then
+	
+			result = result .. " ", string.rep("\t", cnt), "{ "
+			cnt = cnt + 1
+	
+			for k,v in pairs(obj) do
+				if not k == nil then
+					if type(k) == "string" then
+						result = result .. string.rep("\t",cnt), '["'..k..'"]', ' = '
+					end
+		
+					if type(k) == "number" then
+						result = result .. string.rep("\t",cnt), "["..k.."]", " = "
+					end
+				end
+
+				if not v == nil then
+					printTableHelper(v, cnt)
+				end
+
+				printTableHelper(v, cnt)
+				result = result .. ", "
+			end
+	
+			cnt = cnt-1
+			result = result .. string.rep("\t", cnt), "}"
+	
+		elseif type(obj) == "string" then
+			result = result .. string.format("%q", obj)
+	
+		else
+			result = result .. tostring(obj)
+		end 
+	end
+	
+	printTableHelper(t)
+
+	return result
 end
