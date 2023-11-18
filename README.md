@@ -2,6 +2,9 @@
 
 A Lightroom Classic plugin created with Lightroom SDK which uploads images to an Immich Server via the Immich API.
 
+## Support my work
+
+[![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=2LL4K9LN5CFA6)
 
 ## Installation
 
