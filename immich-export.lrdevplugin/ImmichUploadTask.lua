@@ -4,8 +4,7 @@ local LrPathUtils = import 'LrPathUtils'
 local LrFileUtils = import 'LrFileUtils'
 local LrErrors = import 'LrErrors'
 local LrDialogs = import 'LrDialogs'
-local LrHttp = import 'LrHttp'
-local LrDate = import 'LrDate'
+require "ImmichAPI"
 
 --============================================================================--
 
@@ -36,9 +35,27 @@ function ImmichUploadTask.processRenderedPhotos( functionContext, exportContext 
 					}
 
 
+	-- Album handling
+	local albumId
+	local useAlbum = false
+	if exportParams.albumMode == 'existing' then
+		log:trace ( 'Using existing album: ' .. exportParams.album )
+		albumId = exportParams.album
+		useAlbum = true
+	elseif exportParams.albumMode == 'new' then
+		log:trace ( 'Creating new album: ' .. exportParams.newAlbumName )
+		albumId = ImmichAPI.createAlbum ( exportParams, exportParams.newAlbumName )
+		useAlbum = true
+	elseif exportParams.albumMode == 'none' then
+		log:trace ( 'Not using any albums, just uploading assets.' )
+	else
+		log:trace ( 'Unknown albumMode: ' .. albumMode .. '. Ignoring.' ) 
+	end
+
 	-- Iterate through photo renditions.
 	
 	local failures = {}
+	local atLeastSomeSuccess = false
 
 	for _, rendition in exportContext:renditions{ stopIfCanceled = true } do
 	
@@ -52,15 +69,21 @@ function ImmichUploadTask.processRenderedPhotos( functionContext, exportContext 
 		
 		if success then
 
-			local success = uploadFileToImmich( exportParams, pathOrMessage )
+			local id = ImmichAPI.uploadAsset( exportParams, pathOrMessage )
 			
-			if not success then
+			if not id then
 			
 				-- If we can't upload that file, log it.  For example, maybe user has exceeded disk
 				-- quota, or the file already exists and we don't have permission to overwrite, or
 				-- we don't have permission to write to that directory, etc....
 				
 				table.insert( failures, filename )
+			else 
+				atLeastSomeSuccess = true
+				if useAlbum then
+					log:trace('Adding asset to albumn')
+					ImmichAPI.addAssetToAlbum(exportParams, albumId, id)
+				end
 			end
 					
 			-- When done with photo, delete temp file. There is a cleanup step that happens later,
@@ -71,6 +94,14 @@ function ImmichUploadTask.processRenderedPhotos( functionContext, exportContext 
 		end
 		
 	end
+
+	if atLeastSomeSuccess == false then -- No upload succeeded, deleting album if newly created.
+		if exportParams.albumMode == 'new' and albumId then
+			log:trace( 'Deleting newly created album, as no upload succeeded, and album would remain as orphan.' )
+			ImmichAPI.deleteAlbum( exportParams, albumId )
+		end
+	end
+
 	
 	if #failures > 0 then
 		local message
@@ -85,93 +116,4 @@ function ImmichUploadTask.processRenderedPhotos( functionContext, exportContext 
 end
 
 
-function uploadFileToImmich( params, pathOrMessage )
 
-	log:trace( 'uploadFileToImmmich: params: ',  dumpTable ( params ) )
-	log:trace( 'uploadFileToImmmich: pathOrMessage: ', pathOrMessage )
-
-	local postUrl = params.url .. '/api/asset/upload'
-	log:trace( 'uploadFileToImmmich: postURL: ', postUrl )
-
-	local submitDate = LrDate.timeToIsoDate( LrDate.currentTime() )
-	local filePath = assert( pathOrMessage )
-	log:trace( 'uploadFileToImmmich: filePath', filePath )
-	local fileName = LrPathUtils.leafName( filePath )
-
-	local headerChunks = {}
-	headerChunks[ #headerChunks + 1 ] = { field = 'x-api-key', value = params.apiKey }
-	
-	local mimeChunks = {}
-	mimeChunks[ #mimeChunks + 1 ] = { name = 'assetData', filePath = filePath, fileName = fileName, contentType = 'application/octet-stream' }
-	mimeChunks[ #mimeChunks + 1 ] = { name = 'deviceAssetId', value = fileName }
-	mimeChunks[ #mimeChunks + 1 ] = { name = 'deviceId', value = 'Lightroom Immich Upload Plugin' }
-	mimeChunks[ #mimeChunks + 1 ] = { name = 'fileCreatedAt', value = submitDate }
-	mimeChunks[ #mimeChunks + 1 ] = { name = 'fileModifiedAt', value = submitDate }
-	mimeChunks[ #mimeChunks + 1 ] = { name = 'isFavorite', value = 'false' }
-
-	local result, hdrs = LrHttp.postMultipart( postUrl, mimeChunks, headerChunks )
-
-	if not result then
-	
-		if hdrs and hdrs.error then
-			log:error( 'POST response headers: ', dumpTable ( hdrs ) )
-			LrErrors.throwUserError( "Error uploading some assets, please consult logs." )
-			
-		elseif hdrs then
-			log:trace( 'POST response headers: ', dumpTable ( hdrs ) )
-		end
-	else
-		log:trace( 'POST response body: ', result)
-	end
-
-end
-
--- Taken from https://gist.github.com/marcotrosi/163b9e890e012c6a460a
--- Copyright https://gist.github.com/marcotrosi
-
-function dumpTable(t)
-	local result = ''
-
-	local function printTableHelper(obj, cnt)
-	
-		local cnt = cnt or 0
-	
-		if type(obj) == "table" then
-	
-			result = result .. " ", string.rep("\t", cnt), "{ "
-			cnt = cnt + 1
-	
-			for k,v in pairs(obj) do
-				if not k == nil then
-					if type(k) == "string" then
-						result = result .. string.rep("\t",cnt), '["'..k..'"]', ' = '
-					end
-		
-					if type(k) == "number" then
-						result = result .. string.rep("\t",cnt), "["..k.."]", " = "
-					end
-				end
-
-				if not v == nil then
-					printTableHelper(v, cnt)
-				end
-
-				printTableHelper(v, cnt)
-				result = result .. ", "
-			end
-	
-			cnt = cnt-1
-			result = result .. string.rep("\t", cnt), "}"
-	
-		elseif type(obj) == "string" then
-			result = result .. string.format("%q", obj)
-	
-		else
-			result = result .. tostring(obj)
-		end 
-	end
-	
-	printTableHelper(t)
-
-	return result
-end

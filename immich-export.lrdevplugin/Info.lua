@@ -6,13 +6,13 @@ return {
 
 	LrToolkitIdentifier = 'org.immich.lightroom',
 
-	LrPluginName = LOC "$$$/ImmichUpload/PluginName=Immich Upload Plugin",
+	LrPluginName = LOC "$$$/ImmichUpload/PluginName=Immich Plugin",
 	
 	LrExportServiceProvider = {
-		title = "Immich Upload",
+		title = "Immich Server",
 		file = 'ImmichUploadServiceProvider.lua',
 	},
 
-	VERSION = { major=0, minor=1, revision=0, build="20231020-alpha", },
+	VERSION = { major=0, minor=1, revision=0, build="20240315-beta", },
 
 }

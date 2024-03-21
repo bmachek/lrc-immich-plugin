@@ -1,5 +1,9 @@
 -- Lightroom SDK
 local LrView = import 'LrView'
+local LrTasks = import 'LrTasks'
+local LrBinding = import 'LrBinding'
+
+require "ImmichAPI"
 
 ImmichUploadExportDialogSections = {}
 
@@ -24,10 +28,13 @@ end
 -------------------------------------------------------------------------------
 
 function ImmichUploadExportDialogSections.startDialog( propertyTable )
-	
-	propertyTable:addObserver( 'items', updateExportStatus )
+
 	propertyTable:addObserver( 'url', updateExportStatus )
 	propertyTable:addObserver( 'apiKey', updateExportStatus )
+	propertyTable:addObserver( 'album', updateExportStatus )
+	propertyTable:addObserver( 'newAlbumName', updateExportStatus )
+	propertyTable:addObserver( 'albums', updateExportStatus )
+	propertyTable:addObserver( 'albumMode', updateExportStatus )
 
 	updateExportStatus( propertyTable )
 	
@@ -45,9 +52,7 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 	
 		{
 			title = LOC "$$$/ImmichUpload/ExportDialog/ImmichSettings=Immich Server URL",
-			
-			synopsis = bind { key = 'url', object = propertyTable },
-			
+						
 			f:row {
 
 				f:column {
@@ -83,7 +88,7 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 
 				f:column {
 
-					f:edit_field {
+					f:password_field {
 						value = bind 'apiKey',
 						truncation = 'middle',
 						immediate = true,
@@ -98,3 +103,88 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 	return result
 	
 end
+
+-------------------------------------------------------------------------------
+
+
+function ImmichUploadExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
+
+	local f = LrView.osFactory()
+	local bind = LrView.bind
+	local share = LrView.share
+
+	LrTasks.startAsyncTask( function ()
+			propertyTable.albums = ImmichAPI.getAlbums( propertyTable.url, propertyTable.apiKey )
+		end
+	)
+
+
+	local chooseAlbum = f:popup_menu {
+		truncation = 'middle',
+		width = 200,
+		fill_horizontal = 1,
+		value = bind 'album',
+		items = bind 'albums',
+		visible = LrBinding.keyEquals( "albumMode", "existing" ),
+		align = left,
+		immediate = true,
+	}
+
+	local newAlbumName = f:edit_field {
+		truncation = 'middle',
+		width = 200,
+		fill_horizontal = 1,
+		value = bind 'newAlbumName',
+		visible = LrBinding.keyEquals( "albumMode", "new" ),
+		align = left,
+		immediate = true,
+	}
+
+	local result = {
+	
+		{
+			title = "Immich Album Options",
+
+			f:row {
+
+				f:column {
+					f:static_text {
+						title = "Add to album during export:",
+						alignment = 'right',
+						visible = bind 'hasNoError',
+					},
+				},
+
+
+				f:column {
+					f:popup_menu {
+						alignment = 'left',
+						immediate = true,
+						items = { 
+							{ title = 'Existing album', value = 'existing'},
+							{ title = 'Create new album', value = 'new'},
+							{ title = 'Do not use an album', value = 'none'},
+						},
+						value = bind 'albumMode',
+						-- action = function () log:trace('PATSCH') end,
+					},
+				},
+
+				f:column {
+
+					place = "overlapping",
+
+					chooseAlbum,
+					newAlbumName,
+
+				}, 
+
+			},
+
+		},
+	}
+	
+	return result
+	
+end
+
