@@ -11,10 +11,10 @@ A Lightroom Classic plugin created with Lightroom SDK which uploads images to an
 Download the current release zip file and extract it to the Lightroom plugin folder, which is:
 
 Mac
-    /Users/$USER/Library/Application Support/Adobe/Lightroom/Modules/
+    `/Users/$USER/Library/Application Support/Adobe/Lightroom/Modules/`
 
 Windows
-    C:\Users\%USERNAME%\AppData\Roaming\Adobe\Lightroom\Modules on Windows
+    `C:\Users\%USERNAME%\AppData\Roaming\Adobe\Lightroom\Modules`
 
 Alternatively extract it somewhere good an go to Lightroom Module Manager and add it via the GUI.
 
