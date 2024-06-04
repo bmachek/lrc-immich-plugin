@@ -114,7 +114,11 @@ function ImmichUploadExportDialogSections.sectionsForTopOfDialog( _, propertyTab
 	local share = LrView.share
 
 	LrTasks.startAsyncTask( function ()
-			propertyTable.albums = ImmichAPI.getAlbums( propertyTable.url, propertyTable.apiKey )
+			if not ( propertyTable.url == nil ) and not ( propertyTable.apiKey == nil ) then
+				propertyTable.albums = ImmichAPI.getAlbums( propertyTable.url, propertyTable.apiKey )
+			else
+				albums = {}
+			end
 		end
 	)
 
@@ -166,7 +170,6 @@ function ImmichUploadExportDialogSections.sectionsForTopOfDialog( _, propertyTab
 							{ title = 'Do not use an album', value = 'none'},
 						},
 						value = bind 'albumMode',
-						-- action = function () log:trace('PATSCH') end,
 					},
 				},
 
