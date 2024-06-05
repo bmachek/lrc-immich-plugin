@@ -57,18 +57,26 @@ end
 
 function ImmichAPI.checkConnectivity(url, apiKey)
 	url = ImmichAPI.sanityCheckAndFixURL(url)
-    if not url then return false end
+    if not url then 
+        log:error('checkConnectivty: URL is empty')
+        return false 
+    end
 
     if not apiKey then
         handleError('checkConnectivity: API key is empty.', 'Immich API key is empty, cannot connect to Immich servers.')
         return false
     end
 
+
+    log:trace('checkConnectivity: Sending validateToken request')
     local result, hdrs = LrHttp.post(url .. '/api/auth/validateToken', '', createHeaders(apiKey), 'POST', 1)
+    
+
     if not result then
-        handleError('Empty result from Immich server.', "Error getting album list from Immich, please consult logs.")
+        log:error('checkConnectivity: Empty result from Immich server.')
         return false
     else
+        log:trace('checkConnectivity: ' .. result)
         local decoded = JSON:decode(result)
         if decoded.authStatus == true then
             log:trace('checkConnectivity: connectivity is OK.')
@@ -182,8 +190,6 @@ function ImmichAPI.deleteAlbum(url, apiKey, albumId)
 end
 
 function ImmichAPI.getAlbums(url, apiKey)
-    url = ImmichAPI.sanityCheckAndFixURL(url)
-    if not url or not ImmichAPI.checkConnectivity(url, apiKey) then return {} end
 
     local getUrl = url .. '/api/album'
     local headerChunks = createHeaders(apiKey)
