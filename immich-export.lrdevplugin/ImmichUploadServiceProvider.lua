@@ -17,6 +17,7 @@ return {
 		{ key = 'album', default = nil },
 		{ key = 'newAlbumName', default = nil },
 		{ key = 'albumMode', default = nil },
+		{ key = 'configOK', default = false},
 	},
 
 	startDialog = ImmichUploadExportDialogSections.startDialog,
