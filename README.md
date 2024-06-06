@@ -44,6 +44,7 @@ Once you're done entering the details, edit the usual Lightroom export parameter
 ## CREDITS
 
 [Jeffrey Friedl for JSON.lua](http://regex.info/blog/lua/json)
+
 [Enrique García Cota for inspect.lua](https://github.com/kikito/inspect.lua)
 
 
