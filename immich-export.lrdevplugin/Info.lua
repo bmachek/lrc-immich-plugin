@@ -13,8 +13,6 @@ return {
 		file = 'ImmichUploadServiceProvider.lua',
 	},
 
-	-- LrPluginInfoProvider = 'ImmichUploadInfoProvider.lua',
-
 	VERSION = { major=0, minor=9, revision=0, build="20240605-beta", },
 
 }

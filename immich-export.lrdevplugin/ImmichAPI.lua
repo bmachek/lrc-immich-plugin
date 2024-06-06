@@ -3,7 +3,7 @@ local LrDate = import 'LrDate'
 local LrPathUtils = import 'LrPathUtils'
 local LrErrors = import 'LrErrors'
 local prefs = import 'LrPrefs'.prefsForPlugin() 
-local log = import 'LrLogger'( 'ImmichAPI' )
+local log = import 'LrLogger'( 'ImmichPlugin' )
 log:enable( 'logfile' )
 
 local JSON = require "JSON"
@@ -34,6 +34,13 @@ local function createHeadersForMultipart(apiKey)
     }
 end
 
+-- Utility function to dump tables as JSON scrambling the API key.
+local function dumpTable(t) 
+    local s = inspect(t)
+    local pattern = '(field = "x%-api%-key",%s+value = ")%w+(")'
+    return s:gsub(pattern, '%1xxx%2')
+end
+
 function ImmichAPI.sanityCheckAndFixURL(url)
     if not url then
         handleError('sanityCheckAndFixURL: URL is empty', "Error: Immich server URL is empty.")
@@ -50,9 +57,9 @@ function ImmichAPI.sanityCheckAndFixURL(url)
             return sanitizedURL
         end
     elseif not string.match(url, "^https?://") then
-        log:error('sanityCheckAndFixURL: URL is missing protocol (http:// or https://).')
+        handleError('sanityCheckAndFixURL: URL is missing protocol (http:// or https://).')
     else
-        log:error('sanityCheckAndFixURL: Unknown error in URL')
+        handleError('sanityCheckAndFixURL: Unknown error in URL')
     end
     return nil
 end
@@ -82,6 +89,7 @@ function ImmichAPI.checkConnectivity(url, apiKey)
         local decoded = JSON:decode(result)
         if decoded.authStatus == true then
             log:trace('checkConnectivity: connectivity is OK.')
+            LrDialogs.message('Connection test successful.')
             return true
         else
             log:trace('checkConnectivity: authentication failed.' .. result)
@@ -91,9 +99,6 @@ function ImmichAPI.checkConnectivity(url, apiKey)
 end
 
 function ImmichAPI.uploadAsset(url, apiKey, pathOrMessage)
-    url = ImmichAPI.sanityCheckAndFixURL(url)
-    if not url or not ImmichAPI.checkConnectivity(url, apiKey) then return false end
-
     local uploadUrl = url .. '/api/asset/upload'
     local submitDate = LrDate.timeToIsoDate(LrDate.currentTime())
     local filePath = assert(pathOrMessage)
@@ -109,54 +114,49 @@ function ImmichAPI.uploadAsset(url, apiKey, pathOrMessage)
         { name = 'isFavorite', value = 'false' }
     }
 
-	log:trace('uploadAsset: headerChunks' .. inspect(headerChunks))
-	log:trace('uploadAsset: mimeChunls' .. inspect(mimeChunks))
+	log:trace('uploadAsset: headerChunks' .. dumpTable(headerChunks))
+	log:trace('uploadAsset: mimeChunls' .. dumpTable(mimeChunks))
 
     local result, hdrs = LrHttp.postMultipart(uploadUrl, mimeChunks, headerChunks)
     if not result then
-        handleError('POST response headers: ' .. inspect(hdrs), "Error uploading some assets, please consult logs.")
+        handleError('POST response headers: ' .. dumpTable(hdrs), "Error uploading some assets, please consult logs.")
         return nil
     else
         local parsedResult = JSON:decode(result)
 		if parsedResult.id == nil then
 			log:error('uploadAsset: Immich server did not retur an asset id')
 			log:error('uploadAsset: Returned result: ' .. result)
-			log:error('uploadAsset: Returned headers: ' .. inspect(hdr))
+			log:error('uploadAsset: Returned headers: ' .. dumpTable(hdr))
 		end
         return parsedResult.id
     end
 end
 
 function ImmichAPI.addAssetToAlbum(url, apiKey, albumId, assetId)
-    url = ImmichAPI.sanityCheckAndFixURL(url)
-    if not url or not ImmichAPI.checkConnectivity(url, apiKey) then return false end
-
     local addUrl = url .. '/api/album/' .. albumId .. '/assets'
     local headerChunks = createHeaders(apiKey)
     local postBody = { ids = { assetId } }
 
     local result, hdrs = LrHttp.post(addUrl, JSON:encode(postBody), headerChunks, 'PUT', 5)
     if not result then
-        handleError('PUT response headers: ' .. inspect(hdrs), "Error adding asset to album, please consult logs.")
+        handleError('PUT response headers: ' .. dumpTable(hdrs), "Error adding asset to album, please consult logs.")
     else
         local decoded = JSON:decode(result)
-        if not decoded.success then
+        if not decoded[1].success then
             log:error("Unable to add asset (" .. assetId .. ") to album (" .. albumId .. ").")
+            log:error(dumpTable(decoded))
         end
     end
 end
 
 function ImmichAPI.createAlbum(url, apiKey, albumName)
-    url = ImmichAPI.sanityCheckAndFixURL(url)
-    if not url or not ImmichAPI.checkConnectivity(url, apiKey) then return false end
-
     local addUrl = url .. '/api/album'
     local headerChunks = createHeaders(apiKey)
     local postBody = { albumName = albumName }
 
     local result, hdrs = LrHttp.post(addUrl, JSON:encode(postBody), headerChunks)
     if not result then
-        handleError('POST response headers: ' .. inspect(hdrs), "Error creating album, please consult logs.")
+        handleError('POST response headers: ' .. dumpTable(hdrs), "Error creating album, please consult logs.")
         return nil
     else
         local decoded = JSON:decode(result)
@@ -170,15 +170,12 @@ function ImmichAPI.createAlbum(url, apiKey, albumName)
 end
 
 function ImmichAPI.deleteAlbum(url, apiKey, albumId)
-    url = ImmichAPI.sanityCheckAndFixURL(url)
-    if not url or not ImmichAPI.checkConnectivity(url, apiKey) then return false end
-
     local addUrl = url .. '/api/album/' .. albumId
     local headerChunks = createHeaders(apiKey)
 
     local result, hdrs = LrHttp.post(addUrl, '{}', headerChunks, 'DELETE', 5)
     if not result then
-        handleError('POST response headers: ' .. inspect(hdrs), "Error deleting album, please consult logs.")
+        handleError('POST response headers: ' .. dumpTable(hdrs), "Error deleting album, please consult logs.")
         return false
     else
         local decoded = JSON:decode(result)
@@ -199,7 +196,7 @@ function ImmichAPI.getAlbums(url, apiKey)
 
     local albums = {}
     if not result then
-        handleError('GET response headers: ' .. inspect(hdrs), "Error getting album list from Immich, please consult logs.")
+        handleError('GET response headers: ' .. dumpTable(hdrs), "Error getting album list from Immich, please consult logs.")
     else
         local decoded = JSON:decode(result)
         for i = 1, #decoded do

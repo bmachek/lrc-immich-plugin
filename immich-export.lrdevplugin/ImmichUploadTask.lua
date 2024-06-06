@@ -12,7 +12,7 @@ require "ImmichAPI"
 --============================================================================--
 
 ImmichUploadTask = {}
-local log = import 'LrLogger'( 'ImmichUploadTask' )
+local log = import 'LrLogger'( 'ImmichPlugin' )
 log:enable ( 'logfile' )
 
 --------------------------------------------------------------------------------
@@ -50,8 +50,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
             local dialogContent = f:column {
                 bind_to_object = exportParams,
                 f:row {
-                    spacing = f:control_spacing(),
-                        spacing = f:label_spacing(),
+                    spacing = f:label_spacing(),
                         f:static_text {
                             title = 'Mode: ',
                             alignment = "right",
