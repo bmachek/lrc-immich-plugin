@@ -1,6 +1,7 @@
 -- ImmichUpload plug-in
 require "ImmichUploadExportDialogSections"
 require "ImmichUploadTask"
+local prefs = import 'LrPrefs'.prefsForPlugin() 
 
 
 return {

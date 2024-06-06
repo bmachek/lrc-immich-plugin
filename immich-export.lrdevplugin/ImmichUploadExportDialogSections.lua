@@ -4,6 +4,7 @@ local LrTasks = import 'LrTasks'
 local LrBinding = import 'LrBinding'
 local LrDialogs = import 'LrDialogs'
 local LrColor = import 'LrColor'
+local prefs = import 'LrPrefs'.prefsForPlugin() 
 
 require "ImmichAPI"
 
@@ -54,7 +55,7 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 	local result = {
 	
 		{
-			title = LOC "$$$/ImmichUpload/ExportDialog/ImmichSettings=Immich Server URL",
+			title = "Immich Server URL",
 						
 			f:row {
 
@@ -67,38 +68,30 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 				},
 
 				f:column {
-
 					f:edit_field {
 						value = bind 'url',
 						truncation = 'middle',
-						immediate = true,
+						immediate = false,
 						width_in_chars = 40,
 						fill_horizontal = 1,
-					},
-				},
-
-				f:column {
-
-					f:push_button {
-						title = 'Test connection',
-						action = function () 
-							if (ImmichAPI.checkConnectivity( propertyTable.url, propertyTable.apiKey ) == true) then
-								LrDialogs.message('Connection successful. Config OK!')
-								propertyTable.configOK = true
-							else
-								LrDialogs.showError('Connection not succesful, check URL and API key!')
-								propertyTable.configOK = false
+						validate = function (v, url) 
+							sanitizedURL = ImmichAPI.sanityCheckAndFixURL(url)
+							if sanitizedURL == url then
+								return true, url, ''
+							elseif not (sanitizedURL == nil) then
+								LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
+								return true, sanitizedURL, ''
 							end
-						end
+							return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+						end,
 					},
 				},
 			},
 			
-			f:row {
-				
+			f:row {				
 				f:column {
 					f:static_text {
-						title = LOC "$$$/ImmichUpload/ExportDialog/apiKey=API Key:",
+						title = "API Key:",
 						alignment = 'right',
 						width = share 'labelWidth',
 						visible = bind 'hasNoError',
@@ -106,7 +99,6 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 				},
 
 				f:column {
-
 					f:password_field {
 						value = bind 'apiKey',
 						truncation = 'middle',
@@ -131,63 +123,10 @@ function ImmichUploadExportDialogSections.sectionsForTopOfDialog( _, propertyTab
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 
-	local checkConnectivityLabel = f:static_text {
-		title = bind 'checkConnectivityLabelTitle',
-		visible = bind 'checkConnectivityLabelVisible',
-		text_color = bind 'checkConnectivityLabelColor',
-		alignment = 'left',
-	}
-
-	local chooseAlbum = f:popup_menu {
-		truncation = 'middle',
-		width = 200,
-		fill_horizontal = 1,
-		value = bind 'album',
-		items = bind 'albums',
-		visible = LrBinding.keyEquals( "albumMode", "existing" ),
-		align = left,
-		immediate = true,
-		enabled = bind 'configOK',
-	}
-
-	local newAlbumName = f:edit_field {
-		truncation = 'middle',
-		width = 200,
-		fill_horizontal = 1,
-		value = bind 'newAlbumName',
-		visible = LrBinding.keyEquals( "albumMode", "new" ),
-		align = left,
-		immediate = true,
-		enabled = bind 'configOK',
-	}
-
-	propertyTable.configOK = false
-	propertyTable.checkConnectivityLabelVisible = true
-	propertyTable.checkConnectivityLabelTitle = 'Checking Immich connectivity, please standy....'
-	propertyTable.checkConnectivityLabelColor = LrColor( 0, 0, 0 )
-
-	LrTasks.startAsyncTask( function ()
-		propertyTable.configOK = ImmichAPI.checkConnectivity(propertyTable.url, propertyTable.apiKey)
-		if  propertyTable.configOK then
-			propertyTable.checkConnectivityLabelVisible = false
-			propertyTable.albums = ImmichAPI.getAlbums( propertyTable.url, propertyTable.apiKey )
-		else
-			albums = {}
-			propertyTable.checkConnectivityLabelTitle = 'Checking Immich connectivity FAILED!'
-			propertyTable.checkConnectivityLabelColor = LrColor( 1, 0, 0 )
-			LrDialogs.showError('Connection to Immich server failed, check URL and API key.')
-		end
-	end
-)
-
 	local result = {
 	
 		{
 			title = "Immich Album Options",
-
-			f:row {
-				checkConnectivityLabel,
-			},
 
 			f:row {
 
@@ -205,26 +144,62 @@ function ImmichUploadExportDialogSections.sectionsForTopOfDialog( _, propertyTab
 						alignment = 'left',
 						immediate = true,
 						items = { 
+							{ title = 'Choose on export', value = 'onexport'},
 							{ title = 'Existing album', value = 'existing'},
 							{ title = 'Create new album', value = 'new'},
 							{ title = 'Do not use an album', value = 'none'},
 						},
 						value = bind 'albumMode',
-						enabled = bind 'configOK',
 					},
 				},
 
 				f:column {
-
 					place = "overlapping",
-
-					chooseAlbum,
-					newAlbumName,
-
+					f:popup_menu {
+						truncation = 'middle',
+						width = 200,
+						fill_horizontal = 1,
+						value = bind 'album',
+						items = bind 'albums',
+						visible = LrBinding.keyEquals( "albumMode", "existing" ),
+						align = left,
+					},
+					f:edit_field {
+						truncation = 'middle',
+						width = 200,
+						fill_horizontal = 1,
+						value = bind 'newAlbumName',
+						visible = LrBinding.keyEquals( "albumMode", "new" ),
+						align = left,
+					},
 				}, 
 
-			},
+				f:column {
+					f:push_button {
+						title = 'Fetch album list',
+						action = function (button)
+							LrTasks.startAsyncTask( function ()
+								propertyTable.fetchAlbumStatus = 'Fetching albums .. '
+								-- propertyTable.fetchAlbumStatusColor = LrColor('red')
+								propertyTable.albums = ImmichAPI.getAlbums( propertyTable.url, propertyTable.apiKey )
+								-- propertyTable.fetchAlbumStatusColor = LrColor('black')
+								propertyTable.fetchAlbumStatus = 'Fetching albums .. done!'
+							end
+							)
+						end,
+						visible = LrBinding.keyEquals( "albumMode", "existing" ),
+					},
+				},
 
+				f:column {
+					f:static_text {
+						title = bind 'fetchAlbumStatus',
+						visible = LrBinding.keyEquals( "albumMode", "existing" ),
+						width = 200,
+						-- color = bind 'fetchAlbumStatusColor'
+					}
+				},
+			},
 		},
 	}
 	

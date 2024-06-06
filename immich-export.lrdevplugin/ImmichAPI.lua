@@ -2,6 +2,7 @@ local LrHttp = import 'LrHttp'
 local LrDate = import 'LrDate'
 local LrPathUtils = import 'LrPathUtils'
 local LrErrors = import 'LrErrors'
+local prefs = import 'LrPrefs'.prefsForPlugin() 
 local log = import 'LrLogger'( 'ImmichAPI' )
 log:enable( 'logfile' )
 
@@ -13,7 +14,7 @@ ImmichAPI = {}
 -- Utility function to log errors and throw user errors
 local function handleError(logMsg, userErrorMsg)
     log:error(logMsg)
-    LrErrors.throwUserError(userErrorMsg)
+    LrDialogs.showError(userErrorMsg)
 end
 
 -- Utility function to create headers
@@ -49,9 +50,10 @@ function ImmichAPI.sanityCheckAndFixURL(url)
             return sanitizedURL
         end
     elseif not string.match(url, "^https?://") then
-        handleError('sanityCheckAndFixURL: URL is missing protocol (http:// or https://).', "Error: Immich server URL has to start with either http:// or https://")
+        log:error('sanityCheckAndFixURL: URL is missing protocol (http:// or https://).')
+    else
+        log:error('sanityCheckAndFixURL: Unknown error in URL')
     end
-
     return nil
 end
 

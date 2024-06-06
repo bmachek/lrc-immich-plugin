@@ -1,8 +1,12 @@
 -- Lightroom API
 local LrPathUtils = import 'LrPathUtils'
 local LrFileUtils = import 'LrFileUtils'
+local LrFunctionContext = import "LrFunctionContext"
+local LrBinding = import "LrBinding"
 local LrErrors = import 'LrErrors'
 local LrDialogs = import 'LrDialogs'
+local LrView = import 'LrView'
+local prefs = import 'LrPrefs'.prefsForPlugin() 
 require "ImmichAPI"
 
 --============================================================================--
@@ -23,13 +27,111 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
     local nPhotos = exportSession:countRenditions()
     local progressScope = exportContext:configureProgress {
         title = nPhotos > 1
-               and LOC( "$$$/ImmichUpload/Upload/Progress=Uploading ^1 photos to Immich server", nPhotos )
-               or LOC "$$$/ImmichUpload/Upload/Progress/One=Uploading one photo to Immich server",
+               and "Uploading " .. nPhotos .. " photos to Immich server"
+               or "Uploading one photo to Immich server"
     }
 
     -- Album handling
     local albumId
     local useAlbum = false
+    if exportParams.albumMode == 'onexport' then
+        log:trace('Showing album options dialog.')
+        local result = LrFunctionContext.callWithContext( 'albumChooser', function(context) 
+            local f = LrView.osFactory()
+            -- local properties = LrBinding.makePropertyTable(context)
+            -- properties.albumMode = ''
+            -- properties.albums = {}
+            -- properties.album = ''
+            -- properties.newAlbumName = ''
+            exportParams.albumMode = 'none'
+
+            exportParams.albums = ImmichAPI.getAlbums(exportParams.url, exportParams.apiKey)
+
+            local dialogContent = f:column {
+                bind_to_object = exportParams,
+                f:row {
+                    spacing = f:control_spacing(),
+                        spacing = f:label_spacing(),
+                        f:static_text {
+                            title = 'Mode: ',
+                            alignment = "right",
+                            width = LrView.share "label_width",
+                        },
+                        f:popup_menu {
+                            width_in_chars = 20,
+                            alignment = 'left',
+                            items = { 
+                                { title = 'Do not use an album', value = 'none'},
+                                { title = 'Existing album', value = 'existing'},
+                                { title = 'Create new album', value = 'new'},
+                            },
+                            value = LrView.bind('albumMode'),
+                            immediate = true,
+                        },
+                    },
+                f:row {
+                    spacing = f:label_spacing(),
+                        f:column {            
+                            place = "overlapping",   
+                            f:static_text {
+                                title = 'Choose album: ',
+                                alignment = "right",
+                                width = LrView.share "label_width",
+                                visible = LrBinding.keyEquals( "albumMode", "existing"),
+                            },
+                            f:static_text {
+                                title = 'Album name: ',
+                                alignment = "right",
+                                width = LrView.share "label_width",
+                                visible = LrBinding.keyEquals( "albumMode", "new"),
+                            },
+                        },
+                        f:column {
+                            place = "overlapping",
+                            f:popup_menu {
+                                truncation = 'middle',
+                                width_in_chars = 20,
+                                fill_horizontal = 1,
+                                value = LrView.bind('album'),
+                                items = LrView.bind('albums'),
+                                visible = LrBinding.keyEquals( "albumMode", "existing"),
+                                align = left,
+                                immediate = true,
+                            },
+                            f:edit_field {
+                                truncation = 'middle',
+                                width_in_chars = 20,
+                                fill_horizontal = 1,
+                                value = LrView.bind('newAlbumName'),
+                                visible = LrBinding.keyEquals( "albumMode", "new" ),
+                                align = left,
+                                immediate = true,
+                            },
+                        },
+                    },
+                }
+                
+            local result = LrDialogs.presentModalDialog( 
+                {
+                    title = "Immich album options",
+                    contents = dialogContent,
+                }
+            )
+
+            if not ( result == 'ok' ) then
+                LrDialogs.message('Export canceled.')
+                return false 
+            end
+
+        end, exportParams )
+
+        if result == false then
+            return
+        end
+    end
+
+
+    log:trace('Album mode:' .. exportParams.albumMode)
     if exportParams.albumMode == 'existing' then
         log:trace('Using existing album: ' .. exportParams.album)
         albumId = exportParams.album
