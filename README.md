@@ -37,14 +37,14 @@ Basically you have to set three parameters:
 * Set Export To: Immich Server (in the dropdown at the top)
 * Enter the immich http URL where the web frontend is reachable.
 * Enter an API for your Immich account. ([This has to be setup in Immich.](https://documentation.immich.app/docs/features/bulk-upload#obtain-the-api-key))
-* Optionally choose to create an album, choose an exisiting album, or do not use any albums on upload.
+* Optionally choose to create an album, choose an exisiting album, choose on export, or do not use any albums on upload.
 
 Once you're done entering the details, edit the usual Lightroom export parameters to your need, and save the preset.
 
 ## CREDITS
 
-([Jeffrey Friedl for JSON.lua](http://regex.info/blog/lua/json))
-([Enrique García Cota for the](https://github.com/kikito/inspect.lua))
+[Jeffrey Friedl for JSON.lua](http://regex.info/blog/lua/json)
+[Enrique García Cota for inspect.lua](https://github.com/kikito/inspect.lua)
 
 
 ## FINISHED
