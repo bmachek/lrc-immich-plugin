@@ -1,1 +1,11 @@
 .DS_Store
+tasks.txt
+immich-export.lrplugin/ImmichAPI.lua
+immich-export.lrplugin/ImmichUploadExportDialogSections.lua
+immich-export.lrplugin/ImmichUploadInfoDialogSections.lua
+immich-export.lrplugin/ImmichUploadInfoProvider.lua
+immich-export.lrplugin/ImmichUploadServiceProvider.lua
+immich-export.lrplugin/ImmichUploadTask.lua
+immich-export.lrplugin/Info.lua
+immich-export.lrplugin/inspect.lua
+immich-export.lrplugin/JSON.lua
