@@ -2,6 +2,7 @@ local LrHttp = import 'LrHttp'
 local LrDate = import 'LrDate'
 local LrPathUtils = import 'LrPathUtils'
 local LrErrors = import 'LrErrors'
+local LrDialogs = import 'LrDialogs'
 local prefs = import 'LrPrefs'.prefsForPlugin() 
 local log = import 'LrLogger'( 'ImmichPlugin' )
 log:enable( 'logfile' )
