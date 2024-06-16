@@ -100,7 +100,7 @@ function ImmichAPI.checkConnectivity(url, apiKey)
 end
 
 function ImmichAPI.uploadAsset(url, apiKey, pathOrMessage)
-    local uploadUrl = url .. '/api/asset/upload'
+    local uploadUrl = url .. '/api/assets'
     local submitDate = LrDate.timeToIsoDate(LrDate.currentTime())
     local filePath = assert(pathOrMessage)
   	local fileName = LrPathUtils.leafName(filePath)
@@ -134,7 +134,7 @@ function ImmichAPI.uploadAsset(url, apiKey, pathOrMessage)
 end
 
 function ImmichAPI.addAssetToAlbum(url, apiKey, albumId, assetId)
-    local addUrl = url .. '/api/album/' .. albumId .. '/assets'
+    local addUrl = url .. '/api/albums/' .. albumId .. '/assets'
     local headerChunks = createHeaders(apiKey)
     local postBody = { ids = { assetId } }
 
@@ -151,7 +151,7 @@ function ImmichAPI.addAssetToAlbum(url, apiKey, albumId, assetId)
 end
 
 function ImmichAPI.createAlbum(url, apiKey, albumName)
-    local addUrl = url .. '/api/album'
+    local addUrl = url .. '/api/albums'
     local headerChunks = createHeaders(apiKey)
     local postBody = { albumName = albumName }
 
@@ -171,7 +171,7 @@ function ImmichAPI.createAlbum(url, apiKey, albumName)
 end
 
 function ImmichAPI.deleteAlbum(url, apiKey, albumId)
-    local addUrl = url .. '/api/album/' .. albumId
+    local addUrl = url .. '/api/albums/' .. albumId
     local headerChunks = createHeaders(apiKey)
 
     local result, hdrs = LrHttp.post(addUrl, '{}', headerChunks, 'DELETE', 5)
@@ -191,7 +191,7 @@ end
 
 function ImmichAPI.getAlbums(url, apiKey)
 
-    local getUrl = url .. '/api/album'
+    local getUrl = url .. '/api/albums'
     local headerChunks = createHeaders(apiKey)
     local result, hdrs = LrHttp.get(getUrl, headerChunks)
 
