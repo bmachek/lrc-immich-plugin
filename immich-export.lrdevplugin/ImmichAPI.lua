@@ -48,7 +48,7 @@ function ImmichAPI.sanityCheckAndFixURL(url)
         return false
     end
 
-    local sanitizedURL = string.match(url, "^https?://[%w%.]+[:%d]*")
+    local sanitizedURL = string.match(url, "^https?://[%w%.%-]+[:%d]*")
     if sanitizedURL then
         if string.len(sanitizedURL) == string.len(url) then
             log:trace('sanityCheckAndFixURL: URL is completely sane.')
