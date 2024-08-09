@@ -13,6 +13,6 @@ return {
 		file = 'ImmichUploadServiceProvider.lua',
 	},
 
-	VERSION = { major=0, minor=9, revision=0, build="20240605-beta", },
+	VERSION = { major=1, minor=0, revision=0, build="v1.0.0", },
 
 }
