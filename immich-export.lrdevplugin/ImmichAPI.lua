@@ -139,7 +139,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
 	log:trace('uploadAsset: mimeChunks' .. dumpTable(mimeChunks))
     parsedResult = ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     if parsedResult.id == nil then
-        log:error('replaceAsset: Immich server did not retur an asset id')
+        log:error('replaceAsset: Immich server did not return an asset id')
         log:error('replaceAsset: Returned result: ' .. dumpTable(parsedResult))
         log:error('replaceAsset: Returned headers: ' .. dumpTable(hdr))
         return nil
@@ -148,13 +148,12 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
 end
 
 function ImmichAPI:addAssetToAlbum(albumId, assetId)
-    local apiPath = url .. '/albums/' .. albumId .. '/assets'
+    local apiPath = '/albums/' .. albumId .. '/assets'
     local postBody = { ids = { assetId } }
 
     local decoded = ImmichAPI:doDAVRequest('PUT', apiPath, postBody)
-    if not decoded[1].success then
+    if not decoded then
         log:error("Unable to add asset (" .. assetId .. ") to album (" .. albumId .. ").")
-        log:error(dumpTable(decoded))
     end
 end
 
@@ -162,7 +161,7 @@ function ImmichAPI:createAlbum(albumName)
     local apiPath = '/albums'
     local postBody = { albumName = albumName }
 
-    local decoded = ImmichAPI:doDAVRequest('PUT', apiPath, postBody)
+    local decoded = ImmichAPI:doPostRequest(apiPath, postBody)
     if not decoded.id then
         handleError("Unable to create album (" .. albumName .. ").", "Error creating album, please consult logs.")
         return nil
@@ -235,10 +234,11 @@ function ImmichAPI:doDAVRequest(method, apiPath, postBody)
     log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
     local url = self.url .. self.apiBasePath .. apiPath
 
-    local result, hdrs = LrHttp.post(url, postBody, ImmichAPI:createHeaders(), method, 5)
+    local result, hdrs = LrHttp.post(url, JSON:encode(postBody), ImmichAPI:createHeaders(), method, 5)
     
     if not result then
         log:error('ImmichAPI POST request failed. ' .. apiPath)
+        log:error(dumpTable(hdrs))
         return false
     else
         log:trace('ImmichAPI POST request succeeded: ' .. result)
