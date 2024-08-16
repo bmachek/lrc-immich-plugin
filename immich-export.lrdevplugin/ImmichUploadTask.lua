@@ -8,6 +8,7 @@ local LrDialogs = import 'LrDialogs'
 local LrView = import 'LrView'
 local prefs = import 'LrPrefs'.prefsForPlugin() 
 require "ImmichAPI"
+local inspect = require 'inspect'
 
 --============================================================================--
 
@@ -31,6 +32,8 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
                or "Uploading one photo to Immich server"
     }
 
+    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
+
     -- Album handling
     local albumId
     local useAlbum = false
@@ -45,7 +48,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
             -- properties.newAlbumName = ''
             exportParams.albumMode = 'none'
 
-            exportParams.albums = ImmichAPI.getAlbums(exportParams.url, exportParams.apiKey)
+            exportParams.albums = immich:getAlbums()
 
             local dialogContent = f:column {
                 bind_to_object = exportParams,
@@ -137,7 +140,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
         useAlbum = true
     elseif exportParams.albumMode == 'new' then
         log:trace('Creating new album: ' .. exportParams.newAlbumName)
-        albumId = ImmichAPI.createAlbum(exportParams.url, exportParams.apiKey, exportParams.newAlbumName)
+        albumId = immich:createAlbum(exportParams.newAlbumName)
         useAlbum = true
     elseif exportParams.albumMode == 'none' then
         log:trace('Not using any albums, just uploading assets.')
@@ -148,7 +151,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
     -- Iterate through photo renditions.
     local failures = {}
     local atLeastSomeSuccess = false
-
+    
     for _, rendition in exportContext:renditions{ stopIfCanceled = true } do
     
         -- Wait for next photo to render.
@@ -158,8 +161,16 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
         if progressScope:isCanceled() then break end
         
         if success then
-            local id = ImmichAPI.uploadAsset(exportParams.url, exportParams.apiKey, pathOrMessage)
-            
+            local existingId = immich:checkIfAssetExists(rendition.photo.localIdentifier)
+            local id
+
+            if existingId == nil then
+                id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
+            else
+                -- id = immich:replaceAsset(existingId, pathOrMessage, rendition.photo.localIdentifier)
+                id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
+            end
+
             if not id then
                 -- If we can't upload that file, log it.
                 table.insert(failures, pathOrMessage)
@@ -167,7 +178,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
                 atLeastSomeSuccess = true
                 if useAlbum then
                     log:trace('Adding asset to album')
-                    ImmichAPI.addAssetToAlbum(exportParams.url, exportParams.apiKey, albumId, id)
+                    immich:addAssetToAlbum(albumId, id)
                 end
             end
                     
@@ -181,7 +192,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
     -- If no upload succeeded, delete album if newly created.
     if atLeastSomeSuccess == false and exportParams.albumMode == 'new' and albumId then
         log:trace('Deleting newly created album, as no upload succeeded, and album would remain as orphan.')
-        ImmichAPI.deleteAlbum(exportParams.url, exportParams.apiKey, albumId)
+        immich:deleteAlbum(albumId)
     end
 
     -- Report failures.

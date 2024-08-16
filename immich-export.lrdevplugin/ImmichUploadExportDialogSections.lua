@@ -41,7 +41,8 @@ function ImmichUploadExportDialogSections.startDialog( propertyTable )
 	propertyTable:addObserver( 'configOK', updateExportStatus )
 
 	LrTasks.startAsyncTask( function ()
-		propertyTable.albums = ImmichAPI.getAlbums( propertyTable.url, propertyTable.apiKey )
+		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+		propertyTable.albums = propertyTable.immich:getAlbums()
 	end)
 
 
@@ -75,20 +76,20 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 					width_in_chars = 40,
 					-- fill_horizontal = 1,
 					validate = function (v, url) 
-						sanitizedURL = ImmichAPI.sanityCheckAndFixURL(url)
+						sanitizedURL = propertyTable.immich:sanityCheckAndFixURL()
 						if sanitizedURL == url then
 							return true, url, ''
 						elseif not (sanitizedURL == nil) then
 							LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
 							return true, sanitizedURL, ''
 						end
-						return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+						return false, url, 'Entered URL not valid.\nShould look like https://demo.immich:app'
 					end,
 				},
 				f:push_button {
 					title = 'Test connection',
 					action = function (button) 
-						ImmichAPI.checkConnectivity(propertyTable.url, propertyTable.apiKey)
+						propertyTable.immich:checkConnectivity()
 					end,
 				},
 			},
