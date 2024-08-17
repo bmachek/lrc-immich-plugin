@@ -12,6 +12,8 @@ log:enable( 'logfile' )
 local JSON = require "JSON"
 local inspect = require 'inspect'
 
+
+
 ImmichAPI = {}
 ImmichAPI.__index = ImmichAPI
 
@@ -23,8 +25,41 @@ function ImmichAPI:new(url, apiKey)
     self.deviceIdString = 'Lightroom Immich Upload Plugin'
     self.apiBasePath = '/api'
     o:sanityCheckAndFixURL()
+    -- o:checkConnectivity()
     -- log:trace('ImmichAPI object created: ' .. dumpTable(o))
     return o
+end
+
+function generateMultiPartBody(b, formData, filePath)
+
+    local fileName = LrPathUtils.leafName(filePath)
+    local body = ''
+    local boundary = '--' .. b .. '\r\n'
+
+    for i = 1, #formData do
+        body = body .. boundary
+        for k,v in pairs(formData[i]) do
+            if k == 'name' then
+                body = body .. 'Content-Disposition: form-data; name="' .. v .. '"\r\n\r\n'
+            elseif k == 'value' then
+                body = body .. v .. "\r\n"
+            end
+        end
+    end
+
+    local fh = io.open(filePath, "rb")
+    local fileContent = fh:read("*all")
+    fh:close()
+
+    log:trace(fileContent)
+
+    body = body .. boundary
+    body = body .. 'Content-Disposition: form-data; name="assetData"; filename="' .. fileName .. '"\r\n'
+    body = body .. 'Content-Type: application/octet-stream\r\n\r\n'
+    body = body .. fileContent
+    body = body .. '\r\n--' .. b .. '--' .. '\r\n'
+
+    return body
 end
 
 -- Utility function to log errors and throw user errors
@@ -38,18 +73,28 @@ function ImmichAPI:createHeaders()
     return {
         { field = 'x-api-key', value = self.apiKey },
         { field = 'Accept', value = 'application/json' },
-        { field = 'Content-Type', value = 'application/json' }
+        { field = 'Content-Type', value = 'application/json' },
     }
 end
 
--- Utility function to create headers for uploadAsset
+
 function ImmichAPI:createHeadersForMultipart()
     return {
         { field = 'x-api-key', value = self.apiKey },
         { field = 'Accept', value = 'application/json' },
-        -- { field = 'Content-Type', value = 'multipart/form-data' }
     }
 end
+
+
+function ImmichAPI:createHeadersForMultipartPut(boundary, length)
+    return {
+        { field = 'x-api-key', value = self.apiKey },
+        { field = 'Accept', value = 'application/json' },
+        { field = 'Content-Type', value = 'multipart/form-data;boundary="' .. boundary .. '"' },
+        { field = 'Content-Length', value = length },
+    }
+end
+
 
 -- Utility function to dump tables as JSON scrambling the API key.
 function dumpTable(t) 
@@ -85,14 +130,14 @@ end
 function ImmichAPI:checkConnectivity()
     log:trace('checkConnectivity: Sending validateToken request')
 
-    local decoded = ImmichAPI:doPostRequest('/auth/validateToken') -- FIXME
+    local decoded = ImmichAPI:doPostRequest('/auth/validateToken', {})
 
     if decoded.authStatus == true then
         log:trace('checkConnectivity: connectivity is OK.')
-        LrDialogs.message('Connection test successful.')
+        -- LrDialogs.message('Connection test successful.')
         return true
     else
-        log:trace('checkConnectivity: authentication failed.' .. result)
+        log:trace('checkConnectivity: authentication failed.' .. dumpTable(decoded))
         return false
     end
 end
@@ -128,8 +173,8 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
     local filePath = pathOrMessage
   	local fileName = LrPathUtils.leafName(filePath)
 
-    local mimeChunks = {
-        { name = 'assetData', filePath = filePath, fileName = fileName, contentType = 'application/octet-stream' },
+    local formData = {
+        -- { name = 'assetData', filePath = filePath, fileName = fileName, contentType = 'application/octet-stream' },
         { name = 'deviceAssetId', value = localId },
         { name = 'deviceId', value = self.deviceIdString },
         { name = 'fileCreatedAt', value = submitDate },
@@ -137,7 +182,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
     }
 
 	log:trace('uploadAsset: mimeChunks' .. dumpTable(mimeChunks))
-    parsedResult = ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
+    parsedResult = ImmichAPI:doMultiPartPutRequest(apiPath, pathOrMessage, formData)
     if parsedResult.id == nil then
         log:error('replaceAsset: Immich server did not return an asset id')
         log:error('replaceAsset: Returned result: ' .. dumpTable(parsedResult))
@@ -151,7 +196,7 @@ function ImmichAPI:addAssetToAlbum(albumId, assetId)
     local apiPath = '/albums/' .. albumId .. '/assets'
     local postBody = { ids = { assetId } }
 
-    local decoded = ImmichAPI:doDAVRequest('PUT', apiPath, postBody)
+    local decoded = ImmichAPI:doCustomRequest('PUT', apiPath, postBody)
     if not decoded then
         log:error("Unable to add asset (" .. assetId .. ") to album (" .. albumId .. ").")
     end
@@ -173,7 +218,7 @@ end
 function ImmichAPI:deleteAlbum(albumId)
     local path = '/albums/' .. albumId
 
-    local decoded = ImmichAPI:doDAVRequest('DELETE', path)
+    local decoded = ImmichAPI:doCustomRequest('DELETE', path)
     if not decoded.success then
         handleError("Unable to delete album (" .. albumId .. ").", "Error deleting album, please consult logs.")
         return false
@@ -230,7 +275,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
     end
 end
 
-function ImmichAPI:doDAVRequest(method, apiPath, postBody)
+function ImmichAPI:doCustomRequest(method, apiPath, postBody)
     log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
     local url = self.url .. self.apiBasePath .. apiPath
 
@@ -256,7 +301,7 @@ function ImmichAPI:doGetRequest(apiPath)
         log:error('ImmichAPI GET request failed. ' .. apiPath)
         return false
     else
-        log:trace('ImmichAPI GET request succeeded: ' .. result)
+        log:trace('ImmichAPI GET request succeeded')
         local decoded = JSON:decode(result)
         return decoded
     end
@@ -271,5 +316,31 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     else
         local parsedResult = JSON:decode(result)
         return parsedResult
+    end
+end
+
+function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
+    log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
+    local url = self.url .. self.apiBasePath .. apiPath
+    local boundary = 'FIXMEASTHISISSTATICFORNOWBUTSHOULDBERANDOM' -- TODO/FIXME
+    
+    local body = generateMultiPartBody(boundary, formData, filePath)
+    local size = string.len(body)
+    local reqhdrs = ImmichAPI:createHeadersForMultipartPut(boundary, size)
+    
+    log:trace('ImmichAPI multipart PUT headers:' .. dumpTable(reqhdrs))
+    log:trace('ImmichAPI multipart PUT body:' .. body)
+
+
+    local result, hdrs = LrHttp.post(url, body, reqhdrs, 'PUT', 15)
+       
+    if not result then
+        log:error('ImmichAPI multipart PUT request failed. ' .. apiPath)
+        log:error(dumpTable(hdrs))
+        return false
+    else
+        log:trace('ImmichAPI multipart PUT request succeeded: ' .. result)
+        local decoded = JSON:decode(result)
+        return decoded
     end
 end

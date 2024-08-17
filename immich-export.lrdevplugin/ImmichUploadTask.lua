@@ -167,8 +167,8 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
             if existingId == nil then
                 id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
             else
-                -- id = immich:replaceAsset(existingId, pathOrMessage, rendition.photo.localIdentifier)
-                id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
+                id = immich:replaceAsset(existingId, pathOrMessage, rendition.photo.localIdentifier)
+                -- id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
             end
 
             if not id then
