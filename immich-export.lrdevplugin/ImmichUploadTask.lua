@@ -161,13 +161,13 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
         if progressScope:isCanceled() then break end
         
         if success then
-            local existingId = immich:checkIfAssetExists(rendition.photo.localIdentifier)
+            local existingId, existingDeviceId = immich:checkIfAssetExists(rendition.photo.localIdentifier, rendition.photo:getFormattedMetadata( "fileName" ), rendition.photo:getFormattedMetadata( "dateCreated" ))
             local id
 
             if existingId == nil then
                 id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
             else
-                id = immich:replaceAsset(existingId, pathOrMessage, rendition.photo.localIdentifier)
+                id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId)
                 -- id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
             end
 
