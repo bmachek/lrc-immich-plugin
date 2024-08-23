@@ -37,7 +37,7 @@ Basically you have to set three parameters:
 
 * Set Export To: Immich Server (in the dropdown at the top)
 * Enter the immich http URL where the web frontend is reachable.
-* Enter an API for your Immich account. ([This has to be setup in Immich.](https://immich.app/docs/features/command-line-interface#obtain-the-api-key))
+* Enter an API key for your Immich account. ([This has to be setup in Immich.](https://immich.app/docs/features/command-line-interface#obtain-the-api-key))
 * Optionally choose to create an album, choose an exisiting album, choose on export, or do not use any albums on upload.
 
 Once you're done entering the details, edit the usual Lightroom export parameters to your need, and save the preset.
