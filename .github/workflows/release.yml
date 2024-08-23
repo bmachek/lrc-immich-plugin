@@ -1,0 +1,18 @@
+name: Create and attach ZIP file to new release
+on: 
+  release:
+    types: [ created, edited ]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@master
+    - name: Archive Release
+      uses: thedoctor0/zip-release@0.7.5
+      with:
+        type: 'zip'
+        filename: 'immich-export.lrdevplugin.zip'
+        directory: 'immich-export.lrdevplugin'
+    - uses: ncipollo/release-action@v1
+      with:
+        artifacts: "immich-export.lrdevplugin.zip"
