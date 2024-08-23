@@ -18,7 +18,7 @@ Windows
 
 Alternatively extract it somewhere good an go to Lightroom Module Manager and add it via the GUI.
 
-Either there should be a plugin called "Immich upload plugin" in the list, one you're finished.
+Either there should be a plugin called "Immich plugin" in the list, one you're finished.
 
 ## Features
 
