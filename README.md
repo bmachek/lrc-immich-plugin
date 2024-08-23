@@ -25,6 +25,7 @@ Either there should be a plugin called "Immich plugin" in the list, one you're f
 * Setup connection to your Immich instance via URL and API key.
 * Optionally choose or create an album to use on export to Immich.
 * Export/Upload images to Immich.
+* Reupload of an existing image lead to replacing the image in Immich.
 
 ## Usage
 
