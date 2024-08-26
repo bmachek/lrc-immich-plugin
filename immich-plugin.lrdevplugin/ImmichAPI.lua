@@ -236,13 +236,13 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
     local response = ImmichAPI:doPostRequest('/search/metadata', postBody)
 
     if not response then
-        log:trace('Asset with assetDeviceId ' .. id .. ' not found. No response')
+        log:trace('Asset with deviceAssetId ' .. id .. ' not found. No response')
 		return nil
     elseif response.assets.count >= 1 then
-        log:trace('Found existing asset with assetDeviceId ' .. tostring(localId))
+        log:trace('Found existing asset with deviceAssetId ' .. tostring(localId))
         return response.assets.items[1].id, response.assets.items[1].deviceAssetId
 	else
-		log:trace('In Asset with assetDeviceId ' .. id .. ' not found')
+		log:trace('In Asset with deviceAssetId ' .. id .. ' not found')
 		
 		postBody = { originalFileName = filename, takenAfter = dateCreated, takenBefore = dateCreated, isTrashed = false }
 		response = ImmichAPI:doPostRequest('/search/metadata', postBody)

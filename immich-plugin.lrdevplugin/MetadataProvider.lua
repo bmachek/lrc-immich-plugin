@@ -13,8 +13,8 @@ return {
         },
     },
 
-    schemaVersion = 1,
-    noAutoUpdate = true,
+    schemaVersion = 10,
+    -- noAutoUpdate = true,
 
-    updateFromEarlierSchemaVersion = MetadataTask.updateFromEarlierSchemaVersion
+    -- updateFromEarlierSchemaVersion = MetadataTask.updateFromEarlierSchemaVersion
 }

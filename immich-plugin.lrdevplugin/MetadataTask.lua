@@ -5,18 +5,23 @@ MetadataTask = {}
 local pluginId = 'lrc-immich-plugin'
 local keyAssetId = 'immichAssetId'
 
+
 function MetadataTask.updateFromEarlierSchemaVersion(catalog, previousSchemaVersion, progressScope)
     catalog:assertHasPrivateWriteAccess("ImmichPlugin.updateFromEarlierSchemaVersion") 
 
-    if previousSchemaVersion == nil then
-        -- nil means not yet existent in this case.
-        local photosToMigrate = catalog:findPhotosWithProperty(myPlugpluginIdinId, keyAssetId)
-
-        -- Need URL and API Key !?!?!?!?!?
-        -- local immich = ImmichAPI:new(url, apiKey)
+    if previousSchemaVersion == nil or previousSchemaVersion < 6 then
+        log:trace("MetadataTask.updateFromEarlierSchemaVersion: Updating to version 5.")
+        local photosToMigrate = catalog:findPhotosWithProperty(pluginId, keyAssetId)
+        log:trace("MetadataTask.updateFromEarlierSchemaVersion: Found " .. tostring(#photosToMigrate) .. " photos to migrate")
+        local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
 
         for i, photo in ipairs (photosToMigrate) do
-            -- assetId, deviceAssetId = immich:checkIfAssetExists(photo.localIdentifier, photo:getFormattedMetadata( "fileName" ), photo:getFormattedMetadata( "dateCreated" ))
+            log:trace("Migrating photo with local identifier: " .. tostring(photo.localIdentifier))
+            assetId, deviceAssetId = immich:checkIfAssetExists(photo.localIdentifier, photo:getFormattedMetadata( "fileName" ), photo:getFormattedMetadata( "dateCreated" ))
+            if assetId then
+                log:trace("Asset found, trying to write Immich asset id " .. assetId ..  " to catalog.")
+                photo:setPropertyForPlugin(_PLUGIN, keyAssetId, assetId)
+            end
         end
     end
 end
