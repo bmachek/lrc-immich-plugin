@@ -48,6 +48,8 @@ Once you're done entering the details, edit the usual Lightroom export parameter
 
 [Enrique García Cota for inspect.lua](https://github.com/kikito/inspect.lua)
 
+[Min Idzelis for giving me ideas with his Immich Plugin](https://github.com/midzelis/mi.Immich.Publisher)
+
 
 ## FINISHED
 
