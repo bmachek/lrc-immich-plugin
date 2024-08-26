@@ -1,16 +1,8 @@
--- Lightroom SDK
-local LrView = import 'LrView'
-local LrTasks = import 'LrTasks'
-local LrBinding = import 'LrBinding'
-local LrDialogs = import 'LrDialogs'
-local LrColor = import 'LrColor'
-local prefs = import 'LrPrefs'.prefsForPlugin() 
-
 require "ImmichAPI"
 
-ImmichUploadExportDialogSections = {}
+ExportDialogSections = {}
 
-local function updateExportStatus( propertyTable )
+local function updateExportStatus(propertyTable)
 	
 	local message = nil
 
@@ -30,29 +22,28 @@ end
 
 -------------------------------------------------------------------------------
 
-function ImmichUploadExportDialogSections.startDialog( propertyTable )
+function ExportDialogSections.startDialog(propertyTable)
 
-	propertyTable:addObserver( 'url', updateExportStatus )
-	propertyTable:addObserver( 'apiKey', updateExportStatus )
-	propertyTable:addObserver( 'album', updateExportStatus )
-	propertyTable:addObserver( 'newAlbumName', updateExportStatus )
-	propertyTable:addObserver( 'albums', updateExportStatus )
-	propertyTable:addObserver( 'albumMode', updateExportStatus )
-	propertyTable:addObserver( 'configOK', updateExportStatus )
+	propertyTable:addObserver('url', updateExportStatus)
+	propertyTable:addObserver('apiKey', updateExportStatus)
+	propertyTable:addObserver('album', updateExportStatus)
+	propertyTable:addObserver('newAlbumName', updateExportStatus)
+	propertyTable:addObserver('albums', updateExportStatus)
+	propertyTable:addObserver('albumMode', updateExportStatus)
 
-	LrTasks.startAsyncTask( function ()
-		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+	LrTasks.startAsyncTask(function ()
+		propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
 		propertyTable.albums = propertyTable.immich:getAlbums()
 	end)
 
 
-	updateExportStatus( propertyTable )
+	updateExportStatus(propertyTable)
 	
 end
 
 -------------------------------------------------------------------------------
 
-function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, propertyTable )
+function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
 
 	local f = LrView.osFactory()
 	local bind = LrView.bind
@@ -65,32 +56,27 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 						
 			f:row {
 				f:static_text {
-					title = LOC "$$$/ImmichUpload/ExportDialog/URL=URL:",
+					title = "URL:",
 					alignment = 'right',
 					width = share 'labelWidth'
 				},
 				f:edit_field {
-					value = bind 'url',
+					value = prefs.url,
 					truncation = 'middle',
 					immediate = false,
 					width_in_chars = 40,
 					-- fill_horizontal = 1,
-					validate = function (v, url) 
-						sanitizedURL = propertyTable.immich:sanityCheckAndFixURL()
-						if sanitizedURL == url then
-							return true, url, ''
-						elseif not (sanitizedURL == nil) then
-							LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
-							return true, sanitizedURL, ''
-						end
-						return false, url, 'Entered URL not valid.\nShould look like https://demo.immich:app'
-					end,
-				},
-				f:push_button {
-					title = 'Test connection',
-					action = function (button) 
-						propertyTable.immich:checkConnectivity()
-					end,
+					-- validate = function (v, url) 
+					-- 	sanitizedURL = propertyTable.immich:sanityCheckAndFixURL()
+					-- 	if sanitizedURL == url then
+					-- 		return true, url, ''
+					-- 	elseif not (sanitizedURL == nil) then
+					-- 		LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
+					-- 		return true, sanitizedURL, ''
+					-- 	end
+					-- 	return false, url, 'Entered URL not valid.\nShould look like https://demo.immich:app'
+					-- end,
+					enabled = false, -- Configuration moved to PluginInfo
 				},
 			},
 			
@@ -99,14 +85,14 @@ function ImmichUploadExportDialogSections.sectionsForBottomOfDialog( _, property
 					title = "API Key:",
 					alignment = 'right',
 					width = share 'labelWidth',
-					visible = bind 'hasNoError',
 				},
 				f:password_field {
-					value = bind 'apiKey',
+					value = prefs.apiKey,
 					truncation = 'middle',
 					immediate = true,
 					width_in_chars = 40,
 					-- fill_horizontal = 1,
+					enabled = false, -- Configuration moved to PluginInfo
 				},
 			},
 		},
@@ -119,7 +105,7 @@ end
 -------------------------------------------------------------------------------
 
 
-function ImmichUploadExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
+function ExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
 
 	local f = LrView.osFactory()
 	local bind = LrView.bind

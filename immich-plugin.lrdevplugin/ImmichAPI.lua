@@ -1,18 +1,3 @@
-local LrHttp = import 'LrHttp'
-local LrDate = import 'LrDate'
-local LrPathUtils = import 'LrPathUtils'
-local LrFileUtils = import 'LrFileUtils'
-local LrTasks = import 'LrTasks'
-local LrErrors = import 'LrErrors'
-local LrDialogs = import 'LrDialogs'
-local prefs = import 'LrPrefs'.prefsForPlugin() 
-local log = import 'LrLogger'( 'ImmichPlugin' )
-log:enable( 'logfile' )
-
-local JSON = require "JSON"
-local inspect = require 'inspect'
-
-
 
 ImmichAPI = {}
 ImmichAPI.__index = ImmichAPI
@@ -20,17 +5,15 @@ ImmichAPI.__index = ImmichAPI
 
 function ImmichAPI:new(url, apiKey)
     local o = setmetatable({}, ImmichAPI)
-    self.url = url
     self.apiKey = apiKey
     self.deviceIdString = 'Lightroom Immich Upload Plugin'
     self.apiBasePath = '/api'
-    o:sanityCheckAndFixURL()
+    self.url = url
     -- o:checkConnectivity()
-    -- log:trace('ImmichAPI object created: ' .. dumpTable(o))
     return o
 end
 
-function generateMultiPartBody(b, formData, filePath)
+local function generateMultiPartBody(b, formData, filePath)
 
     local fileName = LrPathUtils.leafName(filePath)
     local body = ''
@@ -103,41 +86,42 @@ function dumpTable(t)
     return s:gsub(pattern, '%1xxx%2')
 end
 
-function ImmichAPI:sanityCheckAndFixURL()
-    if not self.url then
+
+function ImmichAPI:sanityCheckAndFixURL(url)
+    if not url then
         handleError('sanityCheckAndFixURL: URL is empty', "Error: Immich server URL is empty.")
         return false
     end
 
-    local sanitizedURL = string.match(self.url, "^https?://[%w%.%-]+[:%d]*")
+    local sanitizedURL = string.match(url, "^https?://[%w%.%-]+[:%d]*")
     if sanitizedURL then
-        if string.len(sanitizedURL) == string.len(self.url) then
+        if string.len(sanitizedURL) == string.len(url) then
             log:trace('sanityCheckAndFixURL: URL is completely sane.')
-            self.url = sanitizedURL
+            url = sanitizedURL
         else
             log:trace('sanityCheckAndFixURL: Fixed URL: removed trailing paths.')
-            self.url = sanitizedURL
+            url = sanitizedURL
         end
-    elseif not string.match(self.url, "^https?://") then
+    elseif not string.match(url, "^https?://") then
         handleError('sanityCheckAndFixURL: URL is missing protocol (http:// or https://).')
     else
         handleError('sanityCheckAndFixURL: Unknown error in URL')
     end
-    -- self.url = nil
-    return self.url
+    
+    return url
 end
 
 function ImmichAPI:checkConnectivity()
-    log:trace('checkConnectivity: Sending validateToken request')
+    log:trace('checkConnectivity: Sending getMyUser request')
 
-    local decoded = ImmichAPI:doPostRequest('/auth/validateToken', {})
+    local decoded = ImmichAPI:doGetRequest('/users/me')
 
-    if decoded.authStatus == true then
-        log:trace('checkConnectivity: connectivity is OK.')
+    if decoded then
+        log:trace('checkConnectivity: test OK.')
         -- LrDialogs.message('Connection test successful.')
         return true
     else
-        log:trace('checkConnectivity: authentication failed.' .. dumpTable(decoded))
+        log:trace('checkConnectivity: test failed.' .. dumpTable(decoded))
         return false
     end
 end

@@ -4,15 +4,29 @@ return {
 	LrSdkVersion = 3.0,
 	LrSdkMinimumVersion = 3.0,
 
-	LrToolkitIdentifier = 'org.immich.lightroom',
+	LrToolkitIdentifier = 'lrc-immich-plugin',
 
-	LrPluginName = "Immich Plugin",
+	LrPluginName = "Immich",
 	
+	LrInitPlugin = "Init.lua",
+
 	LrExportServiceProvider = {
-		title = "Immich Server",
-		file = 'ImmichUploadServiceProvider.lua',
+		{
+			title = "Immich Exporter",
+			file = 'ExportServiceProvider.lua',
+		},	
+		{
+			title = "Immich Publisher",
+			file = 'PublishServiceProvider.lua',
+		},
 	},
 
-	VERSION = { major=1, minor=1, revision=0, build="v1.1.0", },
+	LrMetadataProvider = 'MetadataProvider.lua',
+
+	LrPluginInfoProvider = 'PluginInfo.lua',
+
+	LrPluginInfoURL = 'https://github.com/bmachek/lrc-immich-plugin',
+	
+	VERSION = { major=2, minor=0, revision=0, build="beta", },
 
 }

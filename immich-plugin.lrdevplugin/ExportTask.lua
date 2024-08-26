@@ -1,24 +1,15 @@
--- Lightroom API
-local LrPathUtils = import 'LrPathUtils'
-local LrFileUtils = import 'LrFileUtils'
-local LrFunctionContext = import "LrFunctionContext"
-local LrBinding = import "LrBinding"
-local LrErrors = import 'LrErrors'
-local LrDialogs = import 'LrDialogs'
-local LrView = import 'LrView'
-local prefs = import 'LrPrefs'.prefsForPlugin() 
 require "ImmichAPI"
-local inspect = require 'inspect'
+require "MetadataTask"
 
 --============================================================================--
 
-ImmichUploadTask = {}
+ExportTask = {}
 local log = import 'LrLogger'( 'ImmichPlugin' )
 log:enable ( 'logfile' )
 
 --------------------------------------------------------------------------------
 
-function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
+function ExportTask.processRenderedPhotos(functionContext, exportContext)
 
     -- Make a local reference to the export parameters.
     local exportSession = exportContext.exportSession
@@ -32,7 +23,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
                or "Uploading one photo to Immich server"
     }
 
-    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
+    local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
 
     -- Album handling
     local albumId
@@ -41,13 +32,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
         log:trace('Showing album options dialog.')
         local result = LrFunctionContext.callWithContext( 'albumChooser', function(context) 
             local f = LrView.osFactory()
-            -- local properties = LrBinding.makePropertyTable(context)
-            -- properties.albumMode = ''
-            -- properties.albums = {}
-            -- properties.album = ''
-            -- properties.newAlbumName = ''
             exportParams.albumMode = 'none'
-
             exportParams.albums = immich:getAlbums()
 
             local dialogContent = f:column {
@@ -168,7 +153,6 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
                 id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
             else
                 id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId)
-                -- id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
             end
 
             if not id then
@@ -176,6 +160,7 @@ function ImmichUploadTask.processRenderedPhotos(functionContext, exportContext)
                 table.insert(failures, pathOrMessage)
             else 
                 atLeastSomeSuccess = true
+                MetadataTask.setImmichAssetId(rendition.photo, id)
                 if useAlbum then
                     log:trace('Adding asset to album')
                     immich:addAssetToAlbum(albumId, id)
