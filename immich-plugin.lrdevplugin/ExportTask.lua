@@ -19,8 +19,8 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     local nPhotos = exportSession:countRenditions()
     local progressScope = exportContext:configureProgress {
         title = nPhotos > 1
-               and "Uploading " .. nPhotos .. " photos to Immich server"
-               or "Uploading one photo to Immich server"
+               and "Exporting " .. nPhotos .. " photos to " .. prefs.url
+               or "Exporting one photo to " .. prefs.url
     }
 
     local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
@@ -160,7 +160,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 table.insert(failures, pathOrMessage)
             else 
                 atLeastSomeSuccess = true
-                MetadataTask.setImmichAssetId(rendition.photo, id)
+                -- MetadataTask.setImmichAssetId(rendition.photo, id)
                 if useAlbum then
                     log:trace('Adding asset to album')
                     immich:addAssetToAlbum(albumId, id)

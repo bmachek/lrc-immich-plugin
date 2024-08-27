@@ -21,7 +21,7 @@ return {
 		},
 	},
 
-	LrMetadataProvider = 'MetadataProvider.lua',
+	-- LrMetadataProvider = 'MetadataProvider.lua',
 
 	LrPluginInfoProvider = 'PluginInfo.lua',
 

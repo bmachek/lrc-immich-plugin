@@ -4,26 +4,35 @@ require "PublishTask"
 return {
 	
 	hideSections = { 'exportLocation' },
-
 	allowFileFormats = nil, 
-	
 	allowColorSpaces = nil,
+	canAddCommentsToService = true,
+	canExportVideo = true,
+	supportsIncrementalPublish = 'only',
+    small_icon = 'icons/logo.png',
+	supportsCustomSortOrder = false,
+	titleForPublishedCollection = 'Album from Collection',
+	titleForPublishedSmartCollection = 'Album from SmartCollection',
 
-	exportPresetFields = {
-		{ key = 'url', default = nil },
-		{ key = "apiKey", default = nil },
-	},
+	-- shouldRenderPhoto = true, -- Sufficient???
 
 	startDialog = PublishDialogSections.startDialog,
 	sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
+
+
 	processRenderedPhotos = PublishTask.processRenderedPhotos,
-	shouldRenderPhoto = PublishTask.shouldRenderPhoto,
+		
+	addCommentToPublishedPhoto = PublishTask.addCommentToPublishedPhoto,
+	getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
+	
+	deletePhotosFromPublishedCollection = PublishTask.deletePhotosFromPublishedCollection,
 
-	canExportVideo = true,
+	deletePublishedCollection = PublishTask.deletePublishedCollection,
+	renamePublishedCollection = PublishTask.renamePublishedCollection,
+	shouldDeletePhotosFromServiceOnDeleteFromCatalog = PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog,
 
-	supportsIncrementalPublish = 'only',
 
-    small_icon = 'icons/logo.png',
+
 }
 
 

@@ -11,6 +11,7 @@ return {
             browsable = true,
             searchable = true,
         },
+
     },
 
     schemaVersion = 10,

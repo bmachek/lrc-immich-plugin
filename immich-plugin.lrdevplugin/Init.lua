@@ -11,8 +11,11 @@ _G.LrColor = import 'LrColor'
 _G.LrFunctionContext = import 'LrFunctionContext'
 _G.LrApplication = import 'LrApplication'
 _G.LrPrefs = import 'LrPrefs'
+-- _G.LrCatalog = import 'LrCatalog'
 _G.prefs = _G.LrPrefs.prefsForPlugin()
 _G.JSON = require "JSON"
 _G.inspect = require 'inspect'
 _G.log = import 'LrLogger'('ImmichPlugin')
 _G.log:enable('logfile')
+
+require "util"
