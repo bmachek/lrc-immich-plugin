@@ -10,7 +10,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
     local publishedCollection = exportContext.publishedCollection
-    local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
+    -- local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
     local albumId = publishedCollection:getRemoteId()
     local albumName = publishedCollection:getName()
     local albumAssetIds
@@ -93,20 +93,28 @@ function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, 
 end
 
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
+
+    local activities = ImmichAPI:getActivities( xxx ) -- Do know (yet), how to get to the albumId
+
+    for i = 1, #decoded do
+        local type = decoded[i].type
+
+        if type == 'comment' then
+            local user = decoded[i].user.name
+            local assetId = decoded[i].assetId
+            local comment = decoded[i].comment
+        end
+    end
 end
 	
 function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
     local catalog = LrApplication.activeCatalog()
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
     local publishedPhotos = publishedCollection.getPublishedPhotos()
-
-    -- Iterate over all photos in collection.
-    for i = 1, #publishedPhotos do
-        local photoId = publishedPhotos[i].getPhoto().localIdentifier
-        local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
-        -- if photoId of published photo's photo is in array arrayOfPhotoIds, it is supposed to be removed from the album.
-        if util.table_contains(arrayOfPhotoIds, photoId) then
-            immich:removeAssetFromAlbum(publishedCollection.getRemoteId(), publishedPhotos[i].getRemoteId())
+    
+    for i, photoId in ipairs( arrayOfPhotoIds ) do
+        if immich:removeAssetFromAlbum(publishedCollection.getRemoteId(), photoId) then
+            deletedCallback(photoId)
         end
     end
 end

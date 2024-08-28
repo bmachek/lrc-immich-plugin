@@ -23,7 +23,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                or "Exporting one photo to " .. prefs.url
     }
 
-    local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
+    -- local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
 
     -- Album handling
     local albumId

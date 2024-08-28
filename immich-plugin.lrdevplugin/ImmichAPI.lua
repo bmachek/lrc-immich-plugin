@@ -73,7 +73,7 @@ function ImmichAPI:createHeadersForMultipartPut(boundary, length)
 end
 
 function ImmichAPI:sanityCheckAndFixURL(url)
-    if not url then
+    if util.nilOrEmpty(url) then
         util.handleError('sanityCheckAndFixURL: URL is empty', "Error: Immich server URL is empty.")
         return false
     end
@@ -113,15 +113,32 @@ end
 
 -- Thanks to Min Idzelis
 function ImmichAPI:getAlbumUrl(albumId)
+    if util.nilOrEmpty(albumId) then
+        return nil
+    end
     return self.url .. '/albums/' .. albumId
 end
 
 -- Thanks to Min Idzelis
 function ImmichAPI:getAssetUrl(id)
+    if util.nilOrEmpty(id) then
+        return nil
+    end
     return self.url .. '/photos/' .. id
 end
 
 function ImmichAPI:uploadAsset(pathOrMessage, localId)
+    if util.nilOrEmpty(pathOrMessage) then
+        handleError('uploadAsset: pathOrMessage empty', 'No filename given. Check logs.')
+        return nil
+    end
+
+    if util.nilOrEmpty(localId) then
+        handleError('uploadAsset: localId empty', 'Local catalog id missing. Check logs.')
+        return nil
+    end
+
+
     local apiPath = '/assets'
     local submitDate = LrDate.timeToIsoDate(LrDate.currentTime())
     local filePath = pathOrMessage
@@ -147,6 +164,22 @@ function ImmichAPI:uploadAsset(pathOrMessage, localId)
 end
 
 function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
+
+    if util.nilOrEmpty(immichId) then
+        handleError('replaceAsset: immichId empty', 'Immich asset ID missing. Check logs.')
+        return nil
+    end
+
+    if util.nilOrEmpty(pathOrMessage) then
+        handleError('replaceAsset: pathOrMessage empty', 'No filename given. Check logs.')
+        return nil
+    end
+
+    if util.nilOrEmpty(localId) then
+        handleError('replaceAsset: localId empty', 'Local catalog id missing. Check logs.')
+        return nil
+    end
+
     local apiPath = '/assets/' .. immichId .. '/original'
     local submitDate = LrDate.timeToIsoDate(LrDate.currentTime())
     local filePath = pathOrMessage
@@ -172,26 +205,60 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
 end
 
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
+
+    
+    if util.nilOrEmpty(albumId) then
+        handleError('removeAssetFromAlbum: albumId empty', 'Immich album ID missing. Check logs.')
+        return nil
+    end
+
+    if util.nilOrEmpty(assetId) then
+        handleError('removeAssetFromAlbum: assetId empty', 'No Immich asset ID given. Check logs.')
+        return nil
+    end
+
     local apiPath = '/albums/' .. albumId .. '/assets'
     local postBody = { ids = { assetId } }
 
     local decoded = ImmichAPI:doCustomRequest('DELETE', apiPath, postBody)
     if not decoded then
         log:error("Unable to remove asset (" .. assetId .. ") from album (" .. albumId .. ").")
+        return false
     end
+
+    return true
 end
 
 function ImmichAPI:addAssetToAlbum(albumId, assetId)
+        
+    if util.nilOrEmpty(albumId) then
+        handleError('addAssetToAlbum: albumId empty', 'Immich album ID missing. Check logs.')
+        return nil
+    end
+
+    if util.nilOrEmpty(assetId) then
+        handleError('addAssetToAlbum: assetId empty', 'No Immich asset ID given. Check logs.')
+        return nil
+    end
+
     local apiPath = '/albums/' .. albumId .. '/assets'
     local postBody = { ids = { assetId } }
 
     local decoded = ImmichAPI:doCustomRequest('PUT', apiPath, postBody)
     if not decoded then
         log:error("Unable to add asset (" .. assetId .. ") to album (" .. albumId .. ").")
+        return false
     end
+
+    return true
 end
 
 function ImmichAPI:createAlbum(albumName)
+    if util.nilOrEmpty(albumName) then
+        handleError('createAlbum: albumName empty', 'No album name given. Check logs.')
+        return nil
+    end
+
     local apiPath = '/albums'
     local postBody = { albumName = albumName }
 
@@ -247,6 +314,14 @@ function ImmichAPI:getAlbums()
     end    
 end
 
+function ImmichAPI:getActivities(albumId)
+
+    local path = 'activities?albumId=' .. albumId
+    local decoded = ImmichAPI:doGetRequest(path)
+
+    return decoded
+end
+
 
 function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
 
@@ -276,6 +351,20 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
 		end
     end
 end
+
+function ImmichAPI:getLocalIdForAssetId(assetId)
+    path = '/assets/' .. assetId
+    local decoded = ImmichAPI:doGetRequest(path)
+
+    if not decoded == false then
+        if string.len(decoded.deviceAssetId) == 36 then
+            return decoded.deviceAssetId
+        else
+            return nil
+        end
+    end
+end
+
 
 function ImmichAPI:checkIfAlbumExists(albumId)
     if albumId == nil then
@@ -393,4 +482,15 @@ function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
         local decoded = JSON:decode(result)
         return decoded
     end
+end
+
+
+
+-- Global instance of connection to immich.
+
+_G.immich = nil
+_G.immichConfigured = false
+if not util.nilOrEmpty(prefs.url) and not util.nilOrEmpty(prefs.apiKey) then
+    _G.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
+    _G.immichConfigured = true
 end

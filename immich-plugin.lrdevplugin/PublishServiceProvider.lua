@@ -22,15 +22,15 @@ return {
 
 	processRenderedPhotos = PublishTask.processRenderedPhotos,
 		
-	addCommentToPublishedPhoto = PublishTask.addCommentToPublishedPhoto,
-	getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
+	-- addCommentToPublishedPhoto = PublishTask.addCommentToPublishedPhoto,
+	-- getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
 	
 	deletePhotosFromPublishedCollection = PublishTask.deletePhotosFromPublishedCollection,
-
+	reparentPublishedCollection = function (publishSettings, info) end,
 	deletePublishedCollection = PublishTask.deletePublishedCollection,
 	renamePublishedCollection = PublishTask.renamePublishedCollection,
 	shouldDeletePhotosFromServiceOnDeleteFromCatalog = PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog,
-
+	validatePublishedCollectionName = function (newName) return true, "" end, 
 
 
 }

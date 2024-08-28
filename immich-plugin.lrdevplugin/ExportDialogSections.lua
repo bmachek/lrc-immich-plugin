@@ -32,8 +32,8 @@ function ExportDialogSections.startDialog(propertyTable)
 	propertyTable:addObserver('albumMode', updateExportStatus)
 
 	LrTasks.startAsyncTask(function ()
-		propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
-		propertyTable.albums = propertyTable.immich:getAlbums()
+		-- propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
+		propertyTable.albums = immich:getAlbums()
 	end)
 
 

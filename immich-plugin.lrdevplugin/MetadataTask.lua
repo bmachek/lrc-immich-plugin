@@ -1,5 +1,3 @@
-require "ImmichAPI"
-
 MetadataTask = {}
 
 local pluginId = 'lrc-immich-plugin'

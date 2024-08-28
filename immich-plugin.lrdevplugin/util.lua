@@ -27,3 +27,20 @@ function util.handleError(logMsg, userErrorMsg)
     log:error(logMsg)
     LrDialogs.showError(userErrorMsg)
 end
+
+
+-- Check if val is empty or nil
+-- Taken from https://github.com/midzelis/mi.Immich.Publisher/blob/main/utils.lua
+local function trim(s)
+    return s:match("^%s*(.-)%s*$")
+end
+
+-- Taken from https://github.com/midzelis/mi.Immich.Publisher/blob/main/utils.lua
+function util.nilOrEmpty(val)
+    if type(val) == 'string' then
+        return val == nil or trim(val) == ''
+    else
+        return val == nil
+    end
+end
+
