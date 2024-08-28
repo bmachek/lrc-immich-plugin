@@ -5,13 +5,6 @@ PublishTask = {}
 local log = import 'LrLogger'( 'ImmichPlugin' )
 log:enable ( 'logfile' )
 
--- Thanks to Min Idzelis
-local function _createAlbum(immich, exportSession, name, remoteIds)
-    local albumId = immich:createAlbum(name)
-    exportSession:recordRemoteCollectionId(albumId)
-    exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
-end
-
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
 
     local exportSession = exportContext.exportSession

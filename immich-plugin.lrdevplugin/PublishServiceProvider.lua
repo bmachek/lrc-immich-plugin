@@ -11,8 +11,8 @@ return {
 	supportsIncrementalPublish = 'only',
     small_icon = 'icons/logo.png',
 	supportsCustomSortOrder = false,
-	titleForPublishedCollection = 'Album from Collection',
-	titleForPublishedSmartCollection = 'Album from SmartCollection',
+	titleForPublishedCollection = 'Immich album',
+	titleForPublishedSmartCollection = 'Immich album (Smart collection)',
 
 	-- shouldRenderPhoto = true, -- Sufficient???
 

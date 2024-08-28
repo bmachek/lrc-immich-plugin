@@ -223,7 +223,7 @@ function ImmichAPI:renameAlbum(albumId, newName)
     postBody.albumName = newName
 
     local decoded = ImmichAPI:doCustomRequest('PATCH', path, postBody)
-    if not decoded.success then
+    if not decoded.albumName == newName then
         util.handleError("Unable to rename album (" .. albumId .. ").", "Error renaming album, please consult logs.")
         return false
     else

@@ -184,9 +184,9 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     if #failures > 0 then
         local message
         if #failures == 1 then
-            message = LOC "$$$/ImmichUpload/Upload/Errors/OneFileFailed=1 file failed to upload correctly."
+            message = "1 file failed to upload correctly."
         else
-            message = LOC ("$$$/ImmichUpload/Upload/Errors/SomeFileFailed=^1 files failed to upload correctly.", #failures)
+            message = tostring(#failures) .. " files failed to upload correctly."
         end
         LrDialogs.message(message, table.concat(failures, "\n"))
     end
