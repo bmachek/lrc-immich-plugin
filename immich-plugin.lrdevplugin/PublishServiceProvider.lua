@@ -16,7 +16,7 @@ return {
 
 	-- shouldRenderPhoto = true, -- Sufficient???
 
-	startDialog = PublishDialogSections.startDialog,
+	-- startDialog = PublishDialogSections.startDialog,
 	-- sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
 
 
@@ -26,11 +26,11 @@ return {
 	-- getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
 	
 	deletePhotosFromPublishedCollection = PublishTask.deletePhotosFromPublishedCollection,
-	reparentPublishedCollection = function (publishSettings, info) end,
+	reparentPublishedCollection = PublishTask.reparentPublishedCollection,
 	deletePublishedCollection = PublishTask.deletePublishedCollection,
 	renamePublishedCollection = PublishTask.renamePublishedCollection,
 	shouldDeletePhotosFromServiceOnDeleteFromCatalog = PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog,
-	validatePublishedCollectionName = function (newName) return true, "" end, 
+	validatePublishedCollectionName = PublishTask.validatePublishedCollectionName,
 
 
 }

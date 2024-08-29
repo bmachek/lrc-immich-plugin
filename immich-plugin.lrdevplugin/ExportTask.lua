@@ -9,7 +9,7 @@ ExportTask = {}
 
 function ExportTask.processRenderedPhotos(functionContext, exportContext)
     if not immich:checkConnectivity() then
-        LrDialogs.error('Immich connection not set up.')
+        LrDialogs.showError('Immich connection not set up.')
         return nil
     end
     -- Make a local reference to the export parameters.

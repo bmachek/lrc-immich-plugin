@@ -4,8 +4,8 @@ require "ImmichAPI"
 PublishTask = {}
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
-    if not immich:checkConnectivity() then
-        LrDialogs.error('Immich connection not set up.')
+    if not ImmichAPI.immichConnected() then
+        LrDialogs.showError('Immich connection not set up.')
         return nil
     end
 
@@ -63,10 +63,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 atLeastSomeSuccess = true
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-                -- MetadataTask.setImmichAssetId(rendition.photo, id)
                 
                 if util.table_contains(albumAssetIds, id) == false then
-                    log:trace('Adding asset to album')
                     immich:addAssetToAlbum(albumId, id)
                 end
             end
@@ -114,7 +112,7 @@ end
 	
 function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
     if not immich:checkConnectivity() then
-        LrDialogs.error('Immich connection not set up.')
+        LrDialogs.showError('Immich connection not set up.')
         return nil
     end
     local catalog = LrApplication.activeCatalog()
@@ -130,7 +128,7 @@ end
 
 function PublishTask.deletePublishedCollection(publishSettings, info)
     if not immich:checkConnectivity() then
-        LrDialogs.error('Immich connection not set up.')
+        LrDialogs.showError('Immich connection not set up.')
         return nil
     end
     ImmichAPI:deleteAlbum(info.remoteId)
@@ -138,7 +136,7 @@ end
 
 function PublishTask.renamePublishedCollection(publishSettings, info)
     if not immich:checkConnectivity() then
-        LrDialogs.error('Immich connection not set up.')
+        LrDialogs.showError('Immich connection not set up.')
         return nil
     end
     ImmichAPI:renameAlbum(info.remoteId, info.name)
@@ -148,4 +146,11 @@ end
 function PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog(publishSettings, nPhotos)
     return "ignore" -- Photos deleted locally are NOT deleted on Immich
     -- This should open a dialog leaving the choice to the user.
+end
+
+function PublishTask.validatePublishedCollectionName(name)
+    return true, '' -- TODO
+end
+
+function PublishTask.reparentPublishedCollection(publishSettings, info)
 end

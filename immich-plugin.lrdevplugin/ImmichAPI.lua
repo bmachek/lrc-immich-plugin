@@ -5,11 +5,17 @@ ImmichAPI.__index = ImmichAPI
 
 function ImmichAPI:new(url, apiKey)
     local o = setmetatable({}, ImmichAPI)
-    self.apiKey = apiKey
     self.deviceIdString = 'Lightroom Immich Upload Plugin'
     self.apiBasePath = '/api'
+    self.apiKey = apiKey
     self.url = url
     return o
+end
+
+function ImmichAPI:reconfigure(url, apiKey)
+    self.apiKey = apiKey
+    self.url = url
+    log:trace('Immich reconfigured with ' .. self.url)
 end
 
 local function generateMultiPartBody(b, formData, filePath)
@@ -97,8 +103,13 @@ end
 
 function ImmichAPI:checkConnectivity()
     log:trace('checkConnectivity: Sending getMyUser request')
-
     log:trace('ImmichAPI: Preparing GET request /users/me')
+
+    if util.nilOrEmpty(self.url) or util.nilOrEmpty(self.apiKey) then
+        log:error('checkConnectivity: test failed.')
+        return false
+    end
+
     local response, headers = LrHttp.get(self.url .. self.apiBasePath .. '/users/me', ImmichAPI:createHeaders())
 
     if headers.status == 200 then
@@ -500,12 +511,15 @@ function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
     end
 end
 
-
+function ImmichAPI.immichConnected()
+    if immich == nil then
+        return false
+    elseif immich:checkConnectivity() then
+        return true
+    else 
+        return false
+    end
+end
 
 -- Global instance of connection to immich.
-_G.immich = nil
-_G.immichConfigured = false
-if not util.nilOrEmpty(prefs.url) and not util.nilOrEmpty(prefs.apiKey) then
-    _G.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
-    _G.immichConfigured = true
-end
+_G.immich = ImmichAPI:new(prefs.url, prefs.apiKey)

@@ -139,6 +139,9 @@ end
 function PluginInfoDialogSections.endDialog(propertyTable)
     prefs.apiKey = propertyTable.apiKey
     prefs.url = propertyTable.url
+
+    immich:reconfigure(prefs.url, prefs.apiKey)
+
     prefs.logging = propertyTable.logging
     if propertyTable.logging then
         log:enable('logfile')
