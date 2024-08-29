@@ -6,6 +6,10 @@ local log = import 'LrLogger'( 'ImmichPlugin' )
 log:enable ( 'logfile' )
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
+    if not immich:checkConnectivity() then
+        LrDialogs.error('Immich connection not set up.')
+        return nil
+    end
 
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
@@ -93,8 +97,11 @@ function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, 
 end
 
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
+    if not immich:checkConnectivity() then
+        return nil
+    end
 
-    local activities = ImmichAPI:getActivities( xxx ) -- Do know (yet), how to get to the albumId
+    local activities = immich:getActivities( xxx ) -- Do know (yet), how to get to the albumId
 
     for i = 1, #decoded do
         local type = decoded[i].type
@@ -108,6 +115,10 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
 end
 	
 function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
+    if not immich:checkConnectivity() then
+        LrDialogs.error('Immich connection not set up.')
+        return nil
+    end
     local catalog = LrApplication.activeCatalog()
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
     local publishedPhotos = publishedCollection.getPublishedPhotos()
@@ -120,10 +131,18 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
 end
 
 function PublishTask.deletePublishedCollection(publishSettings, info)
+    if not immich:checkConnectivity() then
+        LrDialogs.error('Immich connection not set up.')
+        return nil
+    end
     ImmichAPI:deleteAlbum(info.remoteId)
 end
 
 function PublishTask.renamePublishedCollection(publishSettings, info)
+    if not immich:checkConnectivity() then
+        LrDialogs.error('Immich connection not set up.')
+        return nil
+    end
     ImmichAPI:renameAlbum(info.remoteId, info.name)
 end
 

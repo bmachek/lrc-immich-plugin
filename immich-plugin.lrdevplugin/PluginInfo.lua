@@ -2,6 +2,6 @@ require "PluginInfoDialogSections"
 
 return {
     startDialog = PluginInfoDialogSections.startDialog,
-    -- endDialog = PluginInfoDialogSections.endDialog,
+    endDialog = PluginInfoDialogSections.endDialog,
     sectionsForTopOfDialog = PluginInfoDialogSections.sectionsForTopOfDialog,
 }

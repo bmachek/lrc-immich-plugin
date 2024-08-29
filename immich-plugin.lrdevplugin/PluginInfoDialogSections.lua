@@ -10,8 +10,6 @@ function storeValue(propertyTable, key, val)
     elseif key == 'apiKey' then
         propertyTable.immich.apiKey(val)
     end
-
-    prefs[key] = val
 end
 
 
@@ -53,14 +51,13 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					title = 'Test connection',
 					action = function (button)
 						LrTasks.startAsyncTask(function ()
-                            if propertyTable.immich then
-                                if propertyTable.immich:checkConnectivity() then
-                                    LrDialogs.message('Connection test successful')
-                                else
-                                    LrDialogs.message('Connection test NOT successful')
-                                end
+                            local testImmich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+                            if testImmich:checkConnectivity() then
+                                LrDialogs.message('Connection test successful')
+                            else
+                                LrDialogs.message('Connection test NOT successful')
                             end
-						end)
+                        end)
 					end,
 				},
             },
@@ -107,8 +104,8 @@ function PluginInfoDialogSections.startDialog(propertyTable)
     end
 end
 
--- function PluginInfoDialogSections.endDialog(propertyTable)
---     prefs.apiKey = propertyTable.apiKey
---     prefs.url = propertyTable.url
--- end
+function PluginInfoDialogSections.endDialog(propertyTable)
+    prefs.apiKey = propertyTable.apiKey
+    prefs.url = propertyTable.url
+end
 

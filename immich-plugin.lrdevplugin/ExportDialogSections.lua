@@ -33,7 +33,11 @@ function ExportDialogSections.startDialog(propertyTable)
 
 	LrTasks.startAsyncTask(function ()
 		-- propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
-		propertyTable.albums = immich:getAlbums()
+		if immich:checkConnectivity() then
+			propertyTable.albums = immich:getAlbums()
+		else
+			LrDialogs.error('Immich connection not set up.')
+		end		
 	end)
 
 

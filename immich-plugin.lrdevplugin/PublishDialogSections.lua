@@ -1,4 +1,3 @@
--- require "ImmichAPI"
 
 PublishDialogSections = {}
 
@@ -45,7 +44,7 @@ function PublishDialogSections.sectionsForTopOfDialog( _, propertyTable )
 						
 			f:row {
 				f:static_text {
-					title = LOC "$$$/ImmichUpload/ExportDialog/URL=URL:",
+					title = "URL:",
 					alignment = 'right',
 					width = share 'labelWidth'
 				},

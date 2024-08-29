@@ -17,7 +17,7 @@ return {
 	-- shouldRenderPhoto = true, -- Sufficient???
 
 	startDialog = PublishDialogSections.startDialog,
-	sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
+	-- sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
 
 
 	processRenderedPhotos = PublishTask.processRenderedPhotos,
