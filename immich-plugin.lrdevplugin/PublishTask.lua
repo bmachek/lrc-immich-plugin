@@ -2,8 +2,6 @@ require "ImmichAPI"
 -- require "MetadataTask"
 
 PublishTask = {}
-local log = import 'LrLogger'( 'ImmichPlugin' )
-log:enable ( 'logfile' )
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
     if not immich:checkConnectivity() then

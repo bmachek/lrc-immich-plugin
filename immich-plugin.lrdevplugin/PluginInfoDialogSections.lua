@@ -91,8 +91,13 @@ function PluginInfoDialogSections.startDialog(propertyTable)
         prefs.apiKey = ''
     end
 
+    if prefs.logging == nil then
+        prefs.logging = false
+    end
+
     propertyTable.url = prefs.url
     propertyTable.apiKey = prefs.apiKey
+    propertyTable.logging = prefs.logging
 
     propertyTable:addObserver('url', storeValue)
     propertyTable:addObserver('apiKey', storeValue)
@@ -104,8 +109,41 @@ function PluginInfoDialogSections.startDialog(propertyTable)
     end
 end
 
+function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
+	
+    local bind = LrView.bind
+	local share = LrView.share
+
+    return {
+
+        {
+            bind_to_object = propertyTable,
+
+            title = "Immich Plugin Logging",
+
+            f:row {
+                f:checkbox {
+                    value = bind 'logging',
+                },
+                f:static_text {
+                    title = "Enable debug logging",
+                    alignment = 'right',
+                    width = share 'labelWidth'
+                },
+            },
+        },
+    }
+end
+
+
 function PluginInfoDialogSections.endDialog(propertyTable)
     prefs.apiKey = propertyTable.apiKey
     prefs.url = propertyTable.url
+    prefs.logging = propertyTable.logging
+    if propertyTable.logging then
+        log:enable('logfile')
+    else
+        log:disable()
+    end
 end
 
