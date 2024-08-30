@@ -199,7 +199,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
 
 	-- log:trace('uploadAsset: mimeChunks' .. util.dumpTable(mimeChunks))
     parsedResponse = ImmichAPI:doMultiPartPutRequest(apiPath, pathOrMessage, formData)
-    return parsedResponse.id
+    return immichId
 end
 
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
