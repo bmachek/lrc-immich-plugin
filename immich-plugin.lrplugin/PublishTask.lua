@@ -12,7 +12,6 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
     local publishedCollection = exportContext.publishedCollection
-    -- local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
     local albumId = publishedCollection:getRemoteId()
     local albumName = publishedCollection:getName()
     local albumAssetIds

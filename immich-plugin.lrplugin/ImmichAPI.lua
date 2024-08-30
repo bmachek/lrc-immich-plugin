@@ -366,7 +366,8 @@ function ImmichAPI:checkIfAlbumExists(albumId)
     end 
     log:trace("ImmichAPI: checkIfAlbumExists")
     local albumInfo = ImmichAPI:doGetRequest('/albums/' .. albumId)
-    if albumInfo.id == nil then 
+
+    if albumInfo == nil then 
         return false
     else 
         return true
@@ -401,7 +402,9 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
     end
 
     log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
-    log:trace(postBody)
+    if not postBody == nil then
+        log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
+    end
     local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody), ImmichAPI:createHeaders())
     
     if headers.status == 201 or headers.status == 200 then
@@ -422,6 +425,10 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
     end
     log:trace('ImmichAPI: Preparing ' .. method .. ' request ' .. apiPath)
     local url = self.url .. self.apiBasePath .. apiPath
+
+    if not postBody == nil then
+        log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
+    end
 
     local response, headers = LrHttp.post(url, JSON:encode(postBody), ImmichAPI:createHeaders(), method, 5)
 

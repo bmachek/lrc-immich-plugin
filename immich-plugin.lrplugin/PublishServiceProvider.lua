@@ -5,23 +5,19 @@ return {
 	
 	hideSections = { 'exportLocation' },
 	allowFileFormats = nil, 
-	allowColorSpaces = nil,
-	canAddCommentsToService = true,
+	allowColorSpaces = nil,	
 	canExportVideo = true,
-	supportsIncrementalPublish = 'only',
-    small_icon = 'icons/logo.png',
 	supportsCustomSortOrder = false,
+	supportsIncrementalPublish = 'only',
+    
+	small_icon = 'icons/logo.png',
+	
 	titleForPublishedCollection = 'Immich album',
 	titleForPublishedSmartCollection = 'Immich album (Smart collection)',
 
-	-- shouldRenderPhoto = true, -- Sufficient???
-
-	-- startDialog = PublishDialogSections.startDialog,
-	-- sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
-
-
 	processRenderedPhotos = PublishTask.processRenderedPhotos,
 		
+	canAddCommentsToService = false,
 	-- addCommentToPublishedPhoto = PublishTask.addCommentToPublishedPhoto,
 	-- getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
 	
