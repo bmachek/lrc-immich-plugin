@@ -114,13 +114,13 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
         LrDialogs.showError('Immich connection not set up.')
         return nil
     end
+
     local catalog = LrApplication.activeCatalog()
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
-    local publishedPhotos = publishedCollection.getPublishedPhotos()
     
-    for i, photoId in ipairs( arrayOfPhotoIds ) do
-        if immich:removeAssetFromAlbum(publishedCollection.getRemoteId(), photoId) then
-            deletedCallback(photoId)
+    for i = 1, #arrayOfPhotoIds do
+        if immich:removeAssetFromAlbum(publishedCollection:getRemoteId(), arrayOfPhotoIds[i]) then
+            deletedCallback(arrayOfPhotoIds[i])
         end
     end
 end
