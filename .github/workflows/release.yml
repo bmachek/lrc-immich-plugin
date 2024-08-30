@@ -1,31 +1,52 @@
-on:
-  push:
-    # Sequence of patterns matched against refs/tags
-    tags:
-    - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+# Taken from https://github.com/midzelis/mi.Immich.Publisher/blob/main/.github/workflows/main.yml
+# Many thanks to Min Idzelis
 
+name: Create Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'The next release tag to use'
+        required: false
+        type: string
+  push:
+    branches:
+      - 'main'
+    tags:
+      - 'v*'
+
+# Ensures that only one deploy task per branch/environment will run at a time.
+concurrency:
+  group: environment-${{ github.ref }}
+  cancel-in-progress: true
+  
 jobs:
   build:
-    name: Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      packages: write
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-      - name: Build ZIP file
-        uses: vimtor/action-zip@v1.2
+
+      - name: Expose GitHub Runtime
+        uses: crazy-max/ghaction-github-runtime@v3
+      - name: Check out the repository to the runner
+        uses: actions/checkout@v4  
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
         with:
-          files: immich-plugin.lrdevplugin/
-          dest: immich-plugin.zip
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          custom_tag: ${{ inputs.tag }}
+      - name: Zip it up
+        run: zip -r 'immich-plugin.lrplugin.zip' immich-plugin.lrplugin -x '*.git*'
+      - name: Create a GitHub release
+        uses: ncipollo/release-action@v1
         with:
-          tag_name: ${{ github.ref }}
-          release_name: Release ${{ github.ref }}
-          body: Release ${{ github.ref }}
-          draft: false
-          prerelease: false
+          tag: ${{ steps.tag_version.outputs.new_tag }}
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          body: ${{ steps.tag_version.outputs.changelog }}
+          removeArtifacts: true
+          artifacts: "immich-plugin.lrplugin.zip"
+          allowUpdates: true
