@@ -162,7 +162,6 @@ function PublishTask.renamePublishedCollection(publishSettings, info)
         LrDialogs.showError('Immich connection not set up.')
         return nil
     end
-    log:trace(JSON:encode(publishSettings))
     ImmichAPI:renameAlbum(info.remoteId, info.name)
 end
 
