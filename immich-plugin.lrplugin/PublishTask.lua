@@ -178,3 +178,14 @@ end
 function PublishTask.reparentPublishedCollection(publishSettings, info)
 end
 
+function PublishTask.getCollectionBehaviorInfo(publishSettings)
+	return {
+        defaultCollectionName = 'default',
+		defaultCollectionCanBeDeleted = true,
+		canAddCollection = true,
+        -- Disallow nesting/collections sets, which make no sense, 
+        -- since Immich albums are not hierachical
+		maxCollectionSetDepth = 0, 
+	}
+end
+

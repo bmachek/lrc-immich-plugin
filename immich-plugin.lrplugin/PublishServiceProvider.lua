@@ -15,6 +15,8 @@ return {
 	titleForPublishedCollection = 'Immich album',
 	titleForPublishedSmartCollection = 'Immich album (Smart collection)',
 
+	getCollectionBehaviorInfo = PublishTask.getCollectionBehaviorInfo,
+
 	processRenderedPhotos = PublishTask.processRenderedPhotos,
 		
 	canAddCommentsToService = false,
