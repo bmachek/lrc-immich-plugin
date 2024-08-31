@@ -24,7 +24,6 @@ return {
 	getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
 	
 	deletePhotosFromPublishedCollection = PublishTask.deletePhotosFromPublishedCollection,
-	reparentPublishedCollection = PublishTask.reparentPublishedCollection,
 	deletePublishedCollection = PublishTask.deletePublishedCollection,
 	renamePublishedCollection = PublishTask.renamePublishedCollection,
 	shouldDeletePhotosFromServiceOnDeleteFromCatalog = PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog,

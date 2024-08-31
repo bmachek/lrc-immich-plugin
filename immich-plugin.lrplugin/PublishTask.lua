@@ -154,7 +154,10 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
         LrDialogs.showError('Immich connection not set up.')
         return nil
     end
-    ImmichAPI:deleteAlbum(info.remoteId)
+    -- remoteId is nil, if the collection isn't yet published.
+    if not info.remoteId == nil then
+        ImmichAPI:deleteAlbum(info.remoteId)
+    end
 end
 
 function PublishTask.renamePublishedCollection(publishSettings, info)
@@ -162,7 +165,11 @@ function PublishTask.renamePublishedCollection(publishSettings, info)
         LrDialogs.showError('Immich connection not set up.')
         return nil
     end
-    ImmichAPI:renameAlbum(info.remoteId, info.name)
+
+    -- remoteId is nil, if the collection isn't yet published.
+    if not info.remoteId == nil then
+        ImmichAPI:renameAlbum(info.remoteId, info.name)
+    end
 end
 
 
@@ -173,9 +180,6 @@ end
 
 function PublishTask.validatePublishedCollectionName(name)
     return true, '' -- TODO
-end
-
-function PublishTask.reparentPublishedCollection(publishSettings, info)
 end
 
 function PublishTask.getCollectionBehaviorInfo(publishSettings)
