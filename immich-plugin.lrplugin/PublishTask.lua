@@ -92,22 +92,46 @@ function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, 
 end
 
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
-    if not immich:checkConnectivity() then
-        return nil
-    end
 
-    local activities = immich:getActivities( xxx ) -- Do know (yet), how to get to the albumId
+    for i, photoInfo in ipairs(arrayOfPhotoInfo) do
+ 
+        -- Get all published Collections where the photo is included.
+        local publishedCollections = photoInfo.photo:getContainedPublishedCollections()
+        
+        local comments = {}
+        for j, publishedCollection in ipairs(publishedCollections) do
 
-    for i = 1, #decoded do
-        local type = decoded[i].type
+            local activities = ImmichAPI:getActivities(publishedCollection:getRemoteId(), photoInfo.publishedPhoto:getRemoteId())
+            if activities then
+                for k, activity in ipairs(activities) do
+                    local comment = {}
 
-        if type == 'comment' then
-            local user = decoded[i].user.name
-            local assetId = decoded[i].assetId
-            local comment = decoded[i].comment
+                    local year, month, day, hour, minute = string.sub(activity.createdAt, 1, 15):match("(%d+)%-(%d+)%-(%d+)%a(%d+)%:(%d+)")
+
+                    -- Convert from date string to EPOC to COCOA
+                    comment.dateCreated = os.time{year = year, month = month, day = day, hour = hour, min = minute} - 978307200
+                    comment.commentId = activity.id
+                    comment.username = activity.user.email
+                    comment.realname = activity.user.name
+                    
+                    if activity.type == 'comment' then
+                        comment.commentText = activity.comment
+                        table.insert(comments, comment)
+                    elseif activity.type == 'like' then
+                        comment.commentText = 'Like'
+                        table.insert(comments, comment)
+                    end
+
+                    -- log:trace(util.dumpTable(comment))
+                end
+            end
         end
+
+        -- Call Lightroom's callback function to register comments.
+        commentCallback { publishedPhoto = photoInfo, comments = comments }
     end
 end
+
 	
 function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
     if not immich:checkConnectivity() then
@@ -138,6 +162,7 @@ function PublishTask.renamePublishedCollection(publishSettings, info)
         LrDialogs.showError('Immich connection not set up.')
         return nil
     end
+    log:trace(JSON:encode(publishSettings))
     ImmichAPI:renameAlbum(info.remoteId, info.name)
 end
 
@@ -153,3 +178,4 @@ end
 
 function PublishTask.reparentPublishedCollection(publishSettings, info)
 end
+

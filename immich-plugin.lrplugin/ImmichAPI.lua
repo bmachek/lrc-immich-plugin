@@ -311,9 +311,13 @@ function ImmichAPI:getAlbums()
     end    
 end
 
-function ImmichAPI:getActivities(albumId)
+function ImmichAPI:getActivities(albumId, assetId)
+    local path = '/activities?albumId=' .. albumId
 
-    local path = 'activities?albumId=' .. albumId
+    if assetId then
+        path = path .. '&assetId=' .. assetId
+    end
+
     local parsedResponse = ImmichAPI:doGetRequest(path)
     return parsedResponse
 end
@@ -349,8 +353,7 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
 end
 
 function ImmichAPI:getLocalIdForAssetId(assetId)
-    path = '/assets/' .. assetId
-    local parsedResponse = ImmichAPI:doGetRequest(path)
+    local parsedResponse = ImmichAPI:getAssetInfo(assetId)
 
     if not parsedResponse == nil then
         return parsedResponse.deviceAssetId
@@ -359,6 +362,12 @@ function ImmichAPI:getLocalIdForAssetId(assetId)
     return nil
 end
 
+
+function ImmichAPI:getAssetInfo(assetId)
+    path = '/assets/' .. assetId
+    local parsedResponse = ImmichAPI:doGetRequest(path)
+    return parsedResponse
+end
 
 function ImmichAPI:checkIfAlbumExists(albumId)
     if albumId == nil then

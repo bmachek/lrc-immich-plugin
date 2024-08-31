@@ -19,7 +19,7 @@ return {
 		
 	canAddCommentsToService = false,
 	-- addCommentToPublishedPhoto = PublishTask.addCommentToPublishedPhoto,
-	-- getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
+	getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
 	
 	deletePhotosFromPublishedCollection = PublishTask.deletePhotosFromPublishedCollection,
 	reparentPublishedCollection = PublishTask.reparentPublishedCollection,
