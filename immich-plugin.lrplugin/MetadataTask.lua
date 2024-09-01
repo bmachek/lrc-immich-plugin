@@ -5,7 +5,7 @@ local keyAssetId = 'immichAssetId'
 
 
 -- function MetadataTask.updateFromEarlierSchemaVersion(catalog, previousSchemaVersion, progressScope)
---     catalog:assertHasPrivateWriteAccess("ImmichPlugin.updateFromEarlierSchemaVersion") 
+--     catalog:assertHasPrivateWriteAccess("ImmichPlugin.updateFromEarlierSchemaVersion")
 
 --     if previousSchemaVersion == nil or previousSchemaVersion < 6 then
 --         log:trace("MetadataTask.updateFromEarlierSchemaVersion: Updating to version 5.")

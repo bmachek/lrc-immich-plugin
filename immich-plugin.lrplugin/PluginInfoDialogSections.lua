@@ -12,11 +12,9 @@ function storeValue(propertyTable, key, val)
     end
 end
 
-
 function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
-	
     local bind = LrView.bind
-	local share = LrView.share
+    local share = LrView.share
 
     return {
 
@@ -36,7 +34,7 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                     truncation = 'middle',
                     immediate = true,
                     width_in_chars = 40,
-                    validate = function (v, url) 
+                    validate = function(v, url)
                         sanitizedURL = propertyTable.immich:sanityCheckAndFixURL(url)
                         if sanitizedURL == url then
                             return true, url, ''
@@ -47,10 +45,10 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                         return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
                     end,
                 },
-				f:push_button {
-					title = 'Test connection',
-					action = function (button)
-						LrTasks.startAsyncTask(function ()
+                f:push_button {
+                    title = 'Test connection',
+                    action = function(button)
+                        LrTasks.startAsyncTask(function()
                             local testImmich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
                             if testImmich:checkConnectivity() then
                                 LrDialogs.message('Connection test successful')
@@ -58,10 +56,10 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
                                 LrDialogs.message('Connection test NOT successful')
                             end
                         end)
-					end,
-				},
+                    end,
+                },
             },
-            
+
             f:row {
                 f:static_text {
                     title = "API Key:",
@@ -80,10 +78,8 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
     }
 end
 
-
 function PluginInfoDialogSections.startDialog(propertyTable)
-
-    if prefs.url == nil then 
+    if prefs.url == nil then
         prefs.url = ''
     end
 
@@ -103,16 +99,15 @@ function PluginInfoDialogSections.startDialog(propertyTable)
     propertyTable:addObserver('apiKey', storeValue)
 
     if propertyTable.url and propertyTable.apiKey then
-        LrTasks.startAsyncTask(function ()
+        LrTasks.startAsyncTask(function()
             propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
         end)
     end
 end
 
 function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
-	
     local bind = LrView.bind
-	local share = LrView.share
+    local share = LrView.share
 
     return {
 
@@ -135,7 +130,6 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
     }
 end
 
-
 function PluginInfoDialogSections.endDialog(propertyTable)
     prefs.apiKey = propertyTable.apiKey
     prefs.url = propertyTable.url
@@ -149,4 +143,3 @@ function PluginInfoDialogSections.endDialog(propertyTable)
         log:disable()
     end
 end
-

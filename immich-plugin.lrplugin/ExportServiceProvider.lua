@@ -2,17 +2,17 @@ require "ExportDialogSections"
 require "ExportTask"
 
 return {
-	
+
 	hideSections = { 'exportLocation' },
 
-	allowFileFormats = nil, 
-	
+	allowFileFormats = nil,
+
 	allowColorSpaces = nil,
 
 	exportPresetFields = {
 		-- { key = 'url', default = prefs.url },
 		-- { key = "apiKey", default = prefs.apiKey },
-		{ key = 'album', default = nil },
+		{ key = 'album',     default = nil },
 		{ key = 'albumMode', default = nil },
 	},
 
@@ -21,7 +21,7 @@ return {
 	startDialog = ExportDialogSections.startDialog,
 	sectionsForTopOfDialog = ExportDialogSections.sectionsForTopOfDialog,
 	-- sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
-	
+
 	processRenderedPhotos = ExportTask.processRenderedPhotos,
 
 }

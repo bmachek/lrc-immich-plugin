@@ -3,7 +3,6 @@ require "ImmichAPI"
 ExportDialogSections = {}
 
 local function updateExportStatus(propertyTable)
-	
 	local message = nil
 
 	if message then
@@ -17,13 +16,11 @@ local function updateExportStatus(propertyTable)
 		propertyTable.hasNoError = true
 		propertyTable.LR_cantExportBecause = nil
 	end
-	
 end
 
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.startDialog(propertyTable)
-
 	propertyTable:addObserver('url', updateExportStatus)
 	propertyTable:addObserver('apiKey', updateExportStatus)
 	propertyTable:addObserver('album', updateExportStatus)
@@ -31,33 +28,31 @@ function ExportDialogSections.startDialog(propertyTable)
 	propertyTable:addObserver('albums', updateExportStatus)
 	propertyTable:addObserver('albumMode', updateExportStatus)
 
-	LrTasks.startAsyncTask(function ()
+	LrTasks.startAsyncTask(function()
 		-- propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
 		if immich:checkConnectivity() then
 			propertyTable.albums = immich:getAlbums()
 		else
 			LrDialogs.error('Immich connection not set up.')
-		end		
+		end
 	end)
 
 
 	updateExportStatus(propertyTable)
-	
 end
 
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
-
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local share = LrView.share
 
 	local result = {
-	
+
 		{
 			title = "Immich Server URL",
-						
+
 			f:row {
 				f:static_text {
 					title = "URL:",
@@ -70,7 +65,7 @@ function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
 					immediate = false,
 					width_in_chars = 40,
 					-- fill_horizontal = 1,
-					-- validate = function (v, url) 
+					-- validate = function (v, url)
 					-- 	sanitizedURL = propertyTable.immich:sanityCheckAndFixURL()
 					-- 	if sanitizedURL == url then
 					-- 		return true, url, ''
@@ -83,7 +78,7 @@ function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
 					enabled = false, -- Configuration moved to PluginInfo
 				},
 			},
-			
+
 			f:row {
 				f:static_text {
 					title = "API Key:",
@@ -101,21 +96,19 @@ function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
 			},
 		},
 	}
-	
+
 	return result
-	
 end
 
 -------------------------------------------------------------------------------
 
 
-function ExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
-
+function ExportDialogSections.sectionsForTopOfDialog(_, propertyTable)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 
 	local result = {
-	
+
 		{
 			title = "Immich Album Options",
 			f:column {
@@ -129,11 +122,11 @@ function ExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
 							f:popup_menu {
 								alignment = 'left',
 								immediate = true,
-								items = { 
-									{ title = 'Choose on export', value = 'onexport'},
-									{ title = 'Existing album', value = 'existing'},
-									{ title = 'Create new album', value = 'new'},
-									{ title = 'Do not use an album', value = 'none'},
+								items = {
+									{ title = 'Choose on export',    value = 'onexport' },
+									{ title = 'Existing album',      value = 'existing' },
+									{ title = 'Create new album',    value = 'new' },
+									{ title = 'Do not use an album', value = 'none' },
 								},
 								value = bind 'albumMode',
 							},
@@ -148,7 +141,7 @@ function ExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
 							fill_horizontal = 1,
 							value = bind 'album',
 							items = bind 'albums',
-							visible = LrBinding.keyEquals( "albumMode", "existing" ),
+							visible = LrBinding.keyEquals("albumMode", "existing"),
 							align = "left",
 						},
 						f:edit_field {
@@ -156,16 +149,14 @@ function ExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
 							width_in_chars = 20,
 							fill_horizontal = 1,
 							value = bind 'newAlbumName',
-							visible = LrBinding.keyEquals( "albumMode", "new" ),
+							visible = LrBinding.keyEquals("albumMode", "new"),
 							align = "left",
 						},
-					}, 
+					},
 				},
 			},
 		},
 	}
-	
-	return result
-	
-end
 
+	return result
+end

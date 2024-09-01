@@ -1,4 +1,3 @@
-
 return {
 
 	LrSdkVersion = 3.0,
@@ -7,14 +6,14 @@ return {
 	LrToolkitIdentifier = 'lrc-immich-plugin',
 
 	LrPluginName = "Immich",
-	
+
 	LrInitPlugin = "Init.lua",
 
 	LrExportServiceProvider = {
 		{
 			title = "Immich Exporter",
 			file = 'ExportServiceProvider.lua',
-		},	
+		},
 		{
 			title = "Immich Publisher",
 			file = 'PublishServiceProvider.lua',
@@ -26,7 +25,7 @@ return {
 	LrPluginInfoProvider = 'PluginInfo.lua',
 
 	LrPluginInfoURL = 'https://github.com/bmachek/lrc-immich-plugin',
-	
-	VERSION = { major=2, minor=0, revision=0, build="", },
+
+	VERSION = { major = 2, minor = 0, revision = 0, build = "", },
 
 }

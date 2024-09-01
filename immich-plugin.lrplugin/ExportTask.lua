@@ -20,8 +20,8 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     local nPhotos = exportSession:countRenditions()
     local progressScope = exportContext:configureProgress {
         title = nPhotos > 1
-               and "Exporting " .. nPhotos .. " photos to " .. prefs.url
-               or "Exporting one photo to " .. prefs.url
+            and "Exporting " .. nPhotos .. " photos to " .. prefs.url
+            or "Exporting one photo to " .. prefs.url
     }
 
     -- local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
@@ -31,7 +31,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     local useAlbum = false
     if exportParams.albumMode == 'onexport' then
         log:trace('Showing album options dialog.')
-        local result = LrFunctionContext.callWithContext( 'albumChooser', function(context) 
+        local result = LrFunctionContext.callWithContext('albumChooser', function(context)
             local f = LrView.osFactory()
             exportParams.albumMode = 'none'
             exportParams.albums = immich:getAlbums()
@@ -40,78 +40,77 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 bind_to_object = exportParams,
                 f:row {
                     spacing = f:label_spacing(),
+                    f:static_text {
+                        title = 'Mode: ',
+                        alignment = "right",
+                        width = LrView.share "label_width",
+                    },
+                    f:popup_menu {
+                        width_in_chars = 20,
+                        alignment = 'left',
+                        items = {
+                            { title = 'Do not use an album', value = 'none' },
+                            { title = 'Existing album',      value = 'existing' },
+                            { title = 'Create new album',    value = 'new' },
+                        },
+                        value = LrView.bind('albumMode'),
+                        immediate = true,
+                    },
+                },
+                f:row {
+                    spacing = f:label_spacing(),
+                    f:column {
+                        place = "overlapping",
                         f:static_text {
-                            title = 'Mode: ',
+                            title = 'Choose album: ',
                             alignment = "right",
                             width = LrView.share "label_width",
+                            visible = LrBinding.keyEquals("albumMode", "existing"),
                         },
+                        f:static_text {
+                            title = 'Album name: ',
+                            alignment = "right",
+                            width = LrView.share "label_width",
+                            visible = LrBinding.keyEquals("albumMode", "new"),
+                        },
+                    },
+                    f:column {
+                        place = "overlapping",
                         f:popup_menu {
+                            truncation = 'middle',
                             width_in_chars = 20,
-                            alignment = 'left',
-                            items = { 
-                                { title = 'Do not use an album', value = 'none'},
-                                { title = 'Existing album', value = 'existing'},
-                                { title = 'Create new album', value = 'new'},
-                            },
-                            value = LrView.bind('albumMode'),
+                            fill_horizontal = 1,
+                            value = LrView.bind('album'),
+                            items = LrView.bind('albums'),
+                            visible = LrBinding.keyEquals("albumMode", "existing"),
+                            align = "left",
+                            immediate = true,
+                        },
+                        f:edit_field {
+                            truncation = 'middle',
+                            width_in_chars = 20,
+                            fill_horizontal = 1,
+                            value = LrView.bind('newAlbumName'),
+                            visible = LrBinding.keyEquals("albumMode", "new"),
+                            align = "left",
                             immediate = true,
                         },
                     },
-                f:row {
-                    spacing = f:label_spacing(),
-                        f:column {            
-                            place = "overlapping",   
-                            f:static_text {
-                                title = 'Choose album: ',
-                                alignment = "right",
-                                width = LrView.share "label_width",
-                                visible = LrBinding.keyEquals( "albumMode", "existing"),
-                            },
-                            f:static_text {
-                                title = 'Album name: ',
-                                alignment = "right",
-                                width = LrView.share "label_width",
-                                visible = LrBinding.keyEquals( "albumMode", "new"),
-                            },
-                        },
-                        f:column {
-                            place = "overlapping",
-                            f:popup_menu {
-                                truncation = 'middle',
-                                width_in_chars = 20,
-                                fill_horizontal = 1,
-                                value = LrView.bind('album'),
-                                items = LrView.bind('albums'),
-                                visible = LrBinding.keyEquals( "albumMode", "existing"),
-                                align = "left",
-                                immediate = true,
-                            },
-                            f:edit_field {
-                                truncation = 'middle',
-                                width_in_chars = 20,
-                                fill_horizontal = 1,
-                                value = LrView.bind('newAlbumName'),
-                                visible = LrBinding.keyEquals( "albumMode", "new" ),
-                                align = "left",
-                                immediate = true,
-                            },
-                        },
-                    },
-                }
-                
-            local result = LrDialogs.presentModalDialog( 
+                },
+            }
+
+            local result = LrDialogs.presentModalDialog(
                 {
                     title = "Immich album options",
                     contents = dialogContent,
                 }
             )
 
-            if not ( result == 'ok' ) then
+            if not (result == 'ok') then
                 LrDialogs.message('Export canceled.')
-                return false 
+                return false
             end
-
-        end, exportParams )
+        end, exportParams)
 
         if result == false then
             return
@@ -137,17 +136,17 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     -- Iterate through photo renditions.
     local failures = {}
     local atLeastSomeSuccess = false
-    
-    for _, rendition in exportContext:renditions{ stopIfCanceled = true } do
-    
+
+    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         -- Wait for next photo to render.
         local success, pathOrMessage = rendition:waitForRender()
-        
+
         -- Check for cancellation again after photo has been rendered.
         if progressScope:isCanceled() then break end
-        
+
         if success then
-            local existingId, existingDeviceId = immich:checkIfAssetExists(rendition.photo.localIdentifier, rendition.photo:getFormattedMetadata( "fileName" ), rendition.photo:getFormattedMetadata( "dateCreated" ))
+            local existingId, existingDeviceId = immich:checkIfAssetExists(rendition.photo.localIdentifier,
+                rendition.photo:getFormattedMetadata("fileName"), rendition.photo:getFormattedMetadata("dateCreated"))
             local id
 
             if existingId == nil then
@@ -159,7 +158,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
             if not id then
                 -- If we can't upload that file, log it.
                 table.insert(failures, pathOrMessage)
-            else 
+            else
                 atLeastSomeSuccess = true
                 -- MetadataTask.setImmichAssetId(rendition.photo, id)
                 if useAlbum then
@@ -167,12 +166,10 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                     immich:addAssetToAlbum(albumId, id)
                 end
             end
-                    
+
             -- When done with photo, delete temp file.
             LrFileUtils.delete(pathOrMessage)
-                    
         end
-        
     end
 
     -- If no upload succeeded, delete album if newly created.
@@ -191,5 +188,4 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
         end
         LrDialogs.message(message, table.concat(failures, "\n"))
     end
-    
 end

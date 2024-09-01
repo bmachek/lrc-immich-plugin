@@ -1,3 +1,4 @@
+---@diagnostic disable: undefined-global
 
 -- Global imports
 _G.LrHttp = import 'LrHttp'
@@ -20,12 +21,15 @@ require "util"
 
 -- Global initializations
 _G.prefs = _G.LrPrefs.prefsForPlugin()
-_G.log = import 'LrLogger'('ImmichPlugin')
+_G.log = import 'LrLogger' ('ImmichPlugin')
 if _G.prefs.logging == nil then
     _G.prefs.logging = false
 end
-if _G.prefs.logging then _G.log:enable('logfile')
-else _G.log:disable() end
+if _G.prefs.logging then
+    _G.log:enable('logfile')
+else
+    _G.log:disable()
+end
 
 if _G.prefs.apiKey == nil then _G.prefs.apiKey = '' end
 if _G.prefs.url == nil then _G.prefs.url = '' end

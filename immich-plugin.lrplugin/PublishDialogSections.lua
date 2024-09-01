@@ -1,9 +1,7 @@
-
 PublishDialogSections = {}
 
 
-local function updatePublishStatus( propertyTable )
-	
+local function updatePublishStatus(propertyTable)
 	local message = nil
 
 	if message then
@@ -17,31 +15,26 @@ local function updatePublishStatus( propertyTable )
 		propertyTable.hasNoError = true
 		propertyTable.LR_cantExportBecause = nil
 	end
-	
 end
 
 
-function PublishDialogSections.startDialog( propertyTable )
+function PublishDialogSections.startDialog(propertyTable)
+	propertyTable:addObserver('url', updatePublishStatus)
+	propertyTable:addObserver('apiKey', updatePublishStatus)
 
-	propertyTable:addObserver( 'url', updatePublishStatus )
-	propertyTable:addObserver( 'apiKey', updatePublishStatus )
-
-	updatePublishStatus( propertyTable )
-	
+	updatePublishStatus(propertyTable)
 end
 
-
-function PublishDialogSections.sectionsForTopOfDialog( _, propertyTable )
-
+function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
 	local share = LrView.share
 
 	local result = {
-	
+
 		{
 			title = "Immich Server URL",
-						
+
 			f:row {
 				f:static_text {
 					title = "URL:",
@@ -54,7 +47,7 @@ function PublishDialogSections.sectionsForTopOfDialog( _, propertyTable )
 					immediate = false,
 					width_in_chars = 40,
 					-- fill_horizontal = 1,
-					-- validate = function (v, url) 
+					-- validate = function (v, url)
 					-- 	sanitizedURL = propertyTable.immich:sanityCheckAndFixURL()
 					-- 	if sanitizedURL == url then
 					-- 		return true, url, ''
@@ -67,7 +60,7 @@ function PublishDialogSections.sectionsForTopOfDialog( _, propertyTable )
 					enabled = false, -- Move configuration to Module Manager / PluginInfo
 				},
 			},
-			
+
 			f:row {
 				f:static_text {
 					title = "API Key:",
@@ -86,7 +79,6 @@ function PublishDialogSections.sectionsForTopOfDialog( _, propertyTable )
 			},
 		},
 	}
-	
+
 	return result
-	
 end
