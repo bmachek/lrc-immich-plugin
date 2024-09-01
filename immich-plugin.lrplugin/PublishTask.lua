@@ -97,7 +97,7 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
         for j, publishedCollection in ipairs(publishedCollections) do
             local activities = ImmichAPI:getActivities(publishedCollection:getRemoteId(),
                 photoInfo.publishedPhoto:getRemoteId())
-            if activities then
+            if not activities == nil  then
                 for k, activity in ipairs(activities) do
                     local comment = {}
 
