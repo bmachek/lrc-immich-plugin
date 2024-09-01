@@ -163,8 +163,11 @@ function ImmichAPI:uploadAsset(pathOrMessage, localId)
         { name = 'isFavorite',     value = 'false' }
     }
 
-    parsedResponse = ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
-    return parsedResponse.id
+    local parsedResponse = ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
+    if not parsedResponse == nil then
+        return parsedResponse.id
+    end
+    return nil
 end
 
 function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
@@ -197,7 +200,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
     }
 
     -- log:trace('uploadAsset: mimeChunks' .. util.dumpTable(mimeChunks))
-    parsedResponse = ImmichAPI:doMultiPartPutRequest(apiPath, pathOrMessage, formData)
+    local parsedResponse = ImmichAPI:doMultiPartPutRequest(apiPath, pathOrMessage, formData)
     return immichId
 end
 
@@ -356,7 +359,7 @@ function ImmichAPI:getLocalIdForAssetId(assetId)
 end
 
 function ImmichAPI:getAssetInfo(assetId)
-    path = '/assets/' .. assetId
+    local path = '/assets/' .. assetId
     local parsedResponse = ImmichAPI:doGetRequest(path)
     return parsedResponse
 end
@@ -386,9 +389,11 @@ function ImmichAPI:getAlbumAssetIds(albumId)
     local albumInfo = ImmichAPI:doGetRequest('/albums/' .. albumId)
     local assetIds = {}
 
-    if albumInfo.assets ~= nil then
-        for i = 1, #albumInfo.assets do
-            tables.insert(assetIds, albumInfo.assets[i].id)
+    if albumInfo  ~= nil then
+        if albumInfo.assets ~= nil then
+            for i = 1, #albumInfo.assets do
+                tables.insert(assetIds, albumInfo.assets[i].id)
+            end
         end
     end
 
