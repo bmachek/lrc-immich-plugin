@@ -36,10 +36,15 @@ local function generateMultiPartBody(b, formData, filePath)
     end
 
     local fh = io.open(filePath, "rb")
-    local fileContent = fh:read("*all")
-    fh:close()
+    local fileContent = ''
+    if fh then
+        fileContent = fh:read("*all")
 
-    log:trace(fileContent)
+    else
+        log:error('Unable to open file: '.. filePath)
+    end
+
+    -- log:trace(fileContent)
 
     body = body .. boundary
     body = body .. 'Content-Disposition: form-data; name="assetData"; filename="' .. fileName .. '"\r\n'
@@ -261,11 +266,10 @@ function ImmichAPI:createAlbum(albumName)
     local postBody = { albumName = albumName }
 
     local parsedResponse = ImmichAPI:doPostRequest(apiPath, postBody)
-    if parsedResponse == nil then 
-        return nil
-    else 
+    if parsedResponse ~= nil then
         return parsedResponse.id
     end
+    return nil
 end
 
 function ImmichAPI:deleteAlbum(albumId)
@@ -355,7 +359,7 @@ end
 function ImmichAPI:getLocalIdForAssetId(assetId)
     local parsedResponse = ImmichAPI:getAssetInfo(assetId)
 
-    if not parsedResponse == nil then
+    if parsedResponse ~= nil then
         return parsedResponse.deviceAssetId
     end
 
@@ -394,7 +398,7 @@ function ImmichAPI:getAlbumAssetIds(albumId)
     local albumInfo = ImmichAPI:doGetRequest('/albums/' .. albumId)
     local assetIds = {}
 
-    if not albumInfo.assets == nil then
+    if albumInfo.assets ~= nil then
         for i = 1, #albumInfo.assets do
             tables.insert(assetIds, albumInfo.assets[i].id)
         end

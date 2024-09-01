@@ -83,7 +83,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                                 value = LrView.bind('album'),
                                 items = LrView.bind('albums'),
                                 visible = LrBinding.keyEquals( "albumMode", "existing"),
-                                align = left,
+                                align = "left",
                                 immediate = true,
                             },
                             f:edit_field {
@@ -92,7 +92,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                                 fill_horizontal = 1,
                                 value = LrView.bind('newAlbumName'),
                                 visible = LrBinding.keyEquals( "albumMode", "new" ),
-                                align = left,
+                                align = "left",
                                 immediate = true,
                             },
                         },

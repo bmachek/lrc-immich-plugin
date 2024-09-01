@@ -149,7 +149,7 @@ function ExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
 							value = bind 'album',
 							items = bind 'albums',
 							visible = LrBinding.keyEquals( "albumMode", "existing" ),
-							align = left,
+							align = "left",
 						},
 						f:edit_field {
 							truncation = 'middle',
@@ -157,7 +157,7 @@ function ExportDialogSections.sectionsForTopOfDialog( _, propertyTable )
 							fill_horizontal = 1,
 							value = bind 'newAlbumName',
 							visible = LrBinding.keyEquals( "albumMode", "new" ),
-							align = left,
+							align = "left",
 						},
 					}, 
 				},
