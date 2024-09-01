@@ -392,7 +392,7 @@ function ImmichAPI:getAlbumAssetIds(albumId)
     if albumInfo  ~= nil then
         if albumInfo.assets ~= nil then
             for i = 1, #albumInfo.assets do
-                tables.insert(assetIds, albumInfo.assets[i].id)
+                table.insert(assetIds, albumInfo.assets[i].id)
             end
         end
     end
