@@ -1,6 +1,7 @@
 # lrc-immich-plugin
 
 A Lightroom Classic plugin created with Lightroom SDK which uploads images to an Immich Server via the Immich API.
+It supports exporting as well as publishing.
 
 ## Support my work
 
@@ -18,31 +19,39 @@ Windows
 
 Alternatively extract it somewhere good an go to Lightroom Module Manager and add it via the GUI.
 
-Either there should be a plugin called "Immich plugin" in the list, one you're finished.
+Either there should be a plugin called "Immich" in the list, one you're finished.
 
 ## Features
 
-* Setup connection to your Immich instance via URL and API key.
-* Optionally choose or create an album to use on export to Immich.
-* Export/Upload images to Immich.
-* Reupload of an existing image lead to replacing the image in Immich.
+* Setup connection to your Immich instance via URL and API key in the Lightroom module manager
+
+* Publish images:
+    * Create/rename/delete album according to published collection.
+    * Upload/update/delete images from the published collection.
+    * Download comments and likes from Immich to Lightroom. (If album is a shared album.)
+
+* Export images:
+    * Optionally choose or create an album to use on export to Immich.
+    * Replace existing images.
+    * Duplicate detection via Lightroom catalog ID, and based on date and filename.
+
+* Upcoming features:
+    * Set Immich album title image from Lightroom in Published collection.
+    * Let user decide/configure if "unpublished" images should be deleted.
+    * (Maybe) Additional album options like sharing in the Published Collection settings dialog.
+    * (Maybe) [Your feature](https://github.com/bmachek/lrc-immich-plugin/discussions/16)
 
 ## Usage
 
-After you successfully installed the plugin, you can create an export preset in Lightroom.
+After you successfully installed the plugin, enter the server url and [API key](https://immich.app/docs/features/command-line-interface#obtain-the-api-key) in the Lightroom module manager.
+Create Immich export preset (Choose Export to: Immich Exporter) or set up Immich publish service.
 
-![Screenshot](screenshots/export-preset.png "Screenshot")
+Configuration and usage should be pretty straight forward, if you know Lightroom. If not, let me know. ;-)
 
-Basically you have to set three parameters:
-
-* Set Export To: Immich Server (in the dropdown at the top)
-* Enter the immich http URL where the web frontend is reachable.
-* Enter an API key for your Immich account. ([This has to be setup in Immich.](https://immich.app/docs/features/command-line-interface#obtain-the-api-key))
-* Optionally choose to create an album, choose an exisiting album, choose on export, or do not use any albums on upload.
-
-Once you're done entering the details, edit the usual Lightroom export parameters to your need, and save the preset.
 
 ## CREDITS
+
+All contributors.
 
 [Jeffrey Friedl for JSON.lua](http://regex.info/blog/lua/json)
 
@@ -50,10 +59,5 @@ Once you're done entering the details, edit the usual Lightroom export parameter
 
 [Min Idzelis for giving me ideas with his Immich Plugin](https://github.com/midzelis/mi.Immich.Publisher)
 
-
-## FINISHED
-
-You should be able to export images directly to your Immich server.
-If not open an issue, please.
 
 
