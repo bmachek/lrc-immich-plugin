@@ -164,7 +164,7 @@ function ImmichAPI:uploadAsset(pathOrMessage, localId)
     }
 
     local parsedResponse = ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
-    if not parsedResponse == nil then
+    if parsedResponse ~= nil then
         return parsedResponse.id
     end
     return nil
@@ -201,7 +201,10 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
 
     -- log:trace('uploadAsset: mimeChunks' .. util.dumpTable(mimeChunks))
     local parsedResponse = ImmichAPI:doMultiPartPutRequest(apiPath, pathOrMessage, formData)
-    return immichId
+    if parsedResponse ~= nil then
+        return immichId
+    end
+    return nil
 end
 
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
@@ -346,6 +349,7 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
             return response.assets.items[1].id, response.assets.items[1].deviceAssetId
         end
     end
+    return nil
 end
 
 function ImmichAPI:getLocalIdForAssetId(assetId)
@@ -408,7 +412,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
     end
 
     log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
-    if not postBody == nil then
+    if not postBody ~= nil then
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
     local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody),
