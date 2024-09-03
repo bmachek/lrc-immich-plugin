@@ -438,7 +438,7 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
     log:trace('ImmichAPI: Preparing ' .. method .. ' request ' .. apiPath)
     local url = self.url .. self.apiBasePath .. apiPath
 
-    if not postBody == nil then
+    if postBody ~= nil then
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
 

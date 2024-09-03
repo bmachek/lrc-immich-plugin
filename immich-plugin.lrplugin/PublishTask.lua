@@ -97,7 +97,7 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
         for j, publishedCollection in ipairs(publishedCollections) do
             local activities = ImmichAPI:getActivities(publishedCollection:getRemoteId(),
                 photoInfo.publishedPhoto:getRemoteId())
-            if not activities == nil  then
+            if activities ~= nil  then
                 for k, activity in ipairs(activities) do
                     local comment = {}
 
@@ -152,7 +152,7 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
         return nil
     end
     -- remoteId is nil, if the collection isn't yet published.
-    if not info.remoteId == nil then
+    if info.remoteId ~= nil then
         ImmichAPI:deleteAlbum(info.remoteId)
     end
 end
@@ -164,7 +164,7 @@ function PublishTask.renamePublishedCollection(publishSettings, info)
     end
 
     -- remoteId is nil, if the collection isn't yet published.
-    if not info.remoteId == nil then
+    if info.remoteId ~= nil then
         ImmichAPI:renameAlbum(info.remoteId, info.name)
     end
 end
