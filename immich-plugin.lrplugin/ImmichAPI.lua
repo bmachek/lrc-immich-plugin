@@ -412,7 +412,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
     end
 
     log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
-    if not postBody ~= nil then
+    if postBody ~= nil then
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
     local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody),
