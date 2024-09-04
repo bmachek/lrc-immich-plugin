@@ -10,7 +10,7 @@ return {
 	supportsCustomSortOrder = false,
 	supportsIncrementalPublish = 'only',
 
-	small_icon = 'icons/logo.png',
+	small_icon = 'icons/logo_small.png',
 
 	titleForPublishedCollection = 'Immich album',
 	titleForPublishedSmartCollection = 'Immich album (Smart collection)',
