@@ -16,8 +16,8 @@ end
 -- Utility function to dump tables as JSON scrambling the API key.
 function util.dumpTable(t)
     local s = inspect(t)
-    local pattern = '(field = "x%-api%-key",%s+value = ")%w+(")'
-    return s:gsub(pattern, '%1xxx%2')
+    local pattern = '(field = "x%-api%-key",%s+value = ")(%w%w%w%w%w%w%w%w%w%w%w)(%w+)(")'
+    return s:gsub(pattern, '%1%2...%4')
 end
 
 -- Utility function to log errors and throw user errors
@@ -39,4 +39,8 @@ function util.nilOrEmpty(val)
     else
         return val == nil
     end
+end
+
+function util.cutApiKey(key)
+    return string.sub(key, 1, 20) .. '...'
 end

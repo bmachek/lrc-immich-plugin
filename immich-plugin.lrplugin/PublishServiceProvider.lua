@@ -2,13 +2,20 @@ require "PublishDialogSections"
 require "PublishTask"
 
 return {
-
+	startDialog = PublishDialogSections.startDialog,
+	sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
 	hideSections = { 'exportLocation' },
 	allowFileFormats = nil,
 	allowColorSpaces = nil,
 	canExportVideo = true,
 	supportsCustomSortOrder = false,
 	supportsIncrementalPublish = 'only',
+
+
+	exportPresetFields = {
+		{ key = 'url', default = '' },
+		{ key = "apiKey", default = '' },
+	},
 
 	small_icon = 'icons/logo_small.png',
 

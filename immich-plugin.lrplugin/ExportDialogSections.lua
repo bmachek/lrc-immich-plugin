@@ -2,56 +2,46 @@ require "ImmichAPI"
 
 ExportDialogSections = {}
 
-local function updateExportStatus(propertyTable)
-	local message = nil
 
-	if message then
-		propertyTable.message = message
-		propertyTable.hasError = true
-		propertyTable.hasNoError = false
-		propertyTable.LR_cantExportBecause = message
-	else
-		propertyTable.message = nil
-		propertyTable.hasError = false
-		propertyTable.hasNoError = true
+local function _updateCantExportBecause(propertyTable)
+	LrTasks.startAsyncTask(function()
+		propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
+		if not propertyTable.immich:checkConnectivity() then
+			propertyTable.LR_cantExportBecause = "Immich connection not setup"
+			return
+		else
+			propertyTable.albums = propertyTable.immich:getAlbums()
+		end
+
 		propertyTable.LR_cantExportBecause = nil
-	end
+	end)
 end
 
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.startDialog(propertyTable)
-	propertyTable:addObserver('url', updateExportStatus)
-	propertyTable:addObserver('apiKey', updateExportStatus)
-	propertyTable:addObserver('album', updateExportStatus)
-	propertyTable:addObserver('newAlbumName', updateExportStatus)
-	propertyTable:addObserver('albums', updateExportStatus)
-	propertyTable:addObserver('albumMode', updateExportStatus)
 
 	LrTasks.startAsyncTask(function()
-		-- propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
-		if immich:checkConnectivity() then
-			propertyTable.albums = immich:getAlbums()
-		else
-			LrDialogs.error('Immich connection not set up.')
-		end
+		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+		propertyTable.albums = propertyTable.immich:getAlbums()
+		_updateCantExportBecause(propertyTable)
 	end)
-
-
-	updateExportStatus(propertyTable)
+	propertyTable:addObserver('url', _updateCantExportBecause)
+	propertyTable:addObserver('apiKey', _updateCantExportBecause)
+	
 end
 
 -------------------------------------------------------------------------------
 
-function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
-	local f = LrView.osFactory()
+function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 	local bind = LrView.bind
 	local share = LrView.share
 
 	local result = {
 
 		{
-			title = "Immich Server URL",
+			title = "Immich Server connection",
+			bind_to_object = propertyTable,
 
 			f:row {
 				f:static_text {
@@ -60,23 +50,34 @@ function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
 					width = share 'labelWidth'
 				},
 				f:edit_field {
-					value = prefs.url,
+					value = bind 'url',
 					truncation = 'middle',
-					immediate = false,
-					width_in_chars = 40,
-					-- fill_horizontal = 1,
-					-- validate = function (v, url)
-					-- 	sanitizedURL = propertyTable.immich:sanityCheckAndFixURL()
-					-- 	if sanitizedURL == url then
-					-- 		return true, url, ''
-					-- 	elseif not (sanitizedURL == nil) then
-					-- 		LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
-					-- 		return true, sanitizedURL, ''
-					-- 	end
-					-- 	return false, url, 'Entered URL not valid.\nShould look like https://demo.immich:app'
-					-- end,
-					enabled = false, -- Configuration moved to PluginInfo
+					immediate = true,
+					fill_horizontal = 1,
+					validate = function (v, url)
+						local sanitizedURL = propertyTable.immich:sanityCheckAndFixURL(url)
+						if sanitizedURL == url then
+							return true, url, ''
+						elseif not (sanitizedURL == nil) then
+							LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
+							return true, sanitizedURL, ''
+						end
+						return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+					end,
 				},
+				f:push_button {
+                    title = 'Test connection',
+                    action = function(button)
+                        LrTasks.startAsyncTask(function()
+                            propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
+                            if propertyTable.immich:checkConnectivity() then
+                                LrDialogs.message('Connection test successful')
+                            else
+                                LrDialogs.message('Connection test NOT successful')
+                            end
+                        end)
+                    end,
+                },
 			},
 
 			f:row {
@@ -84,14 +85,13 @@ function ExportDialogSections.sectionsForBottomOfDialog(_, propertyTable)
 					title = "API Key:",
 					alignment = 'right',
 					width = share 'labelWidth',
+					visible = bind 'hasNoError',
 				},
 				f:password_field {
-					value = prefs.apiKey,
+					value = bind 'apiKey',
 					truncation = 'middle',
 					immediate = true,
-					width_in_chars = 40,
-					-- fill_horizontal = 1,
-					enabled = false, -- Configuration moved to PluginInfo
+					fill_horizontal = 1,
 				},
 			},
 		},

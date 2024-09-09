@@ -10,8 +10,8 @@ return {
 	allowColorSpaces = nil,
 
 	exportPresetFields = {
-		-- { key = 'url', default = prefs.url },
-		-- { key = "apiKey", default = prefs.apiKey },
+		{ key = 'url', default = '' },
+		{ key = "apiKey", default = '' },
 		{ key = 'album',     default = nil },
 		{ key = 'albumMode', default = nil },
 	},
@@ -20,7 +20,7 @@ return {
 
 	startDialog = ExportDialogSections.startDialog,
 	sectionsForTopOfDialog = ExportDialogSections.sectionsForTopOfDialog,
-	-- sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
+	sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
 
 	processRenderedPhotos = ExportTask.processRenderedPhotos,
 

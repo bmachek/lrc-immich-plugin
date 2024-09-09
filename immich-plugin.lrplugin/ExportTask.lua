@@ -8,13 +8,16 @@ ExportTask = {}
 --------------------------------------------------------------------------------
 
 function ExportTask.processRenderedPhotos(functionContext, exportContext)
-    if not immich:checkConnectivity() then
-        LrDialogs.showError('Immich connection not set up.')
-        return nil
-    end
     -- Make a local reference to the export parameters.
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
+
+    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
+    if not immich:checkConnectivity() then
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        return nil
+    end
 
     -- Set progress title.
     local nPhotos = exportSession:countRenditions()

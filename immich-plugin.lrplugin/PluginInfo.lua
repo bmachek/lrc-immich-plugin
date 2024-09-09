@@ -4,6 +4,6 @@ return {
     startDialog = PluginInfoDialogSections.startDialog,
     endDialog = PluginInfoDialogSections.endDialog,
 
-    sectionsForTopOfDialog = PluginInfoDialogSections.sectionsForTopOfDialog,
+    -- sectionsForTopOfDialog = PluginInfoDialogSections.sectionsForTopOfDialog,
     sectionsForBottomOfDialog = PluginInfoDialogSections.sectionsForBottomOfDialog,
 }

@@ -1,39 +1,35 @@
 PublishDialogSections = {}
 
-
-local function updatePublishStatus(propertyTable)
-	local message = nil
-
-	if message then
-		propertyTable.message = message
-		propertyTable.hasError = true
-		propertyTable.hasNoError = false
-		propertyTable.LR_cantExportBecause = message
-	else
-		propertyTable.message = nil
-		propertyTable.hasError = false
-		propertyTable.hasNoError = true
+local function _updateCantExportBecause(propertyTable)
+	LrTasks.startAsyncTask(function()
+		propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
+		if not propertyTable.immich:checkConnectivity() then
+			propertyTable.LR_cantExportBecause = "Immich connection not setup"
+			return
+		end
 		propertyTable.LR_cantExportBecause = nil
-	end
+	end)
 end
 
 
 function PublishDialogSections.startDialog(propertyTable)
-	propertyTable:addObserver('url', updatePublishStatus)
-	propertyTable:addObserver('apiKey', updatePublishStatus)
-
-	updatePublishStatus(propertyTable)
+	LrTasks.startAsyncTask(function()
+		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+		_updateCantExportBecause(propertyTable)
+	end)
+	propertyTable:addObserver('url', _updateCantExportBecause)
+	propertyTable:addObserver('apiKey', _updateCantExportBecause)
 end
 
-function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
-	local f = LrView.osFactory()
+function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 	local bind = LrView.bind
 	local share = LrView.share
 
 	local result = {
 
 		{
-			title = "Immich Server URL",
+			title = "Immich Server connection",
+			bind_to_object = propertyTable,
 
 			f:row {
 				f:static_text {
@@ -44,21 +40,32 @@ function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
 				f:edit_field {
 					value = bind 'url',
 					truncation = 'middle',
-					immediate = false,
-					width_in_chars = 40,
-					-- fill_horizontal = 1,
-					-- validate = function (v, url)
-					-- 	sanitizedURL = propertyTable.immich:sanityCheckAndFixURL()
-					-- 	if sanitizedURL == url then
-					-- 		return true, url, ''
-					-- 	elseif not (sanitizedURL == nil) then
-					-- 		LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
-					-- 		return true, sanitizedURL, ''
-					-- 	end
-					-- 	return false, url, 'Entered URL not valid.\nShould look like https://demo.immich:app'
-					-- end,
-					enabled = false, -- Move configuration to Module Manager / PluginInfo
+					immediate = true,
+					fill_horizontal = 1,
+					validate = function (v, url)
+						local sanitizedURL = propertyTable.immich:sanityCheckAndFixURL(url)
+						if sanitizedURL == url then
+							return true, url, ''
+						elseif not (sanitizedURL == nil) then
+							LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
+							return true, sanitizedURL, ''
+						end
+						return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+					end,
 				},
+				f:push_button {
+                    title = 'Test connection',
+                    action = function(button)
+                        LrTasks.startAsyncTask(function()
+                            propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
+                            if propertyTable.immich:checkConnectivity() then
+                                LrDialogs.message('Connection test successful')
+                            else
+                                LrDialogs.message('Connection test NOT successful')
+                            end
+                        end)
+                    end,
+                },
 			},
 
 			f:row {
@@ -72,9 +79,7 @@ function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
 					value = bind 'apiKey',
 					truncation = 'middle',
 					immediate = true,
-					width_in_chars = 40,
-					-- fill_horizontal = 1,
-					enabled = false, -- Move configuration to Module Manager / PluginInfo
+					fill_horizontal = 1,
 				},
 			},
 		},
