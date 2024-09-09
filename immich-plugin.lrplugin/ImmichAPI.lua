@@ -14,7 +14,18 @@ end
 function ImmichAPI:reconfigure(url, apiKey)
     self.apiKey = apiKey
     self.url = url
-    log:trace('Immich reconfigured with ' .. self.url)
+    log:trace('Immich reconfigured with URL: ' .. self.url)
+    log:trace('Immich reconfigured with API key: ' .. util.cutApiKey(self.apiKey))
+end
+
+function ImmichAPI:setUrl(url)
+    self.url = url
+    log:trace('Immich new URL set: ' .. self.url)
+end
+
+function ImmichAPI:setApiKey(apiKey)
+    self.apiKey = apiKey
+    log:trace('Immich new API key set: ' .. util.cutApiKey(self.apiKey))
 end
 
 local function generateMultiPartBody(b, formData, filePath)
@@ -103,20 +114,27 @@ end
 
 function ImmichAPI:checkConnectivity()
     log:trace('checkConnectivity: Sending getMyUser request')
-    log:trace('ImmichAPI: Preparing GET request /users/me')
+    log:trace('ImmichAPI: Preparing GET request')
+    log:trace('URL: ' .. self.url .. self.apiBasePath .. '/users/me')
+    log:trace('API key: ' .. util.cutApiKey(self.apiKey))
 
-    if util.nilOrEmpty(self.url) or util.nilOrEmpty(self.apiKey) then
-        log:error('checkConnectivity: test failed.')
+    if self.url == '' or self.apiKey == '' then
+        log:error('checkConnectivity: test failed. URL and API key empty.')
         return false
     end
 
-    local response, headers = LrHttp.get(self.url .. self.apiBasePath .. '/users/me', ImmichAPI:createHeaders())
+    local requestHeaders = ImmichAPI.createHeaders(self)
+    log:trace('Request headers: ' .. util.dumpTable(requestHeaders))
+
+    local response, headers = LrHttp.get(self.url .. self.apiBasePath .. '/users/me', requestHeaders)
 
     if headers.status == 200 then
         log:trace('checkConnectivity: test OK.')
         return true
     else
         log:error('checkConnectivity: test failed.')
+        log:trace('Response headers: ' .. util.dumpTable(headers))
+        log:trace('Response body: ' .. response)
         return false
     end
 end
@@ -163,7 +181,7 @@ function ImmichAPI:uploadAsset(pathOrMessage, localId)
         { name = 'isFavorite',     value = 'false' }
     }
 
-    local parsedResponse = ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
+    local parsedResponse = ImmichAPI.doMultiPartPostRequest(self, apiPath, mimeChunks)
     if parsedResponse ~= nil then
         return parsedResponse.id
     end
@@ -200,7 +218,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
     }
 
     -- log:trace('uploadAsset: mimeChunks' .. util.dumpTable(mimeChunks))
-    local parsedResponse = ImmichAPI:doMultiPartPutRequest(apiPath, pathOrMessage, formData)
+    local parsedResponse = ImmichAPI.doMultiPartPutRequest(self, apiPath, pathOrMessage, formData)
     if parsedResponse ~= nil then
         return immichId
     end
@@ -221,7 +239,7 @@ function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
     local apiPath = '/albums/' .. albumId .. '/assets'
     local postBody = { ids = { assetId } }
 
-    local parsedResponse = ImmichAPI:doCustomRequest('DELETE', apiPath, postBody)
+    local parsedResponse = ImmichAPI.doCustomRequest(self, 'DELETE', apiPath, postBody)
     if parsedResponse == nil then
         -- log:error("Unable to remove asset (" .. assetId .. ") from album (" .. albumId .. ").")
         return false
@@ -244,7 +262,7 @@ function ImmichAPI:addAssetToAlbum(albumId, assetId)
     local apiPath = '/albums/' .. albumId .. '/assets'
     local postBody = { ids = { assetId } }
 
-    local parsedResponse = ImmichAPI:doCustomRequest('PUT', apiPath, postBody)
+    local parsedResponse = ImmichAPI.doCustomRequest(self, 'PUT', apiPath, postBody)
     if parsedResponse == nil then
         log:error("Unable to add asset (" .. assetId .. ") to album (" .. albumId .. ").")
         return false
@@ -262,7 +280,7 @@ function ImmichAPI:createAlbum(albumName)
     local apiPath = '/albums'
     local postBody = { albumName = albumName }
 
-    local parsedResponse = ImmichAPI:doPostRequest(apiPath, postBody)
+    local parsedResponse = ImmichAPI.doPostRequest(self, apiPath, postBody)
     if parsedResponse ~= nil then
         return parsedResponse.id
     end
@@ -272,7 +290,7 @@ end
 function ImmichAPI:deleteAlbum(albumId)
     local path = '/albums/' .. albumId
 
-    local parsedResponse = ImmichAPI:doCustomRequest('DELETE', path, {})
+    local parsedResponse = ImmichAPI.doCustomRequest(self, 'DELETE', path, {})
     if parsedResponse == nil then
         util.handleError("Unable to delete album (" .. albumId .. ").", "Error deleting album, please consult logs.")
         return false
@@ -298,7 +316,7 @@ end
 
 function ImmichAPI:getAlbums()
     local path = '/albums'
-    local parsedResponse = ImmichAPI:doGetRequest(path)
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
     local albums = {}
     if parsedResponse then
         for i = 1, #parsedResponse do
@@ -319,7 +337,7 @@ function ImmichAPI:getActivities(albumId, assetId)
         path = path .. '&assetId=' .. assetId
     end
 
-    local parsedResponse = ImmichAPI:doGetRequest(path)
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
     return parsedResponse
 end
 
@@ -327,7 +345,7 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
     local id = tostring(localId)
 
     local postBody = { deviceAssetId = id, deviceId = self.deviceIdString, isTrashed = false }
-    local response = ImmichAPI:doPostRequest('/search/metadata', postBody)
+    local response = ImmichAPI.doPostRequest(self, '/search/metadata', postBody)
 
     if not response then
         log:trace('Asset with deviceAssetId ' .. id .. ' not found. No response')
@@ -339,7 +357,7 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
         log:trace('Asset with deviceAssetId ' .. id .. ' not found')
 
         postBody = { originalFileName = filename, takenAfter = dateCreated, takenBefore = dateCreated, isTrashed = false }
-        response = ImmichAPI:doPostRequest('/search/metadata', postBody)
+        response = ImmichAPI.doPostRequest(self, '/search/metadata', postBody)
 
         if not response then
             log:trace('No asset with originalFilename ' .. filename .. ' and creationDate ' .. dateCreated .. ' found')
@@ -353,7 +371,7 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
 end
 
 function ImmichAPI:getLocalIdForAssetId(assetId)
-    local parsedResponse = ImmichAPI:getAssetInfo(assetId)
+    local parsedResponse = ImmichAPI.getAssetInfo(self, assetId)
 
     if parsedResponse ~= nil then
         return parsedResponse.deviceAssetId
@@ -364,7 +382,7 @@ end
 
 function ImmichAPI:getAssetInfo(assetId)
     local path = '/assets/' .. assetId
-    local parsedResponse = ImmichAPI:doGetRequest(path)
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
     return parsedResponse
 end
 
@@ -373,7 +391,7 @@ function ImmichAPI:checkIfAlbumExists(albumId)
         return false
     end
     log:trace("ImmichAPI: checkIfAlbumExists")
-    local albumInfo = ImmichAPI:doGetRequest('/albums/' .. albumId)
+    local albumInfo = ImmichAPI.doGetRequest(self, '/albums/' .. albumId)
 
     if albumInfo == nil then
         return false
@@ -384,13 +402,13 @@ end
 
 function ImmichAPI:getAlbumInfo(albumId)
     log:trace("ImmichAPI: getAlbumInfo for: " .. albumId)
-    local albumInfo = ImmichAPI:doGetRequest('/albums/' .. albumId)
+    local albumInfo = ImmichAPI.doGetRequest(self, '/albums/' .. albumId)
     return albumInfo
 end
 
 function ImmichAPI:getAlbumAssetIds(albumId)
     log:trace("ImmichAPI: getAlbumAssetIds for: " .. albumId)
-    local albumInfo = ImmichAPI:doGetRequest('/albums/' .. albumId)
+    local albumInfo = ImmichAPI.doGetRequest(self, '/albums/' .. albumId)
     local assetIds = {}
 
     if albumInfo  ~= nil then
@@ -405,18 +423,19 @@ function ImmichAPI:getAlbumAssetIds(albumId)
 end
 
 function ImmichAPI:doPostRequest(apiPath, postBody)
-    if not ImmichAPI:checkConnectivity() then
+    if not ImmichAPI.checkConnectivity(self) then
         util.handleError('Immich connection not setup. Cannot perform POST request: ' .. apiPath,
             'Immich connection not setup. Go to module manager.')
         return nil
     end
 
-    log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
+    log:trace('ImmichAPI: Preparing POST request ' .. self.url .. self.apiBasePath .. apiPath)
+    log:trace('ImmichAPI: ' .. util.cutApiKey(self.apiKey))
     if postBody ~= nil then
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
     local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody),
-        ImmichAPI:createHeaders())
+        ImmichAPI.createHeaders(self))
 
     if headers.status == 201 or headers.status == 200 then
         log:trace('ImmichAPI POST request succeeded: ' .. response)
@@ -430,19 +449,20 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
 end
 
 function ImmichAPI:doCustomRequest(method, apiPath, postBody)
-    if not ImmichAPI:checkConnectivity() then
+    if not ImmichAPI.checkConnectivity(self) then
         util.handleError('Immich connection not setup. Cannot perform ' .. method .. ' request: ' .. apiPath,
             'Immich connection not setup. Go to module manager.')
         return nil
     end
-    log:trace('ImmichAPI: Preparing ' .. method .. ' request ' .. apiPath)
+    log:trace('ImmichAPI: Preparing ' .. method .. ' request ' .. self.url .. self.apiBasePath .. apiPath)
+    log:trace('ImmichAPI: ' .. util.cutApiKey(self.apiKey))
     local url = self.url .. self.apiBasePath .. apiPath
 
     if postBody ~= nil then
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
 
-    local response, headers = LrHttp.post(url, JSON:encode(postBody), ImmichAPI:createHeaders(), method, 5)
+    local response, headers = LrHttp.post(url, JSON:encode(postBody), ImmichAPI.createHeaders(self), method, 5)
 
     if headers.status == 201 or headers.status == 200 then
         log:trace('ImmichAPI ' .. method .. ' request succeeded: ' .. response)
@@ -459,14 +479,15 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
 end
 
 function ImmichAPI:doGetRequest(apiPath)
-    if not ImmichAPI:checkConnectivity() then
+    if not ImmichAPI.checkConnectivity(self) then
         util.handleError('Immich connection not setup. Cannot perform GET request: ' .. apiPath,
             'Immich connection not setup. Go to module manager.')
         return nil
     end
 
-    log:trace('ImmichAPI: Preparing GET request ' .. apiPath)
-    local response, headers = LrHttp.get(self.url .. self.apiBasePath .. apiPath, ImmichAPI:createHeaders())
+    log:trace('ImmichAPI: Preparing GET request ' .. self.url .. self.apiBasePath .. apiPath)
+    log:trace('ImmichAPI: ' .. util.cutApiKey(self.apiKey))
+    local response, headers = LrHttp.get(self.url .. self.apiBasePath .. apiPath, ImmichAPI.createHeaders(self))
 
     if headers.status == 200 then
         log:trace('ImmichAPI GET request succeeded')
@@ -480,14 +501,17 @@ function ImmichAPI:doGetRequest(apiPath)
 end
 
 function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
-    if not ImmichAPI:checkConnectivity() then
+    if not ImmichAPI.checkConnectivity(self) then
         util.handleError('Immich connection not setup. Cannot perform multipart POST request: ' .. apiPath,
             'Immich connection not setup. Go to module manager.')
         return nil
     end
 
+    log:trace('ImmichAPI: Preparing multipart POST request ' .. self.url .. self.apiBasePath .. apiPath)
+    log:trace('ImmichAPI: ' .. util.cutApiKey(self.apiKey))
+
     local response, headers = LrHttp.postMultipart(self.url .. self.apiBasePath .. apiPath, mimeChunks,
-        ImmichAPI:createHeadersForMultipart())
+        ImmichAPI.createHeadersForMultipart(self))
 
     if headers.status == 201 or headers.status == 200 then
         return JSON:decode(response)
@@ -500,19 +524,21 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
 end
 
 function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
-    if not ImmichAPI:checkConnectivity() then
+    if not ImmichAPI.checkConnectivity(self) then
         util.handleError('Immich connection not setup. Cannot perform multipart PUT request: ' .. apiPath,
             'Immich connection not setup. Go to module manager.')
         return nil
     end
 
-    log:trace('ImmichAPI: Preparing POST request ' .. apiPath)
+    log:trace('ImmichAPI: Preparing multipart PUT request ' .. self.url .. self.apiBasePath .. apiPath)
+    log:trace('ImmichAPI: ' .. util.cutApiKey(self.apiKey))
+
     local url = self.url .. self.apiBasePath .. apiPath
     local boundary = 'FIXMEASTHISISSTATICFORNOWBUTSHOULDBERANDOM' -- TODO/FIXME
 
     local body = generateMultiPartBody(boundary, formData, filePath)
     local size = string.len(body)
-    local reqhdrs = ImmichAPI:createHeadersForMultipartPut(boundary, size)
+    local reqhdrs = ImmichAPI.createHeadersForMultipartPut(self, boundary, size)
 
     log:trace('ImmichAPI multipart PUT headers:' .. util.dumpTable(reqhdrs))
     log:trace('ImmichAPI multipart PUT body:' .. body)
@@ -532,14 +558,3 @@ function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
         return nil
     end
 end
-
-function ImmichAPI.immichConnected()
-    if immich == nil then
-        return false
-    elseif immich:checkConnectivity() then
-        return true
-    else
-        return false
-    end
-end
-

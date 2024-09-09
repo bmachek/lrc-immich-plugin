@@ -1,28 +1,35 @@
 PublishDialogSections = {}
 
-
-local function updatePublishStatus(propertyTable)
-	propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
+local function _updateCantExportBecause(propertyTable)
+	LrTasks.startAsyncTask(function()
+		propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
+		if not propertyTable.immich:checkConnectivity() then
+			propertyTable.LR_cantExportBecause = "Immich connection not setup"
+			return
+		end
+		propertyTable.LR_cantExportBecause = nil
+	end)
 end
 
 
 function PublishDialogSections.startDialog(propertyTable)
-	propertyTable:addObserver('url', updatePublishStatus)
-	propertyTable:addObserver('apiKey', updatePublishStatus)
-	propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
-
-	updatePublishStatus(propertyTable)
+	LrTasks.startAsyncTask(function()
+		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+		_updateCantExportBecause(propertyTable)
+	end)
+	propertyTable:addObserver('url', _updateCantExportBecause)
+	propertyTable:addObserver('apiKey', _updateCantExportBecause)
 end
 
-function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
-	local f = LrView.osFactory()
+function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 	local bind = LrView.bind
 	local share = LrView.share
 
 	local result = {
 
 		{
-			title = "Immich Server URL",
+			title = "Immich Server connection",
+			bind_to_object = propertyTable,
 
 			f:row {
 				f:static_text {
@@ -33,9 +40,8 @@ function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
 				f:edit_field {
 					value = bind 'url',
 					truncation = 'middle',
-					immediate = false,
-					width_in_chars = 40,
-					-- fill_horizontal = 1,
+					immediate = true,
+					fill_horizontal = 1,
 					validate = function (v, url)
 						local sanitizedURL = propertyTable.immich:sanityCheckAndFixURL(url)
 						if sanitizedURL == url then
@@ -51,8 +57,8 @@ function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
                     title = 'Test connection',
                     action = function(button)
                         LrTasks.startAsyncTask(function()
-                            local testImmich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
-                            if testImmich:checkConnectivity() then
+                            propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
+                            if propertyTable.immich:checkConnectivity() then
                                 LrDialogs.message('Connection test successful')
                             else
                                 LrDialogs.message('Connection test NOT successful')
@@ -73,8 +79,7 @@ function PublishDialogSections.sectionsForTopOfDialog(_, propertyTable)
 					value = bind 'apiKey',
 					truncation = 'middle',
 					immediate = true,
-					width_in_chars = 40,
-					-- fill_horizontal = 1,
+					fill_horizontal = 1,
 				},
 			},
 		},
