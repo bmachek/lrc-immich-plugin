@@ -2,7 +2,7 @@ require "PublishDialogSections"
 require "PublishTask"
 
 return {
-
+	sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
 	hideSections = { 'exportLocation' },
 	allowFileFormats = nil,
 	allowColorSpaces = nil,

@@ -79,30 +79,30 @@ function PluginInfoDialogSections.sectionsForTopOfDialog(f, propertyTable)
 end
 
 function PluginInfoDialogSections.startDialog(propertyTable)
-    if prefs.url == nil then
-        prefs.url = ''
-    end
+    -- if prefs.url == nil then
+    --     prefs.url = ''
+    -- end
 
-    if prefs.apiKey == nil then
-        prefs.apiKey = ''
-    end
+    -- if prefs.apiKey == nil then
+    --     prefs.apiKey = ''
+    -- end
 
     if prefs.logging == nil then
         prefs.logging = false
     end
 
-    propertyTable.url = prefs.url
-    propertyTable.apiKey = prefs.apiKey
+    -- propertyTable.url = prefs.url
+    -- propertyTable.apiKey = prefs.apiKey
     propertyTable.logging = prefs.logging
 
-    propertyTable:addObserver('url', storeValue)
-    propertyTable:addObserver('apiKey', storeValue)
+    -- propertyTable:addObserver('url', storeValue)
+    -- propertyTable:addObserver('apiKey', storeValue)
 
-    if propertyTable.url and propertyTable.apiKey then
-        LrTasks.startAsyncTask(function()
-            propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
-        end)
-    end
+    -- if propertyTable.url and propertyTable.apiKey then
+    --     LrTasks.startAsyncTask(function()
+    --         propertyTable.immich = ImmichAPI:new(prefs.url, prefs.apiKey)
+    --     end)
+    -- end
 end
 
 function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)

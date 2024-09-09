@@ -543,5 +543,3 @@ function ImmichAPI.immichConnected()
     end
 end
 
--- Global instance of connection to immich.
-_G.immich = ImmichAPI:new(prefs.url, prefs.apiKey)

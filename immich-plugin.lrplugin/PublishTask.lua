@@ -4,13 +4,17 @@ require "ImmichAPI"
 PublishTask = {}
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
-    if not ImmichAPI.immichConnected() then
-        LrDialogs.showError('Immich connection not set up.')
+    local exportSession = exportContext.exportSession
+    local exportParams = exportContext.propertyTable
+
+
+    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
+    if not immich:checkConnectivity() then
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
 
-    local exportSession = exportContext.exportSession
-    local exportParams = exportContext.propertyTable
     local publishedCollection = exportContext.publishedCollection
     local albumId = publishedCollection:getRemoteId()
     local albumName = publishedCollection:getName()
@@ -89,6 +93,13 @@ function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, 
 end
 
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
+    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    if not immich:checkConnectivity() then
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        return nil
+    end
+
     for i, photoInfo in ipairs(arrayOfPhotoInfo) do
         -- Get all published Collections where the photo is included.
         local publishedCollections = photoInfo.photo:getContainedPublishedCollections()
@@ -129,10 +140,11 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
     end
 end
 
-function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback,
-                                                         localCollectionId)
+function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
+   local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        LrDialogs.showError('Immich connection not set up.')
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
 
@@ -147,10 +159,13 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
 end
 
 function PublishTask.deletePublishedCollection(publishSettings, info)
+    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        LrDialogs.showError('Immich connection not set up.')
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
+
     -- remoteId is nil, if the collection isn't yet published.
     if info.remoteId ~= nil then
         ImmichAPI:deleteAlbum(info.remoteId)
@@ -158,8 +173,10 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
 end
 
 function PublishTask.renamePublishedCollection(publishSettings, info)
+    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        LrDialogs.showError('Immich connection not set up.')
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
 

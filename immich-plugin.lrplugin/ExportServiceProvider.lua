@@ -20,7 +20,7 @@ return {
 
 	startDialog = ExportDialogSections.startDialog,
 	sectionsForTopOfDialog = ExportDialogSections.sectionsForTopOfDialog,
-	-- sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
+	sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
 
 	processRenderedPhotos = ExportTask.processRenderedPhotos,
 
