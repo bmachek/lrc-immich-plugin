@@ -43,10 +43,7 @@ Either there should be a plugin called "Immich" in the list, one you're finished
 
 ## Usage
 
-After you successfully installed the plugin, enter the server url and [API key](https://immich.app/docs/features/command-line-interface#obtain-the-api-key) in the Lightroom module manager.
-Create Immich export preset (Choose Export to: Immich Exporter) or set up Immich publish service.
-
-Configuration and usage should be pretty straight forward, if you know Lightroom. If not, let me know. ;-)
+After you successfully installed the plugin, enter the server url and [API key](https://immich.app/docs/features/command-line-interface#obtain-the-api-key) in your export preset or in your Immich publish service.
 
 
 ## CREDITS
