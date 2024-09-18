@@ -148,12 +148,27 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
         return nil
     end
 
+    local delete = LrDialogs.confirm('Delete photos', 'Should removed photos be trashed in Immich?', 'If not included in any album', 'No', 'Yes (dangerous!)')
+
     local catalog = LrApplication.activeCatalog()
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
 
     for i = 1, #arrayOfPhotoIds do
         if immich:removeAssetFromAlbum(publishedCollection:getRemoteId(), arrayOfPhotoIds[i]) then
             deletedCallback(arrayOfPhotoIds[i])
+            local success = true
+            
+            if delete == 'ok' then
+                success = immich:deleteAsset(arrayOfPhotoIds[i])
+            elseif delete == 'other' then
+                if not immich:checkIfAssetIsInAnAlbum(arrayOfPhotoIds[i]) then
+                    success = immich:deleteAsset(arrayOfPhotoIds[i])
+                end
+            end
+
+            if not success then
+                util.handleError('Failed to delete asset ' .. arrayOfPhotoIds[i] .. ' from Immich', 'Failed to delete asset (check logs)')
+            end
         end
     end
 end
