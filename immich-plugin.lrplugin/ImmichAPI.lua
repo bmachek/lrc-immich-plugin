@@ -225,6 +225,25 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
     return nil
 end
 
+
+function ImmichAPI:deleteAsset(immichId)
+    if util.nilOrEmpty(immichId) then
+        util.handleError('deleteAsset: immichId empty', 'Immich asset ID missing. Check logs.')
+        return nil
+    end
+
+    local apiPath = '/assets'
+
+    local body = { ids = { immichId } }
+
+    local parsedResponse = ImmichAPI:doCustomRequest('DELETE', apiPath, body)
+    if parsedResponse ~= nil then
+        return true
+    end
+    return false
+end
+
+
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
     if util.nilOrEmpty(albumId) then
         util.handleError('removeAssetFromAlbum: albumId empty', 'Immich album ID missing. Check logs.')
@@ -370,6 +389,22 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
     return nil
 end
 
+function ImmichAPI:checkIfAssetIsInAnAlbum(immichId)
+    local postBody = { id = immichId, deviceId = self.deviceIdString, isTrashed = false, isNotInAlbum = false }
+    local response = ImmichAPI.doPostRequest(self, '/search/metadata', postBody)
+
+    if not response then
+        log:trace('checkIfAssetIsInAnAlbum: No response')
+        return false
+    elseif response.assets.count == 1 then
+        log:trace('checkIfAssetIsInAnAlbum: ' .. immichId .. ' is in an album')
+        return true
+    end
+
+    log:trace('checkIfAssetIsInAnAlbum: ' .. immichId .. ' is NOT in an album')
+    return false
+end
+
 function ImmichAPI:getLocalIdForAssetId(assetId)
     local parsedResponse = ImmichAPI.getAssetInfo(self, assetId)
 
@@ -464,7 +499,7 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
 
     local response, headers = LrHttp.post(url, JSON:encode(postBody), ImmichAPI.createHeaders(self), method, 5)
 
-    if headers.status == 201 or headers.status == 200 then
+    if headers.status == 204 or headers.status == 201 or headers.status == 200 then
         log:trace('ImmichAPI ' .. method .. ' request succeeded: ' .. response)
         if util.nilOrEmpty(response) then
             return {}
