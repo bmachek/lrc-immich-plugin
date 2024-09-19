@@ -35,8 +35,9 @@ Either there should be a plugin called "Immich" in the list, one you're finished
     * Replace existing images.
     * Duplicate detection via Lightroom catalog ID, and based on date and filename.
 
+
 * Upcoming features:
-    * Set Immich album title image from Lightroom in Published collection.
+    * ~~Set Immich album title image from Lightroom in Published collection.~~
     * Let user decide/configure if "unpublished" images should be deleted.
     * (Maybe) Additional album options like sharing in the Published Collection settings dialog.
     * (Maybe) [Your feature](https://github.com/bmachek/lrc-immich-plugin/discussions/16)
