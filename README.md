@@ -23,7 +23,7 @@ Either there should be a plugin called "Immich" in the list, one you're finished
 
 ## Features
 
-* Setup connection to your Immich instance via URL and API key in the Lightroom module manager
+* Setup connection to your Immich instance via URL and API key in the export dialog, or when creating the publish service.
 
 * Publish images:
     * Create/rename/delete album according to published collection.
