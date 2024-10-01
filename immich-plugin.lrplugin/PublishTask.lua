@@ -158,9 +158,9 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
             deletedCallback(arrayOfPhotoIds[i])
             local success = true
             
-            if delete == 'ok' then
+            if delete == 'other' then
                 success = immich:deleteAsset(arrayOfPhotoIds[i])
-            elseif delete == 'other' then
+            elseif delete == 'ok' then
                 if not immich:checkIfAssetIsInAnAlbum(arrayOfPhotoIds[i]) then
                     success = immich:deleteAsset(arrayOfPhotoIds[i])
                 end
