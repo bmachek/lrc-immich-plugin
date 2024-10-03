@@ -52,7 +52,7 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				f:edit_field {
 					value = bind 'url',
 					truncation = 'middle',
-					immediate = true,
+					immediate = false,
 					fill_horizontal = 1,
 					validate = function (v, url)
 						local sanitizedURL = propertyTable.immich:sanityCheckAndFixURL(url)
