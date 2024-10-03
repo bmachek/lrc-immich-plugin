@@ -26,6 +26,6 @@ return {
 
 	LrPluginInfoURL = 'https://github.com/bmachek/lrc-immich-plugin',
 
-	VERSION = { major = 2, minor = 2, revision = 1, build = "", },
+	VERSION = { major = 2, minor = 2, revision = 2, build = "", },
 
 }
