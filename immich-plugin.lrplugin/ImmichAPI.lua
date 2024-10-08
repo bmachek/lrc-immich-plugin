@@ -306,6 +306,31 @@ function ImmichAPI:createAlbum(albumName)
     return nil
 end
 
+
+function ImmichAPI:createOrGetAlbumFolderBased(albumName)
+    if util.nilOrEmpty(albumName) then
+        util.handleError('createAlbum: albumName empty', 'No album name given. Check logs.')
+        return nil
+    end
+
+    local existingAlbums = ImmichAPI:getAlbumsByNameFolderBased(albumName)
+    if existingAlbums ~= nil then
+        if #existingAlbums > 0 then
+            log:trace("Found existing folder based album with id: " .. existingAlbums[1].value)
+            return existingAlbums[1].value
+        end
+    end
+
+    local apiPath = '/albums'
+    local postBody = { albumName = albumName, description = 'Based on Lightroom folder: ' .. albumName }
+
+    local parsedResponse = ImmichAPI.doPostRequest(self, apiPath, postBody)
+    if parsedResponse ~= nil then
+        return parsedResponse.id
+    end
+    return nil
+end
+
 function ImmichAPI:deleteAlbum(albumId)
     local path = '/albums/' .. albumId
 
@@ -342,6 +367,25 @@ function ImmichAPI:getAlbums()
             local row = parsedResponse[i]
             table.insert(albums,
                 { title = row.albumName .. ' (' .. string.sub(row.createdAt, 1, 19) .. ')', value = row.id })
+        end
+        return albums
+    else
+        return nil
+    end
+end
+
+
+function ImmichAPI:getAlbumsByNameFolderBased(albumName)
+    local path = '/albums'
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
+    local albums = {}
+    if parsedResponse then
+        for i = 1, #parsedResponse do
+            local row = parsedResponse[i]
+            if row.albumName == albumName and row.description == 'Based on Lightroom folder: ' .. albumName then
+                table.insert(albums,
+                    { title = row.albumName .. ' (' .. string.sub(row.createdAt, 1, 19) .. ')', value = row.id })
+            end
         end
         return albums
     else

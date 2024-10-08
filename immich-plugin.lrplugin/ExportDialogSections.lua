@@ -126,6 +126,7 @@ function ExportDialogSections.sectionsForTopOfDialog(_, propertyTable)
 									{ title = 'Choose on export',    value = 'onexport' },
 									{ title = 'Existing album',      value = 'existing' },
 									{ title = 'Create new album',    value = 'new' },
+									{ title = 'Create/use folder name as album',    value = 'folder' },
 									{ title = 'Do not use an album', value = 'none' },
 								},
 								value = bind 'albumMode',
