@@ -55,6 +55,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             { title = 'Do not use an album', value = 'none' },
                             { title = 'Existing album',      value = 'existing' },
                             { title = 'Create new album',    value = 'new' },
+                            { title = 'Create/use folder name as album',    value = 'folder' },
                         },
                         value = LrView.bind('albumMode'),
                         immediate = true,
@@ -132,6 +133,8 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
         useAlbum = true
     elseif exportParams.albumMode == 'none' then
         log:trace('Not using any albums, just uploading assets.')
+    elseif exportParams.albumMode == 'folder' then
+        log:trace('Create/use folder name as album.')
     else
         log:trace('Unknown albumMode: ' .. exportParams.albumMode .. '. Ignoring.')
     end
@@ -167,6 +170,12 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 if useAlbum then
                     log:trace('Adding asset to album')
                     immich:addAssetToAlbum(albumId, id)
+                elseif exportParams.albumMode == 'folder' then
+                    local folderName = rendition.photo:getFormattedMetadata("folderName")
+                    local folderAlbumId = immich:createOrGetAlbumFolderBased(folderName)
+                    if folderAlbumId ~= nil then
+                        immich:addAssetToAlbum(folderAlbumId, id)
+                    end
                 end
             end
 
