@@ -133,8 +133,10 @@ function ImmichAPI:checkConnectivity()
         return true
     else
         log:error('checkConnectivity: test failed.')
-        log:trace('Response headers: ' .. util.dumpTable(headers))
-        log:trace('Response body: ' .. response)
+        log:error('Response headers: ' .. util.dumpTable(headers))
+        if response ~= nil then
+            log:error('Response body: ' .. response)
+        end
         return false
     end
 end
@@ -522,7 +524,9 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
     else
         log:error('ImmichAPI POST request failed. ' .. apiPath)
         log:error(util.dumpTable(headers))
-        log:error(response)
+        if response ~= nil then
+            log:error('Response body: ' .. response)
+        end
         return nil
     end
 end
@@ -552,7 +556,9 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
     else
         log:error('ImmichAPI ' .. method .. ' request failed. ' .. apiPath)
         log:error(util.dumpTable(headers))
-        log:error(response)
+        if response ~= nil then
+            log:error('Response body: ' .. response)
+        end
         return nil
     end
 end
@@ -574,7 +580,9 @@ function ImmichAPI:doGetRequest(apiPath)
     else
         log:error('ImmichAPI GET request failed. ' .. apiPath)
         log:error(util.dumpTable(headers))
-        log:error(response)
+        if response ~= nil then
+            log:trace('Response body: ' .. response)
+        end
         return nil
     end
 end
@@ -597,7 +605,9 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     else
         log:error('ImmichAPI multipart POST request failed. ' .. apiPath)
         log:error(util.dumpTable(headers))
-        log:error(response)
+        if response ~= nil then
+            log:error('Response body: ' .. response)
+        end
         return nil
     end
 end
@@ -633,7 +643,9 @@ function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
     else
         log:error('ImmichAPI multipart PUT request failed. ' .. apiPath)
         log:error(util.dumpTable(headers))
-        log:error(response)
+        if response ~= nil then
+            log:error('Response body: ' .. response)
+        end
         return nil
     end
 end
