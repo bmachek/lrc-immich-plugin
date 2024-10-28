@@ -17,8 +17,8 @@ function PublishDialogSections.startDialog(propertyTable)
 		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
 		_updateCantExportBecause(propertyTable)
 	end)
-	propertyTable:addObserver('url', _updateCantExportBecause)
-	propertyTable:addObserver('apiKey', _updateCantExportBecause)
+	-- propertyTable:addObserver('url', _updateCantExportBecause)
+	-- propertyTable:addObserver('apiKey', _updateCantExportBecause)
 end
 
 function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)

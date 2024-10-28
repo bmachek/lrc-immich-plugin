@@ -26,8 +26,8 @@ function ExportDialogSections.startDialog(propertyTable)
 		propertyTable.albums = propertyTable.immich:getAlbums()
 		_updateCantExportBecause(propertyTable)
 	end)
-	propertyTable:addObserver('url', _updateCantExportBecause)
-	propertyTable:addObserver('apiKey', _updateCantExportBecause)
+	-- propertyTable:addObserver('url', _updateCantExportBecause)
+	-- propertyTable:addObserver('apiKey', _updateCantExportBecause)
 	
 end
 
