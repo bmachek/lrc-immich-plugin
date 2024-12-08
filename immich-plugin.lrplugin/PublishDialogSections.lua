@@ -15,7 +15,7 @@ end
 function PublishDialogSections.startDialog(propertyTable)
 	LrTasks.startAsyncTask(function()
 		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
-		_updateCantExportBecause(propertyTable)
+		--_updateCantExportBecause(propertyTable)
 	end)
 	-- propertyTable:addObserver('url', _updateCantExportBecause)
 	-- propertyTable:addObserver('apiKey', _updateCantExportBecause)
