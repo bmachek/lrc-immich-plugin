@@ -7,6 +7,9 @@ It supports exporting as well as publishing.
 
 [![Donate](https://img.shields.io/badge/Donate-PayPal-green.svg)](https://www.paypal.com/donate/?hosted_button_id=2LL4K9LN5CFA6)
 
+[![Bitcoin donate](https://bitcoli.com/img/logo-20.png)](https://bitcoli.com/donate/boandlk)
+
+
 ## Installation
 
 Download the current release zip file and extract it to the Lightroom plugin folder, which is:
