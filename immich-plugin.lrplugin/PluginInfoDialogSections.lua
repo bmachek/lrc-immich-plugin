@@ -20,7 +20,11 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
             bind_to_object = propertyTable,
 
             title = "Immich Plugin Logging",
-
+            f:row {
+                f:static_text {
+                    title = util.getLogfilePath(),
+                },
+            },
             f:row {
                 f:checkbox {
                     value = bind 'logging',
