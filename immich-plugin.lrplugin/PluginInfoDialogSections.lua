@@ -30,6 +30,12 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
                     alignment = 'right',
                     width = share 'labelWidth'
                 },
+                f:push_button {
+                    title = "Show logfile",
+                    action = function (button)
+                        LrShell.revealInShell(util.getLogfilePath())
+                    end,
+                },
             },
         },
     }

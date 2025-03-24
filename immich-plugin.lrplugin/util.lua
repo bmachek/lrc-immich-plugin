@@ -44,3 +44,27 @@ end
 function util.cutApiKey(key)
     return string.sub(key, 1, 20) .. '...'
 end
+
+function util.getLogfilePath()
+    local filename = "AIPlugin.log"
+    local macPath14 = LrPathUtils.getStandardFilePath('home') .. "/Library/Logs/Adobe/Lightroom/LrClassicLogs/"
+    local winPath14 = LrPathUtils.getStandardFilePath('home') .. "\\AppData\\Local\\Adobe\\Lightroom\\Logs\\LrClassicLogs\\"
+    local macPathOld = LrPathUtils.getStandardFilePath('documents') .. "/LrClassicLogs/"
+    local winPathOld = LrPathUtils.getStandardFilePath('documents') .. "\\LrClassicLogs\\"
+
+    local lightroomVersion = LrApplication.versionTable()
+
+    if lightroomVersion.major >= 14 then
+        if string.sub(LrSystemInfo.summaryString(), 1, 1) == '1' then
+            return macPath14 .. filename
+        else
+            return winPath14 .. filename
+        end
+    else
+        if string.sub(LrSystemInfo.summaryString(), 1, 1) == '1' then
+            return macPathOld .. filename
+        else
+            return winPathOld .. filename
+        end
+    end
+end
