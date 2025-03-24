@@ -15,6 +15,7 @@ _G.LrFunctionContext = import 'LrFunctionContext'
 _G.LrApplication = import 'LrApplication'
 _G.LrPrefs = import 'LrPrefs'
 _G.LrShell = import 'LrShell'
+_G.LrSystemInfo = import 'LrSystemInfo'
 
 _G.JSON = require "JSON"
 _G.inspect = require 'inspect'

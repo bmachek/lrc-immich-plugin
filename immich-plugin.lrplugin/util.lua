@@ -46,7 +46,7 @@ function util.cutApiKey(key)
 end
 
 function util.getLogfilePath()
-    local filename = "AIPlugin.log"
+    local filename = "ImmichPlugin.log"
     local macPath14 = LrPathUtils.getStandardFilePath('home') .. "/Library/Logs/Adobe/Lightroom/LrClassicLogs/"
     local winPath14 = LrPathUtils.getStandardFilePath('home') .. "\\AppData\\Local\\Adobe\\Lightroom\\Logs\\LrClassicLogs\\"
     local macPathOld = LrPathUtils.getStandardFilePath('documents') .. "/LrClassicLogs/"
