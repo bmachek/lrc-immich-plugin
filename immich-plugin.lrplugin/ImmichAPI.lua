@@ -418,7 +418,7 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
     elseif response.assets.count >= 1 then
         log:trace('Found existing asset with deviceAssetId ' .. tostring(localId))
         return response.assets.items[1].id, response.assets.items[1].deviceAssetId
-    else
+    elseif dateCreated ~= nil and dateCreated ~= "" then
         log:trace('Asset with deviceAssetId ' .. id .. ' not found')
 
         postBody = { originalFileName = filename, takenAfter = dateCreated, takenBefore = dateCreated, isTrashed = false }
