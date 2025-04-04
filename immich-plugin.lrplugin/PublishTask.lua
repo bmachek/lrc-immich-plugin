@@ -202,8 +202,7 @@ function PublishTask.renamePublishedCollection(publishSettings, info)
 end
 
 function PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog(publishSettings, nPhotos)
-    return "ignore" -- Photos deleted locally are NOT deleted on Immich
-    -- This should open a dialog leaving the choice to the user.
+    return nil -- Show builtin Lightroom dialog.
 end
 
 function PublishTask.validatePublishedCollectionName(name)
