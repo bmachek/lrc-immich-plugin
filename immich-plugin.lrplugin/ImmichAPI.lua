@@ -436,19 +436,18 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
 end
 
 function ImmichAPI:checkIfAssetIsInAnAlbum(immichId)
-    local postBody = { id = immichId, deviceId = self.deviceIdString, isTrashed = false, isNotInAlbum = false }
+    local postBody = { id = immichId, deviceId = self.deviceIdString, isNotInAlbum = true }
     local response = ImmichAPI.doPostRequest(self, '/search/metadata', postBody)
 
-    if not response then
-        log:trace('checkIfAssetIsInAnAlbum: No response')
-        return false
-    elseif response.assets.count == 1 then
-        log:trace('checkIfAssetIsInAnAlbum: ' .. immichId .. ' is in an album')
-        return true
+    if response ~= nil and type(response) == "table" then
+        if response.assets.count == 1 and not response.assets.items[1].isTrashed then
+            log:trace('checkIfAssetIsInAnAlbum: ' .. immichId .. ' is in NOT included in any album')
+            return false
+        end
     end
 
-    log:trace('checkIfAssetIsInAnAlbum: ' .. immichId .. ' is NOT in an album')
-    return false
+    log:trace('checkIfAssetIsInAnAlbum: ' .. immichId .. ' is included in at least one album')
+    return true
 end
 
 function ImmichAPI:getLocalIdForAssetId(assetId)
