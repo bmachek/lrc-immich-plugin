@@ -63,6 +63,56 @@ local function generateMultiPartBody(b, formData, filePath)
     return body
 end
 
+function ImmichAPI:downloadAsset(assetId)
+    if util.nilOrEmpty(assetId) then
+        util.handleError('downloadAsset: assetId empty', 'No asset ID provided. Check logs.')
+        return nil
+    end
+
+    local assetUrl = string.format("%s%s/assets/%s/original", self.url, self.apiBasePath, assetId)
+    log:trace("Downloading asset from URL: " .. assetUrl)
+
+    local response, headers = LrHttp.get(assetUrl, ImmichAPI.createHeaders(self))
+
+    if headers.status == 200 then
+        log:trace("Asset downloaded successfully: " .. assetId)
+        return response
+    else
+        log:error("Failed to download asset: " .. assetId)
+        log:error("Response headers: " .. util.dumpTable(headers))
+        if response ~= nil then
+            log:error("Response body: " .. response)
+        end
+        return nil
+    end
+end
+
+function ImmichAPI:getAlbumAssets(albumId)
+    if util.nilOrEmpty(albumId) then
+        util.handleError('getAlbumAssets: albumId empty', 'No album ID provided. Check logs.')
+        return nil
+    end
+
+    local path = '/albums/' .. albumId
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
+
+    if not parsedResponse or not parsedResponse.assets then
+        log:trace('getAlbumAssets: No assets found for album ID: ' .. albumId)
+        return nil
+    end
+
+    local assets = {}
+    for _, asset in ipairs(parsedResponse.assets) do
+        table.insert(assets, {
+            id = asset.id,
+            originalFileName = asset.originalFileName,
+        })
+    end
+
+    log:trace('getAlbumAssets: Retrieved ' .. #assets .. ' assets for album ID: ' .. albumId)
+    return assets
+end
+
 -- Utility function to create headers
 function ImmichAPI:createHeaders()
     return {
@@ -375,6 +425,23 @@ function ImmichAPI:getAlbums()
         return nil
     end
 end
+
+function ImmichAPI:getAlbumsWODate()
+    local path = '/albums'
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
+    local albums = {}
+    if parsedResponse then
+        for i = 1, #parsedResponse do
+            local row = parsedResponse[i]
+            table.insert(albums,
+                { title = row.albumName , value = row.id })
+        end
+        return albums
+    else
+        return nil
+    end
+end
+
 
 
 function ImmichAPI:getAlbumsByNameFolderBased(albumName)
