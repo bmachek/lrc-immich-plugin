@@ -14,7 +14,7 @@ local function getImmichAlbums()
     return immichAPI:getAlbumsWODate()
 end
 
--- Download album assets in parallel and update progress in real-time
+-- Optimized function to download album assets in parallel and update progress in real-time
 local function downloadAlbumAssets(immichAPI, albumId, myPath)
     local albumAssets = immichAPI:getAlbumAssets(albumId)
 
@@ -28,16 +28,17 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
         caption = "Starting...",
     }
 
-    local completedTasks = 0 -- Counter to track completed tasks
+    local completedTasks = 0
     local totalTasks = #albumAssets
+    local taskQueue = {}
 
     for i, asset in ipairs(albumAssets) do
         if progressScope:isCanceled() then
             break
         end
 
-        -- Start a new async task for each asset download
-        LrTasks.startAsyncTask(function()
+        -- Queue tasks instead of starting them immediately
+        table.insert(taskQueue, function()
             local assetData = immichAPI:downloadAsset(asset.id)
             if assetData then
                 local tempFilePath = LrPathUtils.child(myPath, asset.originalFileName)
@@ -62,9 +63,23 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
         end)
     end
 
-    -- Wait for all tasks to complete
-    while completedTasks < totalTasks do
-        LrTasks.sleep(0.1) -- Sleep for 100ms to allow other tasks to run
+    -- Execute tasks in batches to avoid overwhelming the system
+    local batchSize = 5 -- Adjust batch size as needed
+    while #taskQueue > 0 do
+        local batch = {}
+        for i = 1, math.min(batchSize, #taskQueue) do
+            table.insert(batch, table.remove(taskQueue, 1))
+        end
+
+        -- Run the batch of tasks in parallel
+        for _, task in ipairs(batch) do
+            LrTasks.startAsyncTask(task)
+        end
+
+        -- Wait for the batch to complete
+        while completedTasks < totalTasks - #taskQueue do
+            LrTasks.sleep(0.1)
+        end
     end
 
     progressScope:done()
