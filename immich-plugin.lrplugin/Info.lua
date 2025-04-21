@@ -29,6 +29,13 @@ return {
         },
     },
 
+	LrLibraryMenuItems = {
+		{
+			title = "Import from Immich",
+			file = "ImportServiceProvider.lua",
+		},
+	},
+
 	LrPluginInfoProvider = 'PluginInfo.lua',
 
 	LrPluginInfoURL = 'https://github.com/bmachek/lrc-immich-plugin',
