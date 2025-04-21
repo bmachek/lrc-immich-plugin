@@ -155,7 +155,7 @@ local function loadAlbumPhotos(albumId)
     end)
 end
 
-local function showDialog()
+return {
     LrTasks.startAsyncTask(function()
         local albums = getImmichAlbums()
         prefs.selectedAlbum = albums[1] and albums[1].value or nil
@@ -187,6 +187,4 @@ local function showDialog()
             loadAlbumPhotos(prefs.selectedAlbum)
         end
     end)
-end
-
-showDialog()
+}
