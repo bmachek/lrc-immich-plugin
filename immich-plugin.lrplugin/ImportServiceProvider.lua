@@ -26,7 +26,6 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
     local progressScope = LrProgressScope {
         title = TITLES.DOWNLOAD_PROGRESS,
         caption = "Starting...",
-        functionContext = context,
     }
 
     local completedTasks = 0 -- Counter to track completed tasks
