@@ -75,26 +75,24 @@ end
 
 -- Get or create a collection
 local function getOrCreateCollection(catalog, albumTitle)
-    
-    local collectionName = "Immich - " .. albumTitle
+    -- Define the parent collection name
+    local parentCollectionName = "Immich"
+    local collectionName = albumTitle
 
-    -- Check if collection already exists
-    local collection
-    for _, col in ipairs(catalog:getChildCollections()) do
-        if col:getName() == collectionName then
-            collection = col
-            break
-        end
-    end
+    local parentCollection
+    -- Create the parent collection 
+    catalog:withWriteAccessDo("Create Parent Collection", function(context)
+        parentCollection = catalog:createCollectionSet(parentCollectionName, nil, true)
+    end)
 
-    -- Create collection if it doesn't exist
-    if not collection then
-        catalog:withWriteAccessDo("Create Collection", function(context)
-            collection = catalog:createCollection(collectionName, nil, true)
-        end)
-    end
 
-    return collection
+    local childCollection
+    -- Create the child collection 
+    catalog:withWriteAccessDo("Create Child Collection", function(context)
+        childCollection = catalog:createCollection(collectionName, parentCollection, true)
+    end)
+
+    return childCollection
 end
 
 -- Import assets into Lightroom
