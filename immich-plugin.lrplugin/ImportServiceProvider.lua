@@ -114,9 +114,18 @@ local function importAssetsIntoLightroom(catalog, collection, tempFiles)
             progressScope:setPortionComplete(i, #tempFiles)
             progressScope:setCaption(string.format("Importing %s (%d of %d)", LrPathUtils.leafName(tempFilePath), i, #tempFiles))
 
-            local photo = catalog:addPhoto(tempFilePath)
-            if photo then
-                table.insert(photoList, photo)
+            -- Use a valid destination folder (e.g., the Pictures folder)
+            local destinationFolder = LrPathUtils.getStandardFilePath("pictures")
+            local destinationPath = LrPathUtils.child(destinationFolder, LrPathUtils.leafName(tempFilePath))
+
+            local success = LrFileUtils.copy(tempFilePath, destinationPath)
+            if success then
+                local photo = catalog:addPhoto(destinationPath)
+                if photo then
+                    table.insert(photoList, photo)
+                end
+            else
+                LrDialogs.message("Error", "Failed to copy file to destination folder.", "critical")
             end
         end
 
