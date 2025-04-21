@@ -2,7 +2,7 @@ local ImportServiceProvider = require "ImportServiceProvider"
 local getImmichAlbums = ImportServiceProvider.getImmichAlbums
 local loadAlbumPhotos = ImportServiceProvider.loadAlbumPhotos
 
-local function showImportDialog(prefs)
+return {
     LrTasks.startAsyncTask(function()
         -- Fetch albums from Immich
         local albums = getImmichAlbums()
@@ -13,7 +13,7 @@ local function showImportDialog(prefs)
 
         -- Set default selected album
         prefs.selectedAlbum = albums[1] and albums[1].value or nil
-
+        
         -- Create the dialog UI
         local f = LrView.osFactory()
         local contents = f:column {
@@ -40,11 +40,9 @@ local function showImportDialog(prefs)
             actionVerb = "Import",
         }
 
-        -- Handle dialog result
-        if result == "ok" and prefs.selectedAlbum then
+    -- Handle dialog result
+    if result == "ok" and prefs.selectedAlbum then
             loadAlbumPhotos(prefs.selectedAlbum)
         end
     end)
-end
-
-return showImportDialog
+}
