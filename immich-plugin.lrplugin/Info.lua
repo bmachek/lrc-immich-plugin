@@ -25,14 +25,14 @@ return {
 	LrExportMenuItems = {
         {
             title = "Import from Immich",
-            file = "ImportServiceProvider.lua",
+            file = "ImportDialog.lua",
         },
     },
 
 	LrLibraryMenuItems = {
 		{
 			title = "Import from Immich",
-			file = "ImportServiceProvider.lua",
+			file = "ImportDialog.lua",
 		},
 	},
 
