@@ -83,30 +83,22 @@ local function getAlbumTitleById(albums, albumId)
     return nil -- Return nil if no matching album is found
 end
 
-
-
 -- Main function to load album photos
-local function doLoadAlbumPhotos(albumId, albumTitle)
-    local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
-    local catalog = LrApplication.activeCatalog()
-
-    local myPath = LrPathUtils.child(LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import"),albumTitle)
-    if not LrFileUtils.exists(myPath) then
-        LrFileUtils.createDirectory(myPath)
-    end
-
-    -- Download album assets
-    downloadAlbumAssets(immichAPI, albumId, myPath)
-
-    -- Import assets into Lightroom
-    catalog:triggerImportUI(myPath)
-    
-end
-
--- Async wrapper for loading album photos
 local function loadAlbumPhotos(albumId, albumTitle)
     LrTasks.startAsyncTask(function()
-        doLoadAlbumPhotos(albumId, albumTitle)
+        local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
+        local catalog = LrApplication.activeCatalog()
+    
+        local myPath = LrPathUtils.child(LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import"),albumTitle)
+        if not LrFileUtils.exists(myPath) then
+            LrFileUtils.createDirectory(myPath)
+        end
+    
+        -- Download album assets
+        downloadAlbumAssets(immichAPI, albumId, myPath)
+    
+        -- Import assets into Lightroom
+        catalog:triggerImportUI(myPath)
     end)
 end
 
