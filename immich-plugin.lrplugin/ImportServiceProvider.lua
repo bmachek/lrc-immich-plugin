@@ -1,51 +1,67 @@
 require "ImmichAPI"
 
+-- Constants
+local TITLES = {
+    DOWNLOAD_PROGRESS = "Downloading album assets...",
+    IMPORT_PROGRESS = "Importing assets into Lightroom...",
+    CLEANUP_PROGRESS = "Cleaning up temporary files...",
+    SUCCESS_MESSAGE = "All assets have been imported into the catalog.",
+    ERROR_NO_ALBUMS = "Failed to load album assets.",
+    ERROR_DOWNLOAD = "Failed to download asset: ",
+    ERROR_SAVE_FILE = "Failed to save asset to temporary file.",
+}
+
+-- Fetch albums from Immich
 local function getImmichAlbums()
     local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
-    return immichAPI:getAlbumsWODate()   
+    return immichAPI:getAlbumsWODate()
 end
 
+-- Download album assets
 local function downloadAlbumAssets(immichAPI, albumId)
     local albumAssets = immichAPI:getAlbumAssets(albumId)
     local tempFiles = {}
 
-    if albumAssets then
-        local progressScope = LrProgressScope {
-            title = "Downloading album assets...",
-            caption = "Starting...",
-            functionContext = context -- assuming you're in an LrTasks.startAsyncTask with a context
-        }
-
-        for i = 1, #albumAssets do
-
-            local asset = albumAssets[i]
-            progressScope:setPortionComplete(i, #albumAssets)
-            progressScope:setCaption(string.format("Downloading %s (%d of %d)", asset.originalFileName or "asset", i, #albumAssets))
-
-            local assetData = immichAPI:downloadAsset(asset.id)
-            if assetData then
-                local tempFilePath = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"), asset.originalFileName)
-                local file = io.open(tempFilePath, "wb")
-                if file then
-                    file:write(assetData)
-                    file:close()
-                    table.insert(tempFiles, tempFilePath)
-                else
-                    LrDialogs.message("Error", "Failed to save asset to temporary file.", "critical")
-                end
-            else
-                LrDialogs.message("Error", "Failed to download asset: " .. asset.id, "critical")
-            end
-        end
-
-        progressScope:done()
-    else
-        LrDialogs.message("Error", "Failed to load album assets.", "critical")
+    if not albumAssets or #albumAssets == 0 then
+        LrDialogs.message("Error", TITLES.ERROR_NO_ALBUMS, "critical")
+        return tempFiles
     end
 
+    local progressScope = LrProgressScope {
+        title = TITLES.DOWNLOAD_PROGRESS,
+        caption = "Starting...",
+        functionContext = context,
+    }
+
+    for i, asset in ipairs(albumAssets) do
+        if progressScope:isCanceled() then
+            break
+        end
+
+        progressScope:setPortionComplete(i, #albumAssets)
+        progressScope:setCaption(string.format("Downloading %s (%d of %d)", asset.originalFileName or "asset", i, #albumAssets))
+
+        local assetData = immichAPI:downloadAsset(asset.id)
+        if assetData then
+            local tempFilePath = LrPathUtils.child(LrPathUtils.getStandardFilePath("temp"), asset.originalFileName)
+            local file = io.open(tempFilePath, "wb")
+            if file then
+                file:write(assetData)
+                file:close()
+                table.insert(tempFiles, tempFilePath)
+            else
+                LrDialogs.message("Error", TITLES.ERROR_SAVE_FILE, "critical")
+            end
+        else
+            LrDialogs.message("Error", TITLES.ERROR_DOWNLOAD .. asset.id, "critical")
+        end
+    end
+
+    progressScope:done()
     return tempFiles
 end
 
+-- Get or create a collection
 local function getOrCreateCollection(catalog, immichAPI, albumId)
     local albums = immichAPI:getAlbumsWODate()
     local collectionName = "Immich - Album ID " .. tostring(albumId)
@@ -68,6 +84,7 @@ local function getOrCreateCollection(catalog, immichAPI, albumId)
         end
     end
 
+    -- Create collection if it doesn't exist
     if not collection then
         catalog:withWriteAccessDo("Create Collection", function(context)
             collection = catalog:createCollection(collectionName, nil, true)
@@ -77,20 +94,21 @@ local function getOrCreateCollection(catalog, immichAPI, albumId)
     return collection
 end
 
-local function importAssetsIntoLightroom(catalog, collection, albumId, tempFiles)
+-- Import assets into Lightroom
+local function importAssetsIntoLightroom(catalog, collection, tempFiles)
     local photoList = {}
 
     catalog:withWriteAccessDo("Import Assets", function(context)
         local progressScope = LrProgressScope {
-            title = "Importing assets into Lightroom",
+            title = TITLES.IMPORT_PROGRESS,
             caption = "Preparing import...",
-            functionContext = context
+            functionContext = context,
         }
 
-        
-
-        -- Import and collect photos with progress
         for i, tempFilePath in ipairs(tempFiles) do
+            if progressScope:isCanceled() then
+                break
+            end
 
             progressScope:setPortionComplete(i, #tempFiles)
             progressScope:setCaption(string.format("Importing %s (%d of %d)", LrPathUtils.leafName(tempFilePath), i, #tempFiles))
@@ -107,17 +125,20 @@ local function importAssetsIntoLightroom(catalog, collection, albumId, tempFiles
 
         progressScope:done()
     end)
-
 end
 
-local function cleanupTemporaryFiles(tempFiles, context)
+-- Clean up temporary files
+local function cleanupTemporaryFiles(tempFiles)
     local progressScope = LrProgressScope {
-        title = "Cleaning up temporary files...",
+        title = TITLES.CLEANUP_PROGRESS,
         caption = "Starting cleanup...",
-        functionContext = context
+        functionContext = context,
     }
 
     for i, tempFilePath in ipairs(tempFiles) do
+        if progressScope:isCanceled() then
+            break
+        end
 
         progressScope:setPortionComplete(i, #tempFiles)
         progressScope:setCaption(string.format("Deleting %s (%d of %d)", LrPathUtils.leafName(tempFilePath), i, #tempFiles))
@@ -128,6 +149,7 @@ local function cleanupTemporaryFiles(tempFiles, context)
     progressScope:done()
 end
 
+-- Main function to load album photos
 local function doLoadAlbumPhotos(albumId)
     local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
     local catalog = LrApplication.activeCatalog()
@@ -135,26 +157,28 @@ local function doLoadAlbumPhotos(albumId)
     -- Step 1: Download album assets
     local tempFiles = downloadAlbumAssets(immichAPI, albumId)
 
-    -- Step 3: Get or create collection
+    -- Step 2: Get or create collection
     local collection = getOrCreateCollection(catalog, immichAPI, albumId)
 
     -- Step 3: Import assets into Lightroom
     if #tempFiles > 0 then
-        importAssetsIntoLightroom(catalog, collection, albumId, tempFiles)
+        importAssetsIntoLightroom(catalog, collection, tempFiles)
     end
 
     -- Step 4: Clean up temporary files
-    cleanupTemporaryFiles(tempFiles, context)
+    cleanupTemporaryFiles(tempFiles)
 
-    LrDialogs.message("Success", "All assets have been imported into the catalog.", "info")
+    LrDialogs.message("Success", TITLES.SUCCESS_MESSAGE, "info")
 end
 
+-- Async wrapper for loading album photos
 local function loadAlbumPhotos(albumId)
     LrTasks.startAsyncTask(function()
         doLoadAlbumPhotos(albumId)
     end)
 end
 
+-- Exported functions
 return {
     getImmichAlbums = getImmichAlbums,
     loadAlbumPhotos = loadAlbumPhotos,
