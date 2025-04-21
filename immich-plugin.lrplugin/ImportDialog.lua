@@ -1,6 +1,7 @@
 local ImportServiceProvider = require "ImportServiceProvider"
 local getImmichAlbums = ImportServiceProvider.getImmichAlbums
 local loadAlbumPhotos = ImportServiceProvider.loadAlbumPhotos
+local getAlbumTitleById = ImportServiceProvider.getAlbumTitleById
 
 return {
     LrTasks.startAsyncTask(function()
@@ -42,7 +43,8 @@ return {
 
     -- Handle dialog result
     if result == "ok" and prefs.selectedAlbum then
-            loadAlbumPhotos(prefs.selectedAlbum)
+            local albumTitle = getAlbumTitleById(albums, prefs.selectedAlbum)
+            loadAlbumPhotos(prefs.selectedAlbum, albumTitle)
         end
     end)
 }

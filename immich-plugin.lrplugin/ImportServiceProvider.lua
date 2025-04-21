@@ -61,19 +61,22 @@ local function downloadAlbumAssets(immichAPI, albumId)
     return tempFiles
 end
 
--- Get or create a collection
-local function getOrCreateCollection(catalog, immichAPI, albumId)
-    local albums = immichAPI:getAlbumsWODate()
-    local collectionName = "Immich - Album ID " .. tostring(albumId)
-
+-- Function to get the album title by albumId
+local function getAlbumTitleById(albums, albumId)
     if albums then
         for _, album in ipairs(albums) do
             if album.value == albumId then
-                collectionName = "Immich - " .. album.title
-                break
+                return album.title
             end
         end
     end
+    return nil -- Return nil if no matching album is found
+end
+
+-- Get or create a collection
+local function getOrCreateCollection(catalog, albumTitle)
+    
+    local collectionName = "Immich - " .. albumTitle
 
     -- Check if collection already exists
     local collection
@@ -150,7 +153,7 @@ local function cleanupTemporaryFiles(tempFiles)
 end
 
 -- Main function to load album photos
-local function doLoadAlbumPhotos(albumId)
+local function doLoadAlbumPhotos(albumId, albumTitle)
     local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
     local catalog = LrApplication.activeCatalog()
 
@@ -158,7 +161,7 @@ local function doLoadAlbumPhotos(albumId)
     local tempFiles = downloadAlbumAssets(immichAPI, albumId)
 
     -- Step 2: Get or create collection
-    local collection = getOrCreateCollection(catalog, immichAPI, albumId)
+    local collection = getOrCreateCollection(catalog, albumTitle)
 
     -- Step 3: Import assets into Lightroom
     if #tempFiles > 0 then
@@ -172,9 +175,9 @@ local function doLoadAlbumPhotos(albumId)
 end
 
 -- Async wrapper for loading album photos
-local function loadAlbumPhotos(albumId)
+local function loadAlbumPhotos(albumId, albumTitle)
     LrTasks.startAsyncTask(function()
-        doLoadAlbumPhotos(albumId)
+        doLoadAlbumPhotos(albumId, albumTitle)
     end)
 end
 
@@ -182,4 +185,5 @@ end
 return {
     getImmichAlbums = getImmichAlbums,
     loadAlbumPhotos = loadAlbumPhotos,
+    getAlbumTitleById = getAlbumTitleById,
 }
