@@ -2,9 +2,14 @@ local ImportServiceProvider = require "ImportServiceProvider"
 local getImmichAlbums = ImportServiceProvider.getImmichAlbums
 local loadAlbumPhotos = ImportServiceProvider.loadAlbumPhotos
 local getAlbumTitleById = ImportServiceProvider.getAlbumTitleById
+local showConfigurationDialog = ImportServiceProvider.showConfigurationDialog
 
 return {
     LrTasks.startAsyncTask(function()
+        if prefs.apiKey == nil or prefs.url == nil then
+            showConfigurationDialog()
+        end
+
         -- Fetch albums from Immich
         local albums = getImmichAlbums()
         if not albums or #albums == 0 then

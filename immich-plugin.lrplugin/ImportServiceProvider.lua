@@ -116,9 +116,104 @@ local function loadAlbumPhotos(albumId, albumTitle)
     end)
 end
 
+local function showConfigurationDialog()
+    -- Create the dialog UI
+    local f = LrView.osFactory()
+    local bind = LrView.bind
+    local share = LrView.share
+    local propertyTable = {}
+    propertyTable.url = ""
+    propertyTable.apiKey = ""
+
+    if prefs.url ~= nil then
+        propertyTable.url = prefs.url
+    end
+
+    if prefs.apiKey ~= nil then
+        propertyTable.apiKey = prefs.apiKey
+    end
+
+    local contents = f:column {
+        bind_to_object = propertyTable,
+        spacing = f:control_spacing(),
+        f:row {
+            f:static_text {
+                title = "URL:",
+                alignment = 'right',
+                width = share 'labelWidth'
+            },
+            f:edit_field {
+                value = bind 'url',
+                truncation = 'middle',
+                immediate = false,
+                fill_horizontal = 1,
+                validate = function (v, url)
+                    local sanitizedURL = ImmichAPI:sanityCheckAndFixURL(url)
+                    if sanitizedURL == url then
+                        return true, url, ''
+                    elseif not (sanitizedURL == nil) then
+                        LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
+                        return true, sanitizedURL, ''
+                    end
+                    return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+                end,
+            },
+            f:push_button {
+                title = 'Test connection',
+                action = function(button)
+                    LrTasks.startAsyncTask(function()
+                        local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+                        if immich:checkConnectivity() then
+                            LrDialogs.message('Connection test successful')
+                        else
+                            LrDialogs.message('Connection test NOT successful')
+                        end
+                    end)
+                end,
+            },
+        },
+
+        f:row {
+            f:static_text {
+                title = "API Key:",
+                alignment = 'right',
+                width = share 'labelWidth',
+                visible = bind 'hasNoError',
+            },
+            f:password_field {
+                value = bind 'apiKey',
+                truncation = 'middle',
+                immediate = true,
+                fill_horizontal = 1,
+            },
+        }
+    }
+
+    -- Show the dialog
+    local result = LrDialogs.presentModalDialog {
+        title = "Immich import configuration",
+        contents = contents,
+        actionVerb = "Save",
+    }
+
+    -- Handle dialog result
+    if result == "ok" then
+        LrTasks.startAsyncTask(function()
+            local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+            if immich:checkConnectivity() then
+                prefs.url = propertyTable.url
+                prefs.apiKey = propertyTable.apiKey
+            else
+                util.handleError("Invalid import configuration, settings not saved to preferences.", "Invalid import configuration. Settings haven't been saved.")
+            end
+        end)
+    end
+end
+
 -- Exported functions
 return {
     getImmichAlbums = getImmichAlbums,
     loadAlbumPhotos = loadAlbumPhotos,
     getAlbumTitleById = getAlbumTitleById,
+    showConfigurationDialog = showConfigurationDialog,
 }
