@@ -16,6 +16,7 @@ _G.LrApplication = import 'LrApplication'
 _G.LrPrefs = import 'LrPrefs'
 _G.LrShell = import 'LrShell'
 _G.LrSystemInfo = import 'LrSystemInfo'
+_G.LrProgressScope = import 'LrProgressScope'
 
 _G.JSON = require "JSON"
 _G.inspect = require 'inspect'
