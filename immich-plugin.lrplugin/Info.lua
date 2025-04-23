@@ -46,8 +46,8 @@ return {
 
 	LrPluginInfoProvider = 'PluginInfo.lua',
 
-	LrPluginInfoURL = 'https://github.com/bmachek/lrc-immich-plugin',
+	LrPluginInfoURL = 'https://blog.fokuspunk.de/lrc-immich-plugin/',
 
-	VERSION = { major = 2, minor = 5, revision = 1, build = 0, },
+	VERSION = { major = 3, minor = 0, revision = 0, build = 0, },
 
 }
