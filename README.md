@@ -1,6 +1,6 @@
 # lrc-immich-plugin
 
-A Lightroom Classic plugin which uploads images to an Immich Server via the Immich API.
+A Lightroom Classic plugin which uploads or downloads images to or from an Immich Server via the Immich API.
 It supports exporting as well as publishing.
 
 ## Documentation
