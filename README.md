@@ -1,4 +1,6 @@
 # lrc-immich-plugin
+[![Github All Releases](https://img.shields.io/github/downloads/bmachek/lrc-immich-plugin/total.svg)]()
+
 
 A Lightroom Classic plugin which uploads or downloads images to or from an Immich Server via the Immich API.
 It supports exporting as well as publishing.
