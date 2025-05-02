@@ -103,6 +103,12 @@ local function loadAlbumPhotos(albumId, albumTitle)
         local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
         local catalog = LrApplication.activeCatalog()
     
+        -- Create parent directory first. Fix for #66
+        local importDirectory = LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import")
+        if not LrFileUtils.exists(importDirectory) then
+            LrFileUtils.createDirectory(importDirectory)
+        end
+
         local myPath = LrPathUtils.child(LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import"),albumTitle)
         if not LrFileUtils.exists(myPath) then
             LrFileUtils.createDirectory(myPath)
@@ -113,6 +119,7 @@ local function loadAlbumPhotos(albumId, albumTitle)
     
         -- Import assets into Lightroom
         catalog:triggerImportUI(myPath)
+
     end)
 end
 
