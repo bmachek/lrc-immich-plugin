@@ -87,6 +87,62 @@ function ImmichAPI:downloadAsset(assetId)
     end
 end
 
+function ImmichAPI:hasLivePhotoVideo(assetId)
+    if util.nilOrEmpty(assetId) then
+        util.handleError('hasLivePhotoVideo: assetId empty', 'No asset ID provided. Check logs.')
+        return nil
+    end
+
+    local path = '/assets/' .. assetId
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
+
+    if parsedResponse ~= nil and parsedResponse.livePhotoVideoId then
+        log:trace("Asset has live photo video ID: " .. parsedResponse.livePhotoVideoId)
+        return true
+    else
+        log:trace("Asset does not have a live photo video ID.")
+        return false
+    end
+end
+
+function ImmichAPI:getLivePhotoVideoId(assetId)
+    if util.nilOrEmpty(assetId) then
+        util.handleError('getLivePhotoVideoId: assetId empty', 'No asset ID provided. Check logs.')
+        return nil
+    end
+
+    local path = '/assets/' .. assetId
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
+
+    if parsedResponse ~= nil and parsedResponse.livePhotoVideoId then
+        log:trace("Live photo video ID: " .. parsedResponse.livePhotoVideoId)
+        return parsedResponse.livePhotoVideoId
+    else
+        log:trace("No live photo video ID found.")
+        return nil
+    end
+end
+
+function ImmichAPI:getOriginalFileName(assetId)
+    if util.nilOrEmpty(assetId) then
+        util.handleError('getOriginalFileName: assetId empty', 'No asset ID provided. Check logs.')
+        return nil
+    end
+
+    local path = '/assets/' .. assetId
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
+
+    if parsedResponse ~= nil and parsedResponse.originalFileName then
+        log:trace("Original file name: " .. parsedResponse.originalFileName)
+        return parsedResponse.originalFileName
+    else
+        log:trace("No original file name found.")
+        return nil
+    end
+end
+
+
+
 function ImmichAPI:getAlbumAssets(albumId)
     if util.nilOrEmpty(albumId) then
         util.handleError('getAlbumAssets: albumId empty', 'No album ID provided. Check logs.')

@@ -54,6 +54,26 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
                 LrDialogs.message("Error", TITLES.ERROR_DOWNLOAD .. asset.id, "critical")
             end
 
+            if immichAPI:hasLivePhotoVideo(asset.id) then
+                local livePhotoVideoId = immichAPI:getLivePhotoVideoId(asset.id)
+                if livePhotoVideoId then
+                    local livePhotoVideoData = immichAPI:downloadAsset(livePhotoVideoId)
+                    if livePhotoVideoData then
+                        local tempFilePath = LrPathUtils.child(myPath, immichAPI:getOriginalFileName(livePhotoVideoId))
+                        local file = io.open(tempFilePath, "wb")
+
+                        if file then
+                            file:write(livePhotoVideoData)
+                            file:close()
+                        else
+                            LrDialogs.message("Error", TITLES.ERROR_SAVE_FILE, "critical")
+                        end
+                    else
+                        LrDialogs.message("Error", TITLES.ERROR_DOWNLOAD .. livePhotoVideoId, "critical")
+                    end
+                end
+            end
+
             -- Increment the completed task counter in a thread-safe manner
             completedTasks = completedTasks + 1
 
