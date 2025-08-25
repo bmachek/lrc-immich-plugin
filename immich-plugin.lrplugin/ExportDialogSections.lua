@@ -46,6 +46,13 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					f:static_text {
 						title = "Upload original files alongside edited exports to create stacks in Immich.",
 						alignment = 'left',
+						font = '<system/small>',
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Tip: Uploading originals increases file size but preserves RAW data for future edits.",
+						alignment = 'left',
 						text_color = LrColor( 0.6, 0.6, 0.6 ),
 						font = '<system/small>',
 					},
