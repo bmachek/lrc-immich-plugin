@@ -40,6 +40,39 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 	local result = {
 
 		{
+			title = "Keep Original Files in Immich",
+			f:column {
+				f:row {
+					f:static_text {
+						title = "Upload original files alongside edited exports to create stacks in Immich.",
+						alignment = 'left',
+						text_color = LrColor( 0.6, 0.6, 0.6 ),
+						font = '<system/small>',
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Original file behavior:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:popup_menu {
+						alignment = 'left',
+						immediate = true,
+						width_in_chars = 35,
+						items = {
+							{ title = "Don't upload original files", value = 'none' },
+							{ title = "Upload originals for edited photos only", value = 'edited' },
+							{ title = "Upload originals for all photos (non recommended)", value = 'all' },
+						},
+						value = bind 'originalFileMode',
+						tooltip = "Note : Due to Lightroom limitations, edited photos means at leastone core parameter has been adjusted (exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, vibrance, saturation, crop).",
+					},
+				},
+			},
+		},
+
+		{
 			title = "Immich Server connection",
 			bind_to_object = propertyTable,
 

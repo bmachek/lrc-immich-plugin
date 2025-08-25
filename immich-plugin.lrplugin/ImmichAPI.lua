@@ -398,6 +398,27 @@ function ImmichAPI:addAssetToAlbum(albumId, assetId)
     return true
 end
 
+function ImmichAPI:createStack(assetIds)
+    if not assetIds or #assetIds < 2 then
+        util.handleError('createStack: need at least 2 assets', 'Need at least 2 assets to create a stack. Check logs.')
+        return nil
+    end
+
+    local apiPath = '/stacks'
+    local postBody = { assetIds = assetIds }
+
+    log:trace('Creating stack with assets: ' .. JSON:encode(assetIds))
+    
+    local parsedResponse = ImmichAPI.doPostRequest(self, apiPath, postBody)
+    if parsedResponse ~= nil then
+        log:trace('Stack created successfully with ID: ' .. parsedResponse.id)
+        return parsedResponse.id
+    else
+        log:error('Failed to create stack')
+        return nil
+    end
+end
+
 function ImmichAPI:createAlbum(albumName)
     if util.nilOrEmpty(albumName) then
         util.handleError('createAlbum: albumName empty', 'No album name given. Check logs.')
