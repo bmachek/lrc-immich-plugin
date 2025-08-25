@@ -6,7 +6,6 @@ This module provides functionality to:
 2. Upload original files alongside edited exports
 3. Create stacks in Immich with edited photo as primary
 
-Author: Immich Plugin Contributors
 --]]
 
 local LrPathUtils = import 'LrPathUtils'
@@ -52,6 +51,12 @@ function StackManager.hasEdits(photo, editedPhotosCache)
     
     -- Check for local adjustments (masks/brushes)
     if developSettings.MaskGroupBasedCorrections and #developSettings.MaskGroupBasedCorrections > 0 then
+        return true
+    end
+    
+    -- Check for virtual copies (copies virtuelles) - external edits like Photoshop
+    local copyName = photo:getFormattedMetadata("copyName")
+    if copyName and copyName ~= "" then
         return true
     end
     

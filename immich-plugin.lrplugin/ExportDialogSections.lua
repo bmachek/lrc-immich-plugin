@@ -63,10 +63,10 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 						items = {
 							{ title = "Don't upload original files", value = 'none' },
 							{ title = "Upload originals for edited photos only", value = 'edited' },
-							{ title = "Upload originals for all photos (non recommended)", value = 'all' },
+							{ title = "Upload originals for all photos", value = 'all' },
 						},
 						value = bind 'originalFileMode',
-						tooltip = "Note : Due to Lightroom limitations, edited photos means at leastone core parameter has been adjusted (exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, vibrance, saturation, crop).",
+						tooltip = "Note: Due to Lightroom limitations, edited photos means at least one core parameter has been adjusted (exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, vibrance, saturation, crop, local adjustments, or virtual copies).",
 					},
 				},
 			},
