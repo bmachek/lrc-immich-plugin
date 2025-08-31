@@ -152,18 +152,55 @@ function StackManager.analyzeSelectedPhotos()
         return { total = 0, edited = 0, original = 0, summary = "" }
     end
     
-    -- Get edited photos cache for performance
-    local editedPhotosCache = StackManager.getEditedPhotosCache()
+    local totalCount = #selectedPhotos
     
-    -- Count edited photos efficiently
-    local editedCount = 0
-    for _, photo in ipairs(selectedPhotos) do
-        if photo and photo.localIdentifier and StackManager.hasEdits(photo, editedPhotosCache) then
-            editedCount = editedCount + 1
+    -- Get all photos with adjustments in the entire catalog
+    local allEditedPhotos = catalog:findPhotos({
+        searchDesc = {
+            criteria = "hasAdjustments",
+            operation = "isTrue",
+            value = true,
+        }
+    })
+    
+    -- Get all photos with cropping in the entire catalog
+    local allCroppedPhotos = catalog:findPhotos({
+        searchDesc = {
+            criteria = "cropped",
+            operation = "isTrue",
+            value = true,
+        }
+    })
+    
+    -- Create lookup tables for fast checking
+    local editedPhotoIds = {}
+    local croppedPhotoIds = {}
+    
+    -- Build lookup for edited photos
+    for _, p in ipairs(allEditedPhotos) do
+        if p.localIdentifier then
+            editedPhotoIds[p.localIdentifier] = true
         end
     end
     
-    local totalCount = #selectedPhotos
+    -- Build lookup for cropped photos
+    for _, p in ipairs(allCroppedPhotos) do
+        if p.localIdentifier then
+            croppedPhotoIds[p.localIdentifier] = true
+        end
+    end
+    
+    -- Count edited photos in selection using fast lookups
+    local editedCount = 0
+    for _, photo in ipairs(selectedPhotos) do
+        if photo and photo.localIdentifier then
+            -- Check if photo has adjustments OR cropping
+            if editedPhotoIds[photo.localIdentifier] or croppedPhotoIds[photo.localIdentifier] then
+                editedCount = editedCount + 1
+            end
+        end
+    end
+    
     local originalCount = totalCount - editedCount
     
     -- Generate summary text

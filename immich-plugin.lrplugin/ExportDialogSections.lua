@@ -21,16 +21,26 @@ local function _updateCantExportBecause(propertyTable)
 end
 
 local function _updateEditedPhotosCount(propertyTable)
-	-- Only run if the mode is set to 'edited'
-	if propertyTable.originalFileMode ~= 'edited' then
-		propertyTable.editedPhotosCount = ""
-		return
-	end
-	
-	LrTasks.startAsyncTask(function()
-		local analysis = StackManager.analyzeSelectedPhotos()
-		propertyTable.editedPhotosCount = analysis.summary
-	end)
+    if propertyTable.originalFileMode ~= 'edited' then
+        propertyTable.editedPhotosCount = ""
+        return
+    end
+    
+    -- Show immediate feedback for all selections
+    local catalog = LrApplication.activeCatalog()
+    if catalog then
+        local selectedPhotos = catalog:getTargetPhotos()
+        if selectedPhotos and #selectedPhotos > 0 then
+            propertyTable.editedPhotosCount = "Analyzing " .. #selectedPhotos .. " photos..."
+        else
+            propertyTable.editedPhotosCount = "Analyzing photos..."
+        end
+    end
+    
+    LrTasks.startAsyncTask(function()
+        local analysis = StackManager.analyzeSelectedPhotos()
+        propertyTable.editedPhotosCount = analysis.summary
+    end)
 end
 
 -------------------------------------------------------------------------------

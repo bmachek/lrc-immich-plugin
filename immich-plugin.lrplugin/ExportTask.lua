@@ -117,6 +117,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             width_in_chars = 20,
                             fill_horizontal = 1,
                             value = LrView.bind('newAlbumName'),
+                            visible = LrBinding.keyEquals("albumMode", "new"),
                             align = "left",
                             immediate = true,
                         },
@@ -160,12 +161,25 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
         log:trace('Unknown albumMode: ' .. exportParams.albumMode .. '. Ignoring.')
     end
 
-    -- Performance optimization: Get edited photos cache if we need it
+    -- For the Original Photos Stack feature : get the edited photos cache.
     local editedPhotosCache
     if exportParams.originalFileMode == 'edited' then
-        log:trace('Getting edited photos cache for performance optimization')
         editedPhotosCache = StackManager.getEditedPhotosCache()
-        log:trace('Created edited photos cache with ' .. (editedPhotosCache and "success" or "failure"))
+    end
+
+    -- For the Original Photos Stack feature : analyze edited photos if not cached.
+    if exportParams.originalFileMode == 'edited' then
+        local catalog = LrApplication.activeCatalog()
+        if catalog then
+            local selectedPhotos = catalog:getTargetPhotos()
+            if selectedPhotos and #selectedPhotos > 0 then
+                log:info('Pre-processing edit detection for ' .. #selectedPhotos .. ' selected photos')
+                local analysis = StackManager.analyzeSelectedPhotos()
+                log:info('Pre-analysis complete: ' .. analysis.summary)
+            end
+        else
+            log:warn("Cannot access catalog for pre-analysis")
+        end
     end
 
     -- Iterate through photo renditions.
