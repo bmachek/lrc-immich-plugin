@@ -1,7 +1,10 @@
 require "ImmichAPI"
+require "StackManager"
+
+local LrTasks = import 'LrTasks'
+local LrColor = import 'LrColor'
 
 ExportDialogSections = {}
-
 
 local function _updateCantExportBecause(propertyTable)
 	LrTasks.startAsyncTask(function()
@@ -17,9 +20,24 @@ local function _updateCantExportBecause(propertyTable)
 	end)
 end
 
+local function _updateEditedPhotosCount(propertyTable)
+	-- Only run if the mode is set to 'edited'
+	if propertyTable.originalFileMode ~= 'edited' then
+		propertyTable.editedPhotosCount = ""
+		return
+	end
+	
+	LrTasks.startAsyncTask(function()
+		local analysis = StackManager.analyzeSelectedPhotos()
+		propertyTable.editedPhotosCount = analysis.summary
+	end)
+end
+
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.startDialog(propertyTable)
+	-- Initialize edited photos count
+	propertyTable.editedPhotosCount = ""
 
 	LrTasks.startAsyncTask(function()
 		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
@@ -29,6 +47,19 @@ function ExportDialogSections.startDialog(propertyTable)
 	-- propertyTable:addObserver('url', _updateCantExportBecause)
 	-- propertyTable:addObserver('apiKey', _updateCantExportBecause)
 	
+	-- Add observer for originalFileMode changes
+	propertyTable:addObserver('originalFileMode', function(key, value)
+		_updateEditedPhotosCount(propertyTable)
+	end)
+	
+	-- Trigger initial count if mode is already set to 'edited'
+	if propertyTable.originalFileMode == 'edited' then
+		-- Small delay to ensure UI is ready
+		LrTasks.startAsyncTask(function()
+			LrTasks.sleep(0.1)
+			_updateEditedPhotosCount(propertyTable)
+		end)
+	end
 end
 
 -------------------------------------------------------------------------------
@@ -72,8 +103,21 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 							{ title = "Upload originals for edited photos only", value = 'edited' },
 							{ title = "Upload originals for all photos", value = 'all' },
 						},
-						value = bind 'originalFileMode',
-						tooltip = "Note: Due to Lightroom limitations, edited photos means at least one core parameter has been adjusted (exposure, contrast, highlights, shadows, whites, blacks, texture, clarity, vibrance, saturation, crop, local adjustments, or virtual copies).",
+						value = bind 'originalFileMode'
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:static_text {
+						title = bind 'editedPhotosCount',
+						alignment = 'left',
+						fill_horizontal = 1,
+						font = '<system/small>',
+						text_color = LrColor(0.2, 0.6, 0.2),
 					},
 				},
 			},
@@ -142,7 +186,6 @@ end
 
 -------------------------------------------------------------------------------
 
-
 function ExportDialogSections.sectionsForTopOfDialog(_, propertyTable)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
@@ -190,8 +233,8 @@ function ExportDialogSections.sectionsForTopOfDialog(_, propertyTable)
 							width_in_chars = 20,
 							fill_horizontal = 1,
 							value = bind 'newAlbumName',
-							visible = LrBinding.keyEquals("albumMode", "new"),
 							align = "left",
+							visible = LrBinding.keyEquals("albumMode", "new"),
 						},
 					},
 				},

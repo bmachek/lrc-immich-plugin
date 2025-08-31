@@ -5,12 +5,14 @@ This module provides functionality to:
 1. Detect if a photo has been edited in Lightroom
 2. Upload original files alongside edited exports
 3. Create stacks in Immich with edited photo as primary
+4. Analyze selected photos for edit detection and counting
 
 --]]
 
 local LrPathUtils = import 'LrPathUtils'
 local LrFileUtils = import 'LrFileUtils'
 local LrLogger = import 'LrLogger'
+local LrApplication = import 'LrApplication'
 
 require "ImmichAPI"
 
@@ -22,45 +24,166 @@ StackManager = {}
 
 --------------------------------------------------------------------------------
 -- Check if a photo has been edited in Lightroom
--- Analyzes core develop settings that indicate user adjustments
+-- Primarily uses cache lookup, with fallback to individual checks
 function StackManager.hasEdits(photo, editedPhotosCache)
-    -- Check develop settings for core editing parameters
-    local developSettings = photo:getDevelopSettings()
-    if not developSettings then
-        return false
-    end
-    
-    -- Check core editing parameters that indicate user adjustments
-    local coreParams = {
-        "Exposure2012", "Contrast2012", "Highlights2012", "Shadows2012", 
-        "Whites2012", "Blacks2012", "Texture", "Clarity2012", 
-        "Vibrance", "Saturation"
-    }
-    
-    for _, param in ipairs(coreParams) do
-        local value = developSettings[param]
-        if value and math.abs(value) > 0.001 then
+    -- If we have a cache, use it for fast lookup first
+    if editedPhotosCache then
+        local hasEdits = (editedPhotosCache[photo.localIdentifier] ~= nil)
+        if hasEdits then
+            log:trace("Photo " .. photo.localIdentifier .. " has edits (cache): " .. tostring(hasEdits))
             return true
         end
     end
     
-    -- Check for cropping
-    if developSettings.HasCrop then
-        return true
+    -- Fallback: check directly using hasAdjustments criterion
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        log:warn("Cannot access catalog for edit detection")
+        return false
     end
     
-    -- Check for local adjustments (masks/brushes)
-    if developSettings.MaskGroupBasedCorrections and #developSettings.MaskGroupBasedCorrections > 0 then
-        return true
+    -- Search for photos with adjustments and check if this photo is in the results
+    local editedPhotos = catalog:findPhotos({
+        searchDesc = {
+            criteria = "hasAdjustments",
+            operation = "isTrue",
+            value = true,
+        }
+    })
+    
+    -- Check if the current photo is in the edited photos results
+    local hasEdits = false
+    for _, p in ipairs(editedPhotos) do
+        if p.localIdentifier == photo.localIdentifier then
+            hasEdits = true
+            break
+        end
     end
     
-    -- Check for virtual copies (copies virtuelles) - external edits like Photoshop
-    local copyName = photo:getFormattedMetadata("copyName")
-    if copyName and copyName ~= "" then
-        return true
+    -- Only check for cropping if hasAdjustments didn't detect anything
+    -- (cropped-only photos are not detected by hasAdjustments)
+    if not hasEdits then
+        local croppedPhotos = catalog:findPhotos({
+            searchDesc = {
+                criteria = "cropped",
+                operation = "isTrue",
+                value = true,
+            }
+        })
+        
+        -- Check if the current photo is in the cropped photos results
+        for _, p in ipairs(croppedPhotos) do
+            if p.localIdentifier == photo.localIdentifier then
+                hasEdits = true
+                log:trace("Photo " .. photo.localIdentifier .. " has crop edits (SDK cropped)")
+                break
+            end
+        end
     end
     
-    return false
+    return hasEdits
+end
+
+--------------------------------------------------------------------------------
+-- Get all edited photo IDs for efficient batch checking
+-- Call this once to create a cache for multiple photo checks
+-- Uses both hasAdjustments and cropped criteria for comprehensive detection
+function StackManager.getEditedPhotosCache()
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        log:warn("Cannot access catalog for edit detection")
+        return {}
+    end
+    
+    -- Get all photos with adjustments
+    local editedPhotos = catalog:findPhotos({
+        searchDesc = {
+            criteria = "hasAdjustments",
+            operation = "isTrue",
+            value = true,
+        }
+    })
+    
+    -- Get all photos with cropping
+    local croppedPhotos = catalog:findPhotos({
+        searchDesc = {
+            criteria = "cropped",
+            operation = "isTrue",
+            value = true,
+        }
+    })
+    
+    -- Create a lookup table for fast checking
+    local editedPhotoIds = {}
+    local uniqueCount = 0
+    
+    -- Add photos with adjustments
+    for _, p in ipairs(editedPhotos) do
+        if p.localIdentifier then
+            editedPhotoIds[p.localIdentifier] = true
+            uniqueCount = uniqueCount + 1
+        end
+    end
+    
+    -- Add photos with cropping (avoid duplicates)
+    for _, p in ipairs(croppedPhotos) do
+        if p.localIdentifier and not editedPhotoIds[p.localIdentifier] then
+            editedPhotoIds[p.localIdentifier] = true
+            uniqueCount = uniqueCount + 1
+        end
+    end
+    
+    log:info("Created edited photos cache with " .. #editedPhotos .. " hasAdjustments + " .. #croppedPhotos .. " cropped = " .. uniqueCount .. " unique photos")
+    return editedPhotoIds
+end
+
+--------------------------------------------------------------------------------
+-- Analyze selected photos and return comprehensive edit statistics
+-- Returns a table with: { total, edited, original, summary }
+function StackManager.analyzeSelectedPhotos()
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        log:warn("Cannot access catalog for photo analysis")
+        return { total = 0, edited = 0, original = 0, summary = "" }
+    end
+    
+    local selectedPhotos = catalog:getTargetPhotos()
+    if not selectedPhotos or #selectedPhotos == 0 then
+        return { total = 0, edited = 0, original = 0, summary = "" }
+    end
+    
+    -- Get edited photos cache for performance
+    local editedPhotosCache = StackManager.getEditedPhotosCache()
+    
+    -- Count edited photos efficiently
+    local editedCount = 0
+    for _, photo in ipairs(selectedPhotos) do
+        if photo and photo.localIdentifier and StackManager.hasEdits(photo, editedPhotosCache) then
+            editedCount = editedCount + 1
+        end
+    end
+    
+    local totalCount = #selectedPhotos
+    local originalCount = totalCount - editedCount
+    
+    -- Generate summary text
+    local summary
+    if editedCount > 0 then
+        if originalCount > 0 then
+            summary = string.format("%d photos selected: %d edited, %d original", totalCount, editedCount, originalCount)
+        else
+            summary = string.format("%d photos selected: all edited", totalCount)
+        end
+    else
+        summary = string.format("%d photos selected: no edits detected", totalCount)
+    end
+    
+    return {
+        total = totalCount,
+        edited = editedCount,
+        original = originalCount,
+        summary = summary
+    }
 end
 
 --------------------------------------------------------------------------------

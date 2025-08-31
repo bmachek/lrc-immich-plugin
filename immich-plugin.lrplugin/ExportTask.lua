@@ -117,7 +117,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             width_in_chars = 20,
                             fill_horizontal = 1,
                             value = LrView.bind('newAlbumName'),
-                            visible = LrBinding.keyEquals("albumMode", "new"),
                             align = "left",
                             immediate = true,
                         },
@@ -161,6 +160,14 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
         log:trace('Unknown albumMode: ' .. exportParams.albumMode .. '. Ignoring.')
     end
 
+    -- Performance optimization: Get edited photos cache if we need it
+    local editedPhotosCache
+    if exportParams.originalFileMode == 'edited' then
+        log:trace('Getting edited photos cache for performance optimization')
+        editedPhotosCache = StackManager.getEditedPhotosCache()
+        log:trace('Created edited photos cache with ' .. (editedPhotosCache and "success" or "failure"))
+    end
+
     -- Iterate through photo renditions.
     local failures = {}
     local stackWarnings = {}
@@ -197,7 +204,9 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                     if exportParams.originalFileMode == 'all' then
                         shouldStack = true
                     elseif exportParams.originalFileMode == 'edited' then
-                        shouldStack = StackManager.hasEdits(rendition.photo)
+                        -- Use the cache for fast lookup
+                        shouldStack = StackManager.hasEdits(rendition.photo, editedPhotosCache)
+                        log:trace('Photo ' .. rendition.photo.localIdentifier .. ' has edits: ' .. tostring(shouldStack))
                     end
                     
                     if shouldStack then
