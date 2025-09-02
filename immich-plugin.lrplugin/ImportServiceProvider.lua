@@ -124,12 +124,12 @@ local function loadAlbumPhotos(albumId, albumTitle)
         local catalog = LrApplication.activeCatalog()
     
         -- Create parent directory first. Fix for #66
-        local importDirectory = LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import")
+        local importDirectory = prefs.importPath
         if not LrFileUtils.exists(importDirectory) then
             LrFileUtils.createDirectory(importDirectory)
         end
 
-        local myPath = LrPathUtils.child(LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import"),albumTitle)
+        local myPath = LrPathUtils.child(importDirectory, albumTitle)
         if not LrFileUtils.exists(myPath) then
             LrFileUtils.createDirectory(myPath)
         end
@@ -151,6 +151,7 @@ local function showConfigurationDialog()
     local propertyTable = {}
     propertyTable.url = ""
     propertyTable.apiKey = ""
+    propertyTable.importPath = ""
 
     if prefs.url ~= nil then
         propertyTable.url = prefs.url
@@ -158,6 +159,10 @@ local function showConfigurationDialog()
 
     if prefs.apiKey ~= nil then
         propertyTable.apiKey = prefs.apiKey
+    end
+
+    if prefs.importPath ~= nil then
+        propertyTable.importPath = prefs.importPath
     end
 
     local contents = f:column {
@@ -213,6 +218,46 @@ local function showConfigurationDialog()
                 immediate = true,
                 fill_horizontal = 1,
             },
+        },
+
+        f:row {
+            f:static_text {
+                title = "Import Path:",
+                alignment = 'right',
+                width = share 'labelWidth',
+            },
+            f:edit_field {
+                value = bind 'importPath',
+                truncation = 'middle',
+                immediate = false,
+                fill_horizontal = 1,
+                validate = function (v, path)
+                    if path and path ~= "" then
+                        if LrFileUtils.exists(path) then
+                            return true, path, ''
+                        else
+                            return false, path, 'Selected path does not exist'
+                        end
+                    end
+                    return true, path, ''
+                end,
+            },
+            f:push_button {
+                title = 'Browse...',
+                action = function(button)
+                    local directory = LrDialogs.runOpenPanel({
+                        title = "Choose Import Directory",
+                        prompt = "Select",
+                        canChooseFiles = false,
+                        canChooseDirectories = true,
+                        canCreateDirectories = true,
+                        allowsMultipleSelection = false,
+                    })
+                    if directory and directory[1] then
+                        propertyTable.importPath = directory[1]
+                    end
+                end,
+            },
         }
     }
 
@@ -230,6 +275,7 @@ local function showConfigurationDialog()
             if immich:checkConnectivity() then
                 prefs.url = propertyTable.url
                 prefs.apiKey = propertyTable.apiKey
+                prefs.importPath = propertyTable.importPath
             else
                 util.handleError("Invalid import configuration, settings not saved to preferences.", "Invalid import configuration. Settings haven't been saved.")
             end
