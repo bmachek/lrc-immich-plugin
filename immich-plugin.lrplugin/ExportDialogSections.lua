@@ -1,7 +1,10 @@
 require "ImmichAPI"
+require "StackManager"
+
+local LrTasks = import 'LrTasks'
+local LrColor = import 'LrColor'
 
 ExportDialogSections = {}
-
 
 local function _updateCantExportBecause(propertyTable)
 	LrTasks.startAsyncTask(function()
@@ -17,9 +20,34 @@ local function _updateCantExportBecause(propertyTable)
 	end)
 end
 
+local function _updateEditedPhotosCount(propertyTable)
+    if propertyTable.originalFileMode ~= 'edited' then
+        propertyTable.editedPhotosCount = ""
+        return
+    end
+    
+    -- Show immediate feedback for all selections
+    local catalog = LrApplication.activeCatalog()
+    if catalog then
+        local selectedPhotos = catalog:getTargetPhotos()
+        if selectedPhotos and #selectedPhotos > 0 then
+            propertyTable.editedPhotosCount = "Analyzing " .. #selectedPhotos .. " photos..."
+        else
+            propertyTable.editedPhotosCount = "Analyzing photos..."
+        end
+    end
+    
+    LrTasks.startAsyncTask(function()
+        local analysis = StackManager.analyzeSelectedPhotos()
+        propertyTable.editedPhotosCount = analysis.summary
+    end)
+end
+
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.startDialog(propertyTable)
+	-- Initialize edited photos count
+	propertyTable.editedPhotosCount = ""
 
 	LrTasks.startAsyncTask(function()
 		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
@@ -29,6 +57,19 @@ function ExportDialogSections.startDialog(propertyTable)
 	-- propertyTable:addObserver('url', _updateCantExportBecause)
 	-- propertyTable:addObserver('apiKey', _updateCantExportBecause)
 	
+	-- Add observer for originalFileMode changes
+	propertyTable:addObserver('originalFileMode', function(key, value)
+		_updateEditedPhotosCount(propertyTable)
+	end)
+	
+	-- Trigger initial count if mode is already set to 'edited'
+	if propertyTable.originalFileMode == 'edited' then
+		-- Small delay to ensure UI is ready
+		LrTasks.startAsyncTask(function()
+			LrTasks.sleep(0.1)
+			_updateEditedPhotosCount(propertyTable)
+		end)
+	end
 end
 
 -------------------------------------------------------------------------------
@@ -38,6 +79,59 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 	local share = LrView.share
 
 	local result = {
+
+		{
+			title = "Keep Original Files in Immich",
+			f:column {
+				f:row {
+					f:static_text {
+						title = "Upload original files alongside edited exports to create stacks in Immich.",
+						alignment = 'left',
+						font = '<system/small>',
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Tip: Uploading originals increases file size but preserves RAW data for future edits.",
+						alignment = 'left',
+						text_color = LrColor( 0.6, 0.6, 0.6 ),
+						font = '<system/small>',
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Original file behavior:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:popup_menu {
+						alignment = 'left',
+						immediate = true,
+						width_in_chars = 35,
+						items = {
+							{ title = "Don't upload original files", value = 'none' },
+							{ title = "Upload originals for edited photos only", value = 'edited' },
+							{ title = "Upload originals for all photos", value = 'all' },
+						},
+						value = bind 'originalFileMode'
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:static_text {
+						title = bind 'editedPhotosCount',
+						alignment = 'left',
+						fill_horizontal = 1,
+						font = '<system/small>',
+						text_color = LrColor(0.2, 0.6, 0.2),
+					},
+				},
+			},
+		},
 
 		{
 			title = "Immich Server connection",
@@ -102,7 +196,6 @@ end
 
 -------------------------------------------------------------------------------
 
-
 function ExportDialogSections.sectionsForTopOfDialog(_, propertyTable)
 	local f = LrView.osFactory()
 	local bind = LrView.bind
@@ -150,8 +243,8 @@ function ExportDialogSections.sectionsForTopOfDialog(_, propertyTable)
 							width_in_chars = 20,
 							fill_horizontal = 1,
 							value = bind 'newAlbumName',
-							visible = LrBinding.keyEquals("albumMode", "new"),
 							align = "left",
+							visible = LrBinding.keyEquals("albumMode", "new"),
 						},
 					},
 				},

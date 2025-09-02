@@ -14,6 +14,7 @@ return {
 		{ key = "apiKey", default = '' },
 		{ key = 'album',     default = nil },
 		{ key = 'albumMode', default = nil },
+		{ key = 'originalFileMode', default = 'none' },
 	},
 
 	canExportVideo = true,
