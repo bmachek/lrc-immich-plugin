@@ -144,26 +144,28 @@ local function loadAlbumPhotos(albumId, albumTitle)
 end
 
 local function showConfigurationDialog()
-    -- Create the dialog UI
-    local f = LrView.osFactory()
-    local bind = LrView.bind
-    local share = LrView.share
-    local propertyTable = {}
-    propertyTable.url = ""
-    propertyTable.apiKey = ""
-    propertyTable.importPath = ""
+    log:info("Opening Immich import configuration dialog")
+    LrFunctionContext.callWithContext("showConfigurationDialog", function(context)
+        -- Create the dialog UI
+        local f = LrView.osFactory()
+        local bind = LrView.bind
+        local share = LrView.share
+        local propertyTable = LrBinding.makePropertyTable(context)
+        propertyTable.url = ""
+        propertyTable.apiKey = ""
+        propertyTable.importPath = ""
 
-    if prefs.url ~= nil then
-        propertyTable.url = prefs.url
-    end
+        if prefs.url ~= nil then
+            propertyTable.url = prefs.url
+        end
 
-    if prefs.apiKey ~= nil then
-        propertyTable.apiKey = prefs.apiKey
-    end
+        if prefs.apiKey ~= nil then
+            propertyTable.apiKey = prefs.apiKey
+        end
 
-    if prefs.importPath ~= nil then
-        propertyTable.importPath = prefs.importPath
-    end
+        if prefs.importPath ~= nil then
+            propertyTable.importPath = prefs.importPath
+        end
 
     local contents = f:column {
         bind_to_object = propertyTable,
@@ -172,13 +174,14 @@ local function showConfigurationDialog()
             f:static_text {
                 title = "URL:",
                 alignment = 'right',
-                width = share 'labelWidth'
+                width = LrView.share 'immich_label_width'
             },
             f:edit_field {
                 value = bind 'url',
                 truncation = 'middle',
                 immediate = false,
                 fill_horizontal = 1,
+                width_in_chars = 35,
                 validate = function (v, url)
                     local sanitizedURL = ImmichAPI:sanityCheckAndFixURL(url)
                     if sanitizedURL == url then
@@ -209,7 +212,7 @@ local function showConfigurationDialog()
             f:static_text {
                 title = "API Key:",
                 alignment = 'right',
-                width = share 'labelWidth',
+                width = LrView.share 'immich_label_width',
                 visible = bind 'hasNoError',
             },
             f:password_field {
@@ -217,6 +220,7 @@ local function showConfigurationDialog()
                 truncation = 'middle',
                 immediate = true,
                 fill_horizontal = 1,
+                width_in_chars = 35,
             },
         },
 
@@ -224,13 +228,14 @@ local function showConfigurationDialog()
             f:static_text {
                 title = "Import Path:",
                 alignment = 'right',
-                width = share 'labelWidth',
+                width = LrView.share 'immich_label_width',
             },
             f:edit_field {
                 value = bind 'importPath',
                 truncation = 'middle',
                 immediate = false,
                 fill_horizontal = 1,
+                width_in_chars = 35,
                 validate = function (v, path)
                     if path and path ~= "" then
                         if LrFileUtils.exists(path) then
@@ -254,7 +259,10 @@ local function showConfigurationDialog()
                         allowsMultipleSelection = false,
                     })
                     if directory and directory[1] then
+                        log:info("User selected import path: " .. directory[1])
                         propertyTable.importPath = directory[1]
+                    else
+                        log:info("User cancelled folder selection")
                     end
                 end,
             },
@@ -266,21 +274,32 @@ local function showConfigurationDialog()
         title = "Immich import configuration",
         contents = contents,
         actionVerb = "Save",
+        resizable_width = true,
     }
 
     -- Handle dialog result
     if result == "ok" then
+        log:info("User clicked Save on configuration dialog")
         LrTasks.startAsyncTask(function()
+            log:info("Testing connection to: " .. propertyTable.url)
             local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
             if immich:checkConnectivity() then
+                log:info("Connection successful, saving configuration:")
+                log:info("  URL: " .. propertyTable.url)
+                log:info("  Import Path: " .. propertyTable.importPath)
                 prefs.url = propertyTable.url
                 prefs.apiKey = propertyTable.apiKey
                 prefs.importPath = propertyTable.importPath
+                log:info("Configuration saved successfully")
             else
+                log:error("Connection test failed for URL: " .. propertyTable.url)
                 util.handleError("Invalid import configuration, settings not saved to preferences.", "Invalid import configuration. Settings haven't been saved.")
             end
         end)
+    else
+        log:info("User cancelled configuration dialog")
     end
+    end)
 end
 
 -- Exported functions
