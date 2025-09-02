@@ -181,7 +181,7 @@ local function showConfigurationDialog()
                 truncation = 'middle',
                 immediate = false,
                 fill_horizontal = 1,
-                width_in_chars = 35,
+                width_in_chars = 28,
                 validate = function (v, url)
                     local sanitizedURL = ImmichAPI:sanityCheckAndFixURL(url)
                     if sanitizedURL == url then
@@ -220,7 +220,7 @@ local function showConfigurationDialog()
                 truncation = 'middle',
                 immediate = true,
                 fill_horizontal = 1,
-                width_in_chars = 35,
+                width_in_chars = 28,
             },
         },
 
@@ -235,7 +235,7 @@ local function showConfigurationDialog()
                 truncation = 'middle',
                 immediate = false,
                 fill_horizontal = 1,
-                width_in_chars = 35,
+                width_in_chars = 28,
                 validate = function (v, path)
                     if path and path ~= "" then
                         if LrFileUtils.exists(path) then
