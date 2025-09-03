@@ -174,7 +174,7 @@ local function showConfigurationDialog()
             f:static_text {
                 title = "URL:",
                 alignment = 'right',
-                width = LrView.share 'immich_label_width'
+                width = share 'labelWidth'
             },
             f:edit_field {
                 value = bind 'url',
@@ -212,7 +212,7 @@ local function showConfigurationDialog()
             f:static_text {
                 title = "API Key:",
                 alignment = 'right',
-                width = LrView.share 'immich_label_width',
+                width = share 'labelWidth',
                 visible = bind 'hasNoError',
             },
             f:password_field {
@@ -228,7 +228,7 @@ local function showConfigurationDialog()
             f:static_text {
                 title = "Import Path:",
                 alignment = 'right',
-                width = LrView.share 'immich_label_width',
+                width = share 'labelWidth',
             },
             f:edit_field {
                 value = bind 'importPath',
