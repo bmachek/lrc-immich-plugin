@@ -48,6 +48,6 @@ return {
 
 	LrPluginInfoURL = 'https://blog.fokuspunk.de/lrc-immich-plugin/',
 
-	VERSION = { major = 3, minor = 1, revision = 0, build = 0, },
+	VERSION = { major = 3, minor = 2, revision = 0, build = 0, },
 
 }

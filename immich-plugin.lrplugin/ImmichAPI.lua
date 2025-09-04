@@ -665,8 +665,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
         log:trace('ImmichAPI POST request succeeded: ' .. response)
         return JSON:decode(response)
     else
-        log:error('ImmichAPI POST request failed. ' .. apiPath)
-        log:error(util.dumpTable(headers))
+        ErrorHandler.handleError('ImmichAPI POST request failed. ' .. apiPath, util.dumpTable(headers))
         if response ~= nil then
             log:error('Response body: ' .. response)
         end
@@ -697,8 +696,7 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
         end
         return JSON:decode(response)
     else
-        log:error('ImmichAPI ' .. method .. ' request failed. ' .. apiPath)
-        log:error(util.dumpTable(headers))
+        ErrorHandler.handleError('ImmichAPI ' .. method .. ' request failed. ' .. apiPath, util.dumpTable(headers))
         if response ~= nil then
             log:error('Response body: ' .. response)
         end
@@ -721,8 +719,7 @@ function ImmichAPI:doGetRequest(apiPath)
         log:trace('ImmichAPI GET request succeeded')
         return JSON:decode(response)
     else
-        log:error('ImmichAPI GET request failed. ' .. apiPath)
-        log:error(util.dumpTable(headers))
+        ErrorHandler.handleError('ImmichAPI GET request failed. ' .. apiPath, util.dumpTable(headers))
         if response ~= nil then
             log:trace('Response body: ' .. response)
         end
@@ -746,8 +743,7 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     if headers.status == 201 or headers.status == 200 then
         return JSON:decode(response)
     else
-        log:error('ImmichAPI multipart POST request failed. ' .. apiPath)
-        log:error(util.dumpTable(headers))
+        ErrorHandler.handleError('ImmichAPI multipart POST request failed. ' .. apiPath, util.dumpTable(headers))
         if response ~= nil then
             log:error('Response body: ' .. response)
         end
@@ -784,8 +780,7 @@ function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
         log:trace('ImmichAPI multipart PUT request succeeded: ' .. response)
         return JSON:decode(response)
     else
-        log:error('ImmichAPI multipart PUT request failed. ' .. apiPath)
-        log:error(util.dumpTable(headers))
+        ErrorHandler.handleError('ImmichAPI multipart PUT request failed. ' .. apiPath, util.dumpTable(headers))
         if response ~= nil then
             log:error('Response body: ' .. response)
         end

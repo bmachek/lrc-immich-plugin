@@ -21,6 +21,7 @@ _G.LrProgressScope = import 'LrProgressScope'
 _G.JSON = require "JSON"
 _G.inspect = require 'inspect'
 require "util"
+require "ErrorHandler"
 
 -- Global initializations
 _G.prefs = _G.LrPrefs.prefsForPlugin()
