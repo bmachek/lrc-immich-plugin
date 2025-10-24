@@ -312,25 +312,46 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
         return nil
     end
 
-    local apiPath = '/assets/' .. immichId .. '/original'
-    local submitDate = LrDate.timeToIsoDate(LrDate.currentTime())
-    local filePath = pathOrMessage
-    local fileName = LrPathUtils.leafName(filePath)
-
-    local formData = {
-        -- { name = 'assetData', filePath = filePath, fileName = fileName, contentType = 'application/octet-stream' },
-        { name = 'deviceAssetId',  value = localId },
-        { name = 'deviceId',       value = self.deviceIdString },
-        { name = 'fileCreatedAt',  value = submitDate },
-        { name = 'fileModifiedAt', value = submitDate },
-    }
-
-    -- log:trace('uploadAsset: mimeChunks' .. util.dumpTable(mimeChunks))
-    local parsedResponse = ImmichAPI.doMultiPartPutRequest(self, apiPath, pathOrMessage, formData)
-    if parsedResponse ~= nil then
-        return immichId
+    local newImmichId = ImmichAPI:uploadAsset(pathOrMessage, localId)
+    if newImmichId ~= nil then
+        if ImmichAPI:copyAssetMetadata(immichId, newImmichId) then
+            if ImmichAPI:deleteAsset(immichId) then
+                log:trace('copyAssetMetadata: Successfully replaced asset ' .. immichId .. ' with new asset ' .. newImmichId)
+                return newImmichId
+            else
+                util.handleError('copyAssetMetadata: Failed to delete old asset ' .. immichId,
+                    'Failed to delete old asset after replacement. Check logs.')
+                return newImmichId
+            end
+        else
+            util.handleError('replaceAsset: Failed to copy metadata from old asset ' .. immichId .. ' to new asset ' .. newImmichId,
+                'Failed to copy metadata to new asset after replacement. Check logs. New asset will be deleted.')
+            ImmichAPI:deleteAsset(newImmichId)
+            return nil
+        end
     end
     return nil
+end
+
+function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
+    if util.nilOrEmpty(sourceAssetId) then
+        util.handleError('copyAssetMetadata: sourceAssetId empty', 'Source Immich asset ID missing. Check logs.')
+        return nil
+    end
+
+    if util.nilOrEmpty(targetAssetId) then
+        util.handleError('copyAssetMetadata: targetAssetId empty', 'Target Immich asset ID missing. Check logs.')
+        return nil
+    end
+
+    local apiPath = '/assets/' .. sourceAssetId .. '/copy'
+    local body = { to = targetAssetId }
+
+    local parsedResponse = ImmichAPI:doCustomRequest('POST', apiPath, body)
+    if parsedResponse ~= nil then
+        return true
+    end
+    return false
 end
 
 
