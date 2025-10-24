@@ -312,25 +312,28 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
         return nil
     end
 
-    local apiPath = '/assets/' .. immichId .. '/original'
-    local submitDate = LrDate.timeToIsoDate(LrDate.currentTime())
-    local filePath = pathOrMessage
-    local fileName = LrPathUtils.leafName(filePath)
-
-    local formData = {
-        -- { name = 'assetData', filePath = filePath, fileName = fileName, contentType = 'application/octet-stream' },
-        { name = 'deviceAssetId',  value = localId },
-        { name = 'deviceId',       value = self.deviceIdString },
-        { name = 'fileCreatedAt',  value = submitDate },
-        { name = 'fileModifiedAt', value = submitDate },
-    }
-
-    -- log:trace('uploadAsset: mimeChunks' .. util.dumpTable(mimeChunks))
-    local parsedResponse = ImmichAPI.doMultiPartPutRequest(self, apiPath, pathOrMessage, formData)
-    if parsedResponse ~= nil then
-        return immichId
+    -- The old replaceAsset API (PUT /assets/{id}/original) is deprecated.
+    -- New approach: delete the old asset and upload a new one with the same deviceAssetId.
+    -- This ensures the asset is properly tracked with the same device identifier.
+    
+    log:trace('replaceAsset: Deleting old asset ' .. immichId .. ' before re-upload')
+    local deleteSuccess = ImmichAPI.deleteAsset(self, immichId)
+    
+    if not deleteSuccess then
+        log:error('replaceAsset: Failed to delete old asset ' .. immichId)
+        return nil
     end
-    return nil
+    
+    log:trace('replaceAsset: Uploading new asset with deviceAssetId ' .. localId)
+    local newId = ImmichAPI.uploadAsset(self, pathOrMessage, localId)
+    
+    if newId then
+        log:trace('replaceAsset: Successfully replaced asset. Old ID: ' .. immichId .. ', New ID: ' .. newId)
+        return newId
+    else
+        log:error('replaceAsset: Failed to upload new asset after deletion')
+        return nil
+    end
 end
 
 
