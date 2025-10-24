@@ -312,28 +312,46 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, localId)
         return nil
     end
 
-    -- The old replaceAsset API (PUT /assets/{id}/original) is deprecated.
-    -- New approach: delete the old asset and upload a new one with the same deviceAssetId.
-    -- This ensures the asset is properly tracked with the same device identifier.
-    
-    log:trace('replaceAsset: Deleting old asset ' .. immichId .. ' before re-upload')
-    local deleteSuccess = ImmichAPI.deleteAsset(self, immichId)
-    
-    if not deleteSuccess then
-        log:error('replaceAsset: Failed to delete old asset ' .. immichId)
+    local newImmichId = ImmichAPI:uploadAsset(pathOrMessage, localId)
+    if newImmichId ~= nil then
+        if ImmichAPI:copyAssetMetadata(immichId, newImmichId) then
+            if ImmichAPI:deleteAsset(immichId) then
+                log:trace('copyAssetMetadata: Successfully replaced asset ' .. immichId .. ' with new asset ' .. newImmichId)
+                return newImmichId
+            else
+                util.handleError('copyAssetMetadata: Failed to delete old asset ' .. immichId,
+                    'Failed to delete old asset after replacement. Check logs.')
+                return newImmichId
+            end
+        else
+            util.handleError('replaceAsset: Failed to copy metadata from old asset ' .. immichId .. ' to new asset ' .. newImmichId,
+                'Failed to copy metadata to new asset after replacement. Check logs. New asset will be deleted.')
+            ImmichAPI:deleteAsset(newImmichId)
+            return nil
+        end
+    end
+    return nil
+end
+
+function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
+    if util.nilOrEmpty(sourceAssetId) then
+        util.handleError('copyAssetMetadata: sourceAssetId empty', 'Source Immich asset ID missing. Check logs.')
         return nil
     end
-    
-    log:trace('replaceAsset: Uploading new asset with deviceAssetId ' .. localId)
-    local newId = ImmichAPI.uploadAsset(self, pathOrMessage, localId)
-    
-    if newId then
-        log:trace('replaceAsset: Successfully replaced asset. Old ID: ' .. immichId .. ', New ID: ' .. newId)
-        return newId
-    else
-        log:error('replaceAsset: Failed to upload new asset after deletion')
+
+    if util.nilOrEmpty(targetAssetId) then
+        util.handleError('copyAssetMetadata: targetAssetId empty', 'Target Immich asset ID missing. Check logs.')
         return nil
     end
+
+    local apiPath = '/assets/' .. sourceAssetId .. '/copy'
+    local body = { to = targetAssetId }
+
+    local parsedResponse = ImmichAPI:doCustomRequest('POST', apiPath, body)
+    if parsedResponse ~= nil then
+        return true
+    end
+    return false
 end
 
 
