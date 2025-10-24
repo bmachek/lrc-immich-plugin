@@ -55,13 +55,13 @@ function util.getLogfilePath()
     local lightroomVersion = LrApplication.versionTable()
 
     if lightroomVersion.major >= 14 then
-        if string.sub(LrSystemInfo.summaryString(), 1, 1) == '1' then
+        if MAC_ENV then
             return macPath14 .. filename
         else
             return winPath14 .. filename
         end
     else
-        if string.sub(LrSystemInfo.summaryString(), 1, 1) == '1' then
+        if MAC_ENV then
             return macPathOld .. filename
         else
             return winPathOld .. filename
