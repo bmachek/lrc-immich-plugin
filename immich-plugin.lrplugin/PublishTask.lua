@@ -106,31 +106,35 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
 
         local comments = {}
         for j, publishedCollection in ipairs(publishedCollections) do
-            local activities = ImmichAPI:getActivities(publishedCollection:getRemoteId(),
-                photoInfo.publishedPhoto:getRemoteId())
-            if activities ~= nil  then
-                for k, activity in ipairs(activities) do
-                    local comment = {}
+            -- Check if the published collection is an Immich collection and still exists on the server.
+            if publishedCollection:getService():getPluginId() == _PLUGIN.id
+                and ImmichAPI:checkIfAlbumExists(publishedCollection:getRemoteId()) then
+                -- Get activities for the photo in the published collection.
+                local activities = ImmichAPI:getActivities(publishedCollection:getRemoteId(),
+                    photoInfo.publishedPhoto:getRemoteId())
+                if activities ~= nil  then
+                    for k, activity in ipairs(activities) do
+                        local comment = {}
 
-                    local year, month, day, hour, minute = string.sub(activity.createdAt, 1, 15):match(
-                    "(%d+)%-(%d+)%-(%d+)%a(%d+)%:(%d+)")
+                        local year, month, day, hour, minute = string.sub(activity.createdAt, 1, 15):match(
+                        "(%d+)%-(%d+)%-(%d+)%a(%d+)%:(%d+)")
 
-                    -- Convert from date string to EPOC to COCOA
-                    comment.dateCreated = os.time { year = year, month = month, day = day, hour = hour, min = minute } -
-                    978307200
-                    comment.commentId = activity.id
-                    comment.username = activity.user.email
-                    comment.realname = activity.user.name
+                        -- Convert from date string to EPOC to COCOA
+                        comment.dateCreated = os.time { year = year, month = month, day = day, hour = hour, min = minute } - 978307200
+                        comment.commentId = activity.id
+                        comment.username = activity.user.email
+                        comment.realname = activity.user.name
 
-                    if activity.type == 'comment' then
-                        comment.commentText = activity.comment
-                        table.insert(comments, comment)
-                    elseif activity.type == 'like' then
-                        comment.commentText = 'Like'
-                        table.insert(comments, comment)
+                        if activity.type == 'comment' then
+                            comment.commentText = activity.comment
+                            table.insert(comments, comment)
+                        elseif activity.type == 'like' then
+                            comment.commentText = 'Like'
+                            table.insert(comments, comment)
+                        end
+
+                        -- log:trace(util.dumpTable(comment))
                     end
-
-                    -- log:trace(util.dumpTable(comment))
                 end
             end
         end
