@@ -344,10 +344,10 @@ function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
         return nil
     end
 
-    local apiPath = '/assets/' .. sourceAssetId .. '/copy'
-    local body = { to = targetAssetId }
+    local apiPath = '/assets/copy'
+    local body = { sourceId = sourceAssetId, targetId = targetAssetId }
 
-    local parsedResponse = ImmichAPI:doCustomRequest('POST', apiPath, body)
+    local parsedResponse = ImmichAPI:doCustomRequest('PUT', apiPath, body)
     if parsedResponse ~= nil then
         return true
     end
