@@ -219,23 +219,16 @@ function ImmichAPI:sanityCheckAndFixURL(url)
 end
 
 function ImmichAPI:checkConnectivity()
-    log:trace('checkConnectivity: Sending getMyUser request')
-    log:trace('ImmichAPI: Preparing GET request')
-    log:trace('URL: ' .. self.url .. self.apiBasePath .. '/users/me')
-    log:trace('API key: ' .. util.cutApiKey(self.apiKey))
-
     if self.url == '' or self.apiKey == '' then
         log:error('checkConnectivity: test failed. URL and API key empty.')
         return false
     end
 
     local requestHeaders = ImmichAPI.createHeaders(self)
-    log:trace('Request headers: ' .. util.dumpTable(requestHeaders))
-
     local response, headers = LrHttp.get(self.url .. self.apiBasePath .. '/users/me', requestHeaders)
 
     if headers.status == 200 then
-        log:trace('checkConnectivity: test OK.')
+        -- log:trace('checkConnectivity: test OK.')
         return true
     else
         log:error('checkConnectivity: test failed.')
@@ -454,6 +447,24 @@ function ImmichAPI:createAlbum(albumName)
         return parsedResponse.id
     end
     return nil
+end
+
+function ImmichAPI:getAlbumNameById(albumId)
+    if util.nilOrEmpty(albumId) then
+        util.handleError('getAlbumNameById: albumId empty', 'No album ID given. Check logs.')
+        return nil
+    end
+
+    local path = '/albums/' .. albumId
+    local parsedResponse = ImmichAPI.doGetRequest(self, path)
+
+    if parsedResponse ~= nil and parsedResponse.albumName then
+        log:trace("Album name: " .. parsedResponse.albumName)
+        return parsedResponse.albumName
+    else
+        log:trace("No album name found.")
+        return nil
+    end
 end
 
 

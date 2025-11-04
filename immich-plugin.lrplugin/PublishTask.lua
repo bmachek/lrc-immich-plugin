@@ -16,15 +16,17 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     end
 
     local publishedCollection = exportContext.publishedCollection
-    local albumId = publishedCollection:getRemoteId()
-    local albumName = publishedCollection:getName()
+    local albumId = publishedCollection and publishedCollection:getRemoteId()
+    local albumName = publishedCollection and publishedCollection:getName()
     local albumAssetIds
 
-    if immich:checkIfAlbumExists(albumId) then
-        albumAssetIds = ImmichAPI:getAlbumAssetIds(albumId)
+    if albumId and immich:checkIfAlbumExists(albumId) then
+        albumAssetIds = immich:getAlbumAssetIds(albumId)
+        exportSession:recordRemoteCollectionId(albumId)
+        exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
     else
-        albumAssetIds = {}
         albumId = immich:createAlbum(albumName)
+        albumAssetIds = {}
         exportSession:recordRemoteCollectionId(albumId)
         exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
     end
@@ -222,4 +224,80 @@ function PublishTask.getCollectionBehaviorInfo(publishSettings)
         -- Allow unlimited depth of collection sets, as requested by user.
         -- maxCollectionSetDepth = 0,
     }
+end
+
+
+function PublishTask.viewForCollectionSettings(f, publishSettings, info)
+    if info.publishedCollection ~= nil then
+        return f:row {} -- No settings for existing published collections.
+    end
+
+    local props = info.pluginContext
+    props.bindtoExistingAlbum = false
+    props.selectedAlbum = 0
+
+    LrTasks.startAsyncTask(function()
+        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        local albums = immich:getAlbumsWODate()
+        if albums == nil then
+            albums = {}
+        end
+        table.insert(albums, 1, { title = "Please select", value = 0 })
+        props.immichAlbums = albums
+    end)
+
+    local share = LrView.share
+    local bind = LrView.bind
+
+    local result = f:group_box {
+        bind_to_object = props,
+        title = "Immich Album Settings",
+        fill_horizontal = 1,
+        f:row {
+            f:checkbox {
+                title = "Bind to existing Immich Album",
+                value = bind 'bindtoExistingAlbum',
+            },
+            f:static_text {
+                title = "Existing Immich Album:",
+                width = share "label_width",
+                enabled = bind 'bindtoExistingAlbum',
+            },
+            f:popup_menu {
+                items = bind 'immichAlbums',
+                value = bind 'selectedAlbum', -- Preselect "Please select"
+                width = share "field_width",
+                enabled = bind 'bindtoExistingAlbum',
+            },
+        },
+    }
+
+    return result
+end
+
+function PublishTask.endDialogForCollectionSettings(publishSettings, info)
+    log:trace("endDialogForCollectionSettings called")
+    local props = info.pluginContext
+    if props.bindtoExistingAlbum and info.why == "ok" and props.selectedAlbum ~= 0 then
+        log:trace("User selected to bind collection to existing album with id " .. props.selectedAlbum)
+        info.collectionSettings.boundToExistingAlbum = true
+        info.collectionSettings.remoteId = props.selectedAlbum
+    end
+end
+
+function PublishTask.updateCollectionSettings(publishSettings, info)
+    log:trace("updateCollectionSettings called")
+    local props = info.collectionSettings
+    if props.boundToExistingAlbum and props.remoteId then
+        log:trace("Binding collection to existing album with id " .. props.remoteId)
+        local name = ImmichAPI:getAlbumNameById(props.remoteId)
+        log:trace("Setting collection name to " .. name)
+        local url = ImmichAPI:getAlbumUrl(props.remoteId)
+        log:trace("Setting collection url to " .. url)
+        LrApplication.activeCatalog():withWriteAccessDo("Update published collection info", function()
+            info.publishedCollection:setRemoteId(props.remoteId)
+            info.publishedCollection:setRemoteUrl(url)
+            info.publishedCollection:setName(name)
+        end)
+    end
 end

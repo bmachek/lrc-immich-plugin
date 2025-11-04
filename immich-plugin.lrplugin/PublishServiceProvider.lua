@@ -36,5 +36,8 @@ return {
 	shouldDeletePhotosFromServiceOnDeleteFromCatalog = PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog,
 	validatePublishedCollectionName = PublishTask.validatePublishedCollectionName,
 
+	viewForCollectionSettings = PublishTask.viewForCollectionSettings,
+	endDialogForCollectionSettings = PublishTask.endDialogForCollectionSettings,
+	updateCollectionSettings = PublishTask.updateCollectionSettings,
 
 }
