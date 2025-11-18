@@ -10,25 +10,30 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
 
     local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.',
             'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
 
     local publishedCollection = exportContext.publishedCollection
+    local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
     local albumId = publishedCollection and publishedCollection:getRemoteId()
     local albumName = publishedCollection and publishedCollection:getName()
     local albumAssetIds
 
-    if albumId and immich:checkIfAlbumExists(albumId) then
-        albumAssetIds = immich:getAlbumAssetIds(albumId)
-        exportSession:recordRemoteCollectionId(albumId)
-        exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
-    else
-        albumId = immich:createAlbum(albumName)
-        albumAssetIds = {}
-        exportSession:recordRemoteCollectionId(albumId)
-        exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
+    log:trace("Album creation strategy used: " .. albumCreationStrategy)
+
+    if albumCreationStrategy == 'collection' or albumCreationStrategy == 'existing' then
+        if albumId and immich:checkIfAlbumExists(albumId) then
+            albumAssetIds = immich:getAlbumAssetIds(albumId)
+            exportSession:recordRemoteCollectionId(albumId)
+            exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
+        else
+            albumId = immich:createAlbum(albumName)
+            albumAssetIds = {}
+            exportSession:recordRemoteCollectionId(albumId)
+            exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
+        end
     end
 
 
@@ -69,8 +74,16 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
 
-                if util.table_contains(albumAssetIds, id) == false then
-                    immich:addAssetToAlbum(albumId, id)
+                if albumCreationStrategy == 'folder' then
+                    local folderName = rendition.photo:getFormattedMetadata("folderName")
+                    local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
+                    if folderBasedAlbumId ~= nil then
+                        immich:addAssetToAlbum(folderBasedAlbumId, id)
+                    end
+                else
+                    if util.table_contains(albumAssetIds, id) == false then
+                        immich:addAssetToAlbum(albumId, id)
+                    end
                 end
             end
 
@@ -232,9 +245,8 @@ function PublishTask.viewForCollectionSettings(f, publishSettings, info)
         return f:row {} -- No settings for existing published collections.
     end
 
-    local props = info.pluginContext
-    props.bindtoExistingAlbum = false
-    props.selectedAlbum = 0
+    info.pluginContext.albumCreationStrategy = 'collection'
+    info.pluginContext.selectedAlbum = 0
 
     LrTasks.startAsyncTask(function()
         local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
@@ -243,33 +255,42 @@ function PublishTask.viewForCollectionSettings(f, publishSettings, info)
             albums = {}
         end
         table.insert(albums, 1, { title = "Please select", value = 0 })
-        props.immichAlbums = albums
+        info.pluginContext.immichAlbums = albums
     end)
 
     local share = LrView.share
     local bind = LrView.bind
 
     local result = f:group_box {
-        bind_to_object = props,
+        bind_to_object = info.pluginContext,
         title = "Immich Album Settings",
         fill_horizontal = 1,
-        f:row {
-            f:checkbox {
-                title = "Bind to existing Immich Album",
-                value = bind 'bindtoExistingAlbum',
+        f:column {
+            spacing = share 'inter_control_spacing',
+            f:radio_button {
+                title = "Create new album from collection name",
+                checked_value = 'collection',
+                value = bind 'albumCreationStrategy',
             },
-            f:static_text {
-                title = "Existing Immich Album:",
-                width = share "label_width",
-                enabled = bind 'bindtoExistingAlbum',
+            f:radio_button {
+                title = "Create albums based on folder names",
+                checked_value = 'folder',
+                value = bind 'albumCreationStrategy',
             },
-            f:popup_menu {
-                items = bind 'immichAlbums',
-                value = bind 'selectedAlbum', -- Preselect "Please select"
-                width = share "field_width",
-                enabled = bind 'bindtoExistingAlbum',
+            f:row {
+                f:radio_button {
+                    title = "Use existing album",
+                    checked_value = 'existing',
+                    value = bind 'albumCreationStrategy',
+                },
+                f:popup_menu {
+                    items = bind 'immichAlbums',
+                    value = bind 'selectedAlbum', -- Preselect "Please select"
+                    width = share "field_width",
+                    enabled = bind('albumCreationStrategy', { 'existing' }),
+                },
             },
-        },
+        }
     }
 
     return result
@@ -278,17 +299,24 @@ end
 function PublishTask.endDialogForCollectionSettings(publishSettings, info)
     log:trace("endDialogForCollectionSettings called")
     local props = info.pluginContext
-    if props.bindtoExistingAlbum and info.why == "ok" and props.selectedAlbum ~= 0 then
-        log:trace("User selected to bind collection to existing album with id " .. props.selectedAlbum)
-        info.collectionSettings.boundToExistingAlbum = true
-        info.collectionSettings.remoteId = props.selectedAlbum
+    if info.why == "ok" then
+        if props.albumCreationStrategy == 'existing' and props.selectedAlbum ~= 0 then
+            log:trace("User selected to bind collection to existing album with id " .. props.selectedAlbum)
+            info.collectionSettings.albumCreationStrategy = 'existing'
+            info.collectionSettings.remoteId = props.selectedAlbum
+        elseif props.albumCreationStrategy == 'existing' and props.selectedAlbum == 0 then
+            util.handleError("No album selected", "No album selected")
+        else
+            log:trace("Setting album creation strategy to: " .. props.albumCreationStrategy)
+            info.collectionSettings.albumCreationStrategy = props.albumCreationStrategy
+        end
     end
 end
 
 function PublishTask.updateCollectionSettings(publishSettings, info)
     log:trace("updateCollectionSettings called")
     local props = info.collectionSettings
-    if props.boundToExistingAlbum and props.remoteId then
+    if props.albumCreationStrategy == 'existing' and props.remoteId then
         log:trace("Binding collection to existing album with id " .. props.remoteId)
         local name = ImmichAPI:getAlbumNameById(props.remoteId)
         log:trace("Setting collection name to " .. name)
