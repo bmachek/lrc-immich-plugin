@@ -184,7 +184,7 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				f:password_field {
 					value = bind 'apiKey',
 					truncation = 'middle',
-					immediate = true,
+					immediate = false,
 					fill_horizontal = 1,
 				},
 			},
