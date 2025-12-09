@@ -17,6 +17,9 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
 
     local publishedCollection = exportContext.publishedCollection
     local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
+    if albumCreationStrategy == nil then
+        albumCreationStrategy = 'collection' -- Default strategy for old collections.
+    end
     local albumId = publishedCollection and publishedCollection:getRemoteId()
     local albumName = publishedCollection and publishedCollection:getName()
     local albumAssetIds
