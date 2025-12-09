@@ -13,7 +13,7 @@ return {
 		{ key = 'url', default = '' },
 		{ key = "apiKey", default = '' },
 		{ key = 'album',     default = nil },
-		{ key = 'albumMode', default = nil },
+		{ key = 'albumMode', default = 'none' },
 		{ key = 'originalFileMode', default = 'none' },
 	},
 
