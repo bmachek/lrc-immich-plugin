@@ -303,21 +303,22 @@ function PublishTask.endDialogForCollectionSettings(publishSettings, info)
     log:trace("endDialogForCollectionSettings called")
     local props = info.pluginContext
     if info.why == "ok" then
-        if props.albumCreationStrategy == 'existing' and props.selectedAlbum ~= 0 then
-            log:trace("User selected to bind collection to existing album with id " .. props.selectedAlbum)
-            info.collectionSettings.albumCreationStrategy = 'existing'
-            info.collectionSettings.remoteId = props.selectedAlbum
-        elseif props.albumCreationStrategy == 'existing' and props.selectedAlbum == 0 then
-            util.handleError("No album selected", "No album selected")
-        elseif props.albumCreationStrategy == 'folder' then
-            log:trace("Setting album creation strategy to: folder")
-            info.collectionSettings.albumCreationStrategy = 'folder'
-        elseif props.albumCreationStrategy == 'collection' then
-            log:trace("Setting album creation strategy to: collection")
-            info.collectionSettings.albumCreationStrategy = 'collection'
+        if props.albumCreationStrategy ~= nil then
+            if props.albumCreationStrategy == 'existing' and props.selectedAlbum ~= 0 then
+                log:trace("User selected to bind collection to existing album with id " .. props.selectedAlbum)
+                info.collectionSettings.albumCreationStrategy = 'existing'
+                info.collectionSettings.remoteId = props.selectedAlbum
+            elseif props.albumCreationStrategy == 'existing' and props.selectedAlbum == 0 then
+                util.handleError("No album selected", "No album selected")
+            else
+                log:trace("Setting album creation strategy to: " .. props.albumCreationStrategy)
+                info.collectionSettings.albumCreationStrategy = props.albumCreationStrategy
+            end
+        elseif info.collectionSettings.albumCreationStrategy == nil then
+            log:trace("No album creation strategy set, defaulting to 'collection'")
+            info.collectionSettings.albumCreationStrategy = 'collection' -- Default strategy for old collections.
         else
-            log:trace("Unknown album creation strategy, probably old collection. Defaulting to 'collection'")
-            info.collectionSettings.albumCreationStrategy = 'collection'
+            log:trace("Keeping existing album creation strategy: " .. info.collectionSettings.albumCreationStrategy)
         end
     end
 end
