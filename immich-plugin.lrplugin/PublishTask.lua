@@ -309,9 +309,15 @@ function PublishTask.endDialogForCollectionSettings(publishSettings, info)
             info.collectionSettings.remoteId = props.selectedAlbum
         elseif props.albumCreationStrategy == 'existing' and props.selectedAlbum == 0 then
             util.handleError("No album selected", "No album selected")
+        elseif props.albumCreationStrategy == 'folder' then
+            log:trace("Setting album creation strategy to: folder")
+            info.collectionSettings.albumCreationStrategy = 'folder'
+        elseif props.albumCreationStrategy == 'collection' then
+            log:trace("Setting album creation strategy to: collection")
+            info.collectionSettings.albumCreationStrategy = 'collection'
         else
-            log:trace("Setting album creation strategy to: " .. props.albumCreationStrategy)
-            info.collectionSettings.albumCreationStrategy = props.albumCreationStrategy
+            log:trace("Unknown album creation strategy, probably old collection. Defaulting to 'collection'")
+            info.collectionSettings.albumCreationStrategy = 'collection'
         end
     end
 end
