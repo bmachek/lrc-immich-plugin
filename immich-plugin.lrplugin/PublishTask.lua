@@ -177,21 +177,33 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
 
     for i = 1, #arrayOfPhotoIds do
-        if immich:removeAssetFromAlbum(publishedCollection:getRemoteId(), arrayOfPhotoIds[i]) then
-            deletedCallback(arrayOfPhotoIds[i])
-            local success = true
-            
-            if delete == 'other' then
-                success = immich:deleteAsset(arrayOfPhotoIds[i])
-            elseif delete == 'ok' then
-                if not immich:checkIfAssetIsInAnAlbum(arrayOfPhotoIds[i]) then
-                    success = immich:deleteAsset(arrayOfPhotoIds[i])
-                end
-            end
+        local albumId = nil
+        local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
+        if albumCreationStrategy == nil or albumCreationStrategy == 'collection' or albumCreationStrategy == 'existing' then
+            albumId = publishedCollection:getRemoteId()
+        elseif albumCreationStrategy == 'folder' then
+            --- Hack: find the album based on the folder name of the photo.
+            local photo = catalog:findPhotoByLocalIdentifier(arrayOfPhotoIds[i])
+            local folderName = photo:getFormattedMetadata("folderName")
+            albumId = immich:getAlbumIdByFolderName(folderName)
+        end
 
-            if not success then
-                util.handleError('Failed to delete asset ' .. arrayOfPhotoIds[i] .. ' from Immich', 'Failed to delete asset (check logs)')
+        if immich:removeAssetFromAlbum(albumId, arrayOfPhotoIds[i]) then
+            deletedCallback(arrayOfPhotoIds[i])
+        end
+
+        local success
+        
+        if delete == 'other' then
+            success = immich:deleteAsset(arrayOfPhotoIds[i])
+        elseif delete == 'ok' then
+            if not immich:checkIfAssetIsInAnAlbum(arrayOfPhotoIds[i]) then
+                success = immich:deleteAsset(arrayOfPhotoIds[i])
             end
+        end
+
+        if not success then
+            util.handleError('Failed to delete asset ' .. arrayOfPhotoIds[i] .. ' from Immich', 'Failed to delete asset (check logs)')
         end
     end
 end
