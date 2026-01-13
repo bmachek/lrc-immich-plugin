@@ -176,20 +176,37 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
     local catalog = LrApplication.activeCatalog()
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
 
+    local notExistingAlbums = {}
+
     for i = 1, #arrayOfPhotoIds do
         local albumId = nil
         local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
+        local photo = catalog:findPhotoByLocalIdentifier(arrayOfPhotoIds[i])
+        local folderName = photo:getFormattedMetadata("folderName")
+
         if albumCreationStrategy == nil or albumCreationStrategy == 'collection' or albumCreationStrategy == 'existing' then
             albumId = publishedCollection:getRemoteId()
         elseif albumCreationStrategy == 'folder' then
             --- Hack: find the album based on the folder name of the photo.
-            local photo = catalog:findPhotoByLocalIdentifier(arrayOfPhotoIds[i])
-            local folderName = photo:getFormattedMetadata("folderName")
             albumId = immich:getAlbumIdByFolderName(folderName)
         end
 
-        if immich:removeAssetFromAlbum(albumId, arrayOfPhotoIds[i]) then
+        if albumId ~= nil then
+            if immich:removeAssetFromAlbum(albumId, arrayOfPhotoIds[i]) then
+                deletedCallback(arrayOfPhotoIds[i])
+            end
+        else
             deletedCallback(arrayOfPhotoIds[i])
+            local missingAlbumName
+            if albumCreationStrategy == 'folder' then
+                missingAlbumName = folderName
+            elseif albumCreationStrategy == 'existing' then
+                missingAlbumName = ImmichAPI:getAlbumNameById(publishedCollection:getRemoteId())
+            else
+                missingAlbumName = publishedCollection:getName()
+            end
+
+            table.insert(notExistingAlbums, missingAlbumName)
         end
 
         local success
@@ -205,6 +222,11 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
         if not success then
             util.handleError('Failed to delete asset ' .. arrayOfPhotoIds[i] .. ' from Immich', 'Failed to delete asset (check logs)')
         end
+    end
+
+    if #notExistingAlbums > 0 then
+        LrDialogs.message('Some albums not found', 'The following albums were not found on the Immich server, but the photos were removed from the collection: \n' ..
+            table.concat(notExistingAlbums, "\n"), 'info')
     end
 end
 
