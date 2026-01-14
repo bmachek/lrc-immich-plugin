@@ -175,54 +175,61 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
 
     local catalog = LrApplication.activeCatalog()
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
+    local publishedPhotos = publishedCollection:getPublishedPhotos()
 
     local notExistingAlbums = {}
 
-    for i = 1, #arrayOfPhotoIds do
-        local albumId = nil
-        local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
-        local photo = catalog:findPhotoByLocalIdentifier(arrayOfPhotoIds[i])
-        local folderName = photo:getFormattedMetadata("folderName")
+    for _, publishedPhoto in ipairs(publishedPhotos) do
+        if util.table_contains(arrayOfPhotoIds, publishedPhoto:getRemoteId()) then
+            local photoRemoteId = publishedPhoto:getRemoteId()
+            log:trace("Photo " .. photoRemoteId .. " is in the list to be deleted.")
 
-        if albumCreationStrategy == nil or albumCreationStrategy == 'collection' or albumCreationStrategy == 'existing' then
-            albumId = publishedCollection:getRemoteId()
-        elseif albumCreationStrategy == 'folder' then
-            --- Hack: find the album based on the folder name of the photo.
-            albumId = immich:getAlbumIdByFolderName(folderName)
-        end
+            local folderName = publishedPhoto:getPhoto():getFormattedMetadata("folderName")
+            log:trace("Photo is in folder: " .. folderName)
 
-        if albumId ~= nil then
-            if immich:removeAssetFromAlbum(albumId, arrayOfPhotoIds[i]) then
-                deletedCallback(arrayOfPhotoIds[i])
+            local albumId = nil
+            local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
+            if albumCreationStrategy == nil then
+                albumCreationStrategy = 'collection' -- Default strategy for old collections.
             end
-        else
-            deletedCallback(arrayOfPhotoIds[i])
-            local missingAlbumName
+
             if albumCreationStrategy == 'folder' then
-                missingAlbumName = folderName
-            elseif albumCreationStrategy == 'existing' then
-                missingAlbumName = ImmichAPI:getAlbumNameById(publishedCollection:getRemoteId())
+                local albums = ImmichAPI:getAlbumsByNameFolderBased(folderName)
+                log:trace("Album found for folder based strategy: " .. util.dumpTable(albums))
+                if albums ~= nil and #albums == 1 then
+                    albumId = albums[1].value
+                end
             else
-                missingAlbumName = publishedCollection:getName()
+                albumId = publishedCollection:getRemoteId()
             end
 
-            table.insert(notExistingAlbums, missingAlbumName)
-        end
+            log:trace("Album id to remove from: " .. albumId)
 
-        local success
-        
-        if delete == 'other' then
-            success = immich:deleteAsset(arrayOfPhotoIds[i])
-        elseif delete == 'ok' then
-            if not immich:checkIfAssetIsInAnAlbum(arrayOfPhotoIds[i]) then
-                success = immich:deleteAsset(arrayOfPhotoIds[i])
+            local removeFromAlbumSuccess = false
+            if albumId ~= nil then
+                removeFromAlbumSuccess = immich:removeAssetFromAlbum(albumId, photoRemoteId)
             end
-        end
 
-        if not success then
-            util.handleError('Failed to delete asset ' .. arrayOfPhotoIds[i] .. ' from Immich', 'Failed to delete asset (check logs)')
+            local deletionSuccess = true
+            if delete == 'other' then
+                deletionSuccess = immich:deleteAsset(photoRemoteId)
+            elseif delete == 'ok' then
+                if not immich:checkIfAssetIsInAnAlbum(photoRemoteId) then
+                    deletionSuccess = immich:deleteAsset(photoRemoteId)
+                end
+            end
+            if not deletionSuccess then
+                util.handleError('Failed to delete asset ' .. photoRemoteId .. ' from Immich', 'Failed to delete asset (check logs)')
+            end
+
+            if removeFromAlbumSuccess and deletionSuccess then
+                log:trace("Successfully removed photo " .. photoRemoteId .. " from album " .. tostring(albumId))
+                deletedCallback(photoRemoteId)
+            end
         end
     end
+
+
 
     if #notExistingAlbums > 0 then
         LrDialogs.message('Some albums not found', 'The following albums were not found on the Immich server, but the photos were removed from the collection: \n' ..

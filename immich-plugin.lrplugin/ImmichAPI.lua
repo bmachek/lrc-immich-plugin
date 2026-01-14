@@ -351,7 +351,7 @@ end
 function ImmichAPI:deleteAsset(immichId)
     if util.nilOrEmpty(immichId) then
         util.handleError('deleteAsset: immichId empty', 'Immich asset ID missing. Check logs.')
-        return nil
+        return false
     end
 
     local apiPath = '/assets'
@@ -369,12 +369,12 @@ end
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
     if util.nilOrEmpty(albumId) then
         util.handleError('removeAssetFromAlbum: albumId empty', 'Immich album ID missing. Check logs.')
-        return nil
+        return false
     end
 
     if util.nilOrEmpty(assetId) then
         util.handleError('removeAssetFromAlbum: assetId empty', 'No Immich asset ID given. Check logs.')
-        return nil
+        return false
     end
 
     local apiPath = '/albums/' .. albumId .. '/assets'
