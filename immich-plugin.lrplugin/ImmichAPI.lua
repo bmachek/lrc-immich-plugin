@@ -940,7 +940,7 @@ end
 function ImmichAPI:checkIfAlbumExists(albumId)
     if util.nilOrEmpty(albumId) then return false end
     log:trace("ImmichAPI: checkIfAlbumExists")
-    local albumInfo = self:doGetRequest('/albums/' .. albumId)
+    local albumInfo = self:doGetRequestAllow404('/albums/' .. albumId)
     return albumInfo ~= nil
 end
 
@@ -1038,6 +1038,30 @@ function ImmichAPI:doGetRequest(apiPath)
     if headers.status == SUCCESS_STATUS_GET then
         log:trace('ImmichAPI GET request succeeded')
         return safeDecodeJson(response, 'GET')
+    end
+    handleRequestFailure('GET', apiPath, headers.status, headers, response)
+    return nil
+end
+
+-- GET that treats 400/404 as "not found" and returns nil without error (e.g. album deleted on server).
+function ImmichAPI:doGetRequestAllow404(apiPath)
+    if not ensureConnectivity(self) then return nil end
+
+    logRequestStart(self, 'GET', apiPath)
+    local response, headers = LrHttp.get(self.url .. self.apiBasePath .. apiPath, self:createHeaders())
+
+    if not headers then
+        log:error('ImmichAPI GET: no response headers (network error): ' .. apiPath)
+        util.handleError('Connection failed', 'No response from Immich server. Check URL and network.')
+        return nil
+    end
+    if headers.status == SUCCESS_STATUS_GET then
+        log:trace('ImmichAPI GET request succeeded')
+        return safeDecodeJson(response, 'GET')
+    end
+    if headers.status == 404 or headers.status == 400 then
+        log:trace('ImmichAPI GET: resource not found (' .. tostring(headers.status) .. '): ' .. apiPath)
+        return nil
     end
     handleRequestFailure('GET', apiPath, headers.status, headers, response)
     return nil
