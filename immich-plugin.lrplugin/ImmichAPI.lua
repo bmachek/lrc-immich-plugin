@@ -443,6 +443,11 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
 
     local newImmichId = self:uploadAsset(pathOrMessage, deviceAssetId)
     if newImmichId ~= nil then
+        -- Immich may return the existing asset ID (e.g. duplicate detection); skip replace steps
+        if newImmichId == immichId then
+            log:trace('replaceAsset: Upload returned same ID, no replace needed: ' .. immichId)
+            return immichId
+        end
         if self:copyAssetMetadata(immichId, newImmichId) then
             if self:deleteAsset(immichId) then
                 log:trace('copyAssetMetadata: Successfully replaced asset ' .. immichId .. ' with new asset ' .. newImmichId)
