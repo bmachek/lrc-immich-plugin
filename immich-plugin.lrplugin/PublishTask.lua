@@ -59,6 +59,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     -- Iterate through photo renditions.
     local failures = {}
     local atLeastSomeSuccess = false
+    local pendingMetadataWrites = {}
 
     for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         -- Wait for next photo to render.
@@ -84,8 +85,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 table.insert(failures, pathOrMessage)
             else
                 atLeastSomeSuccess = true
-                -- Store assetId in metadata for future duplicate detection
-                MetadataTask.setImmichAssetId(photo, id)
+                -- Defer metadata write to avoid nested catalog write (publish already holds write access)
+                table.insert(pendingMetadataWrites, { photo = photo, assetId = id })
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
 
@@ -116,6 +117,16 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             message = tostring(#failures) .. " files failed to upload correctly."
         end
         LrDialogs.message(message, table.concat(failures, "\n"))
+    end
+
+    -- Write Immich asset IDs to catalog metadata after publish completes (avoids nested write access).
+    if #pendingMetadataWrites > 0 then
+        local toWrite = pendingMetadataWrites
+        LrTasks.startAsyncTask(function()
+            for _, entry in ipairs(toWrite) do
+                MetadataTask.setImmichAssetId(entry.photo, entry.assetId)
+            end
+        end)
     end
 end
 
