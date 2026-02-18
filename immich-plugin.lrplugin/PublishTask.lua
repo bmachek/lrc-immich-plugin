@@ -299,10 +299,14 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
 
     -- remoteId is nil, if the collection isn't yet published.
     if info.remoteId ~= nil and info.remoteId ~= '' then
-        local ok = immich:deleteAlbum(info.remoteId)
-        if not ok then
-            util.handleError('deletePublishedCollection: failed to delete album ' .. tostring(info.remoteId),
-                'Could not delete album on Immich. Check logs.')
+        if not immich:checkIfAlbumExists(info.remoteId) then
+            log:trace('deletePublishedCollection: album does not exist on server, skip delete: ' .. tostring(info.remoteId))
+        else
+            local ok = immich:deleteAlbum(info.remoteId)
+            if not ok then
+                util.handleError('deletePublishedCollection: failed to delete album ' .. tostring(info.remoteId),
+                    'Could not delete album on Immich. Check logs.')
+            end
         end
     end
 end
