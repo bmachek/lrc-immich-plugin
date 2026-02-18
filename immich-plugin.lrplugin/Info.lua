@@ -20,7 +20,7 @@ return {
 		},
 	},
 
-	-- LrMetadataProvider = 'MetadataProvider.lua',
+	LrMetadataProvider = 'MetadataProvider.lua',
 
 	LrLibraryMenuItems = {
 		{
@@ -46,8 +46,8 @@ return {
 
 	LrPluginInfoProvider = 'PluginInfo.lua',
 
-	LrPluginInfoURL = 'https://blog.fokuspunk.de/lrc-immich-plugin/',
+	LrPluginInfoURL = 'https://github.com/bmachek/lrc-immich-plugin/',
 
-	VERSION = { major = 3, minor = 4, revision = 2, build = 0, },
+	VERSION = { major = 3, minor = 5, revision = 0, build = 0, },
 
 }

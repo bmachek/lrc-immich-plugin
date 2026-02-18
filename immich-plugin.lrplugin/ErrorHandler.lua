@@ -1,13 +1,25 @@
 ErrorHandler = {}
 
 function ErrorHandler.handleError(errorMessage, detailedInfo)
-    log:error("Error: " .. errorMessage)
-    log:error("Details: " .. (detailedInfo or "No additional details provided."))
-    ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
+    local msg = (type(errorMessage) == "string" and errorMessage ~= "") and errorMessage or "An error occurred."
+    local detail = (type(detailedInfo) == "string" and detailedInfo ~= "") and detailedInfo or "No additional details provided."
+    if log and log.error then
+        log:error("Error: " .. msg)
+        log:error("Details: " .. detail)
+    end
+    ErrorHandler.customErrorDialog(msg, detail)
 end
 
 
 function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
+    local msg = (type(errorMessage) == "string" and errorMessage ~= "") and errorMessage or "An error occurred."
+    local detail = (type(detailedInfo) == "string" and detailedInfo ~= "") and detailedInfo or "No additional details provided."
+    if not LrView or not LrView.osFactory then
+        if LrDialogs and LrDialogs.showError then
+            LrDialogs.showError(msg .. "\n\n" .. detail)
+        end
+        return
+    end
     local f = LrView.osFactory()
     local bind = LrView.bind
     local share = LrView.share
@@ -21,7 +33,7 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
                 width = share "labelWidth",
             },
             f:static_text {
-                title = errorMessage,
+                title = msg,
                 alignment = 'left',
                 font = "<system/bold>",
             },
@@ -34,7 +46,7 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
                 width = share "labelWidth",
             },
             f:static_text {
-                title = detailedInfo or "No additional details provided.",
+                title = detail,
                 alignment = 'left',
                 size = 'small',
             },

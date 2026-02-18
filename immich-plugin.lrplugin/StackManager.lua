@@ -226,14 +226,21 @@ end
 --------------------------------------------------------------------------------
 -- Get the original file path for a photo
 function StackManager.getOriginalFilePath(photo)
+    if not photo then
+        log:warn("getOriginalFilePath: photo is nil")
+        return nil
+    end
     local originalPath = photo:getRawMetadata("path")
     
-    if originalPath and LrFileUtils.exists(originalPath) then
-        return originalPath
+    if not originalPath or type(originalPath) ~= "string" or originalPath == "" then
+        log:warn("getOriginalFilePath: no path metadata for photo " .. tostring(photo.localIdentifier))
+        return nil
     end
-    
-    log:warn("Original file not found or inaccessible: " .. tostring(originalPath))
-    return nil
+    if not LrFileUtils.exists(originalPath) then
+        log:warn("getOriginalFilePath: file does not exist or is inaccessible: " .. tostring(originalPath))
+        return nil
+    end
+    return originalPath
 end
 
 --------------------------------------------------------------------------------
@@ -246,23 +253,36 @@ end
 --------------------------------------------------------------------------------
 -- Upload original file and create stack with edited photo as primary
 function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, exportParams)
+    if not immich then
+        log:warn("processPhotoWithStack: immich API instance is nil")
+        return editedAssetId, "API not available"
+    end
+    if not rendition or not rendition.photo then
+        log:warn("processPhotoWithStack: rendition or photo is nil")
+        return editedAssetId, "Invalid rendition"
+    end
     local photo = rendition.photo
     
     -- Get original file path
     local originalPath = StackManager.getOriginalFilePath(photo)
     if not originalPath then
-        log:warn("Cannot access original file for: " .. photo.localIdentifier)
+        log:warn("processPhotoWithStack: cannot access original file for " .. tostring(photo.localIdentifier))
         return editedAssetId, "Cannot access original file"
     end
     
-    -- Generate device asset ID for original
+    -- Generate device asset ID for original using UUID
+    local baseDeviceId = util.getPhotoDeviceId(photo)
+    if not baseDeviceId then
+        log:warn("processPhotoWithStack: no device ID for photo " .. tostring(photo.localIdentifier))
+        return editedAssetId, "Cannot generate asset ID for original"
+    end
     local originalDeviceAssetId = StackManager.generateOriginalDeviceAssetId(
-        photo.localIdentifier, originalPath)
+        baseDeviceId, originalPath)
     
     log:trace("Uploading original file: " .. originalPath)
     
-    -- Check if original asset already exists
-    local existingOriginalId = immich:checkIfAssetExists(originalDeviceAssetId,
+    -- Check if original asset already exists (use enhanced check but without metadata lookup for originals)
+    local existingOriginalId, existingOriginalDeviceId = immich:checkIfAssetExists(originalDeviceAssetId,
         LrPathUtils.leafName(originalPath), photo:getFormattedMetadata("dateCreated"))
     
     local originalAssetId

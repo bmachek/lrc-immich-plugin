@@ -21,7 +21,8 @@ local function _updateCantExportBecause(propertyTable)
 end
 
 local function _updateEditedPhotosCount(propertyTable)
-    if propertyTable.originalFileMode ~= 'edited' then
+    local mode = propertyTable.originalFileMode
+    if mode ~= 'edited' and mode ~= 'original_plus_jpeg_if_edited' then
         propertyTable.editedPhotosCount = ""
         return
     end
@@ -62,8 +63,8 @@ function ExportDialogSections.startDialog(propertyTable)
 		_updateEditedPhotosCount(propertyTable)
 	end)
 	
-	-- Trigger initial count if mode is already set to 'edited'
-	if propertyTable.originalFileMode == 'edited' then
+	-- Trigger initial count if mode uses edit detection
+	if propertyTable.originalFileMode == 'edited' or propertyTable.originalFileMode == 'original_plus_jpeg_if_edited' then
 		-- Small delay to ensure UI is ready
 		LrTasks.startAsyncTask(function()
 			LrTasks.sleep(0.1)
@@ -107,11 +108,13 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					f:popup_menu {
 						alignment = 'left',
 						immediate = true,
-						width_in_chars = 35,
+						width_in_chars = 42,
 						items = {
 							{ title = "Don't upload original files", value = 'none' },
 							{ title = "Upload originals for edited photos only", value = 'edited' },
 							{ title = "Upload originals for all photos", value = 'all' },
+							{ title = "Always upload original only (no JPG)", value = 'original_only' },
+							{ title = "Always upload original, JPG only if edited", value = 'original_plus_jpeg_if_edited' },
 						},
 						value = bind 'originalFileMode'
 					},
@@ -148,42 +151,34 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					truncation = 'middle',
 					immediate = false,
 					fill_horizontal = 1,
-					validate = function (v, url)
-						local sanitizedURL = propertyTable.immich:sanityCheckAndFixURL(url)
-						if sanitizedURL == url then
-							return true, url, ''
-						elseif not (sanitizedURL == nil) then
-							LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
-							return true, sanitizedURL, ''
-						end
-						return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+					validate = function(_, url)
+						return ImmichAPI.validateUrlForDialog(url, propertyTable.url, propertyTable.apiKey)
 					end,
 				},
 				f:push_button {
-                    title = 'Test connection',
-                    action = function(button)
-                        LrTasks.startAsyncTask(function()
-                            propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
-                            if propertyTable.immich:checkConnectivity() then
-                                LrDialogs.message('Connection test successful')
-                            else
-                                LrDialogs.message('Connection test NOT successful')
-                            end
-                        end)
-                    end,
-                },
+					title = "Test connection",
+					action = function()
+						LrTasks.startAsyncTask(function()
+							local success, message, api = ImmichAPI.testConnection(
+								propertyTable.url, propertyTable.apiKey, propertyTable.immich)
+							if api then
+								propertyTable.immich = api
+							end
+							LrDialogs.message(message)
+						end)
+					end,
+				},
 			},
 
 			f:row {
 				f:static_text {
 					title = "API Key:",
-					alignment = 'right',
-					width = share 'labelWidth',
-					visible = bind 'hasNoError',
+					alignment = "right",
+					width = share "labelWidth",
 				},
 				f:password_field {
-					value = bind 'apiKey',
-					truncation = 'middle',
+					value = bind "apiKey",
+					truncation = "middle",
 					immediate = false,
 					fill_horizontal = 1,
 				},

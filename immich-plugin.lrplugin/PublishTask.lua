@@ -1,17 +1,24 @@
 require "ImmichAPI"
--- require "MetadataTask"
+require "MetadataTask"
 
 PublishTask = {}
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
+    if not exportContext or not exportContext.exportSession or not exportContext.propertyTable then
+        util.handleError('PublishTask: invalid export context', 'Export context is missing. Please try again.')
+        return nil
+    end
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
 
-
+    if util.nilOrEmpty(exportParams.url) or util.nilOrEmpty(exportParams.apiKey) then
+        util.handleError('PublishTask: URL or API key not set', 'Configure Immich URL and API key in the plugin settings.')
+        return nil
+    end
     local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
     if not immich:checkConnectivity() then
         util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.',
-            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+            'Immich connection not working. Check URL and API key in plugin settings.')
         return nil
     end
 
@@ -42,10 +49,11 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
 
     -- Set progress title.
     local nPhotos = exportSession:countRenditions()
+    local progressTitle = (prefs and prefs.url and prefs.url ~= "") and prefs.url or "Immich"
     local progressScope = exportContext:configureProgress {
         title = nPhotos > 1
-            and "Publishing " .. nPhotos .. " photos to " .. prefs.url
-            or "Publishing one photo to " .. prefs.url
+            and ("Publishing " .. nPhotos .. " photos to " .. progressTitle)
+            or ("Publishing one photo to " .. progressTitle)
     }
 
     -- Iterate through photo renditions.
@@ -60,20 +68,24 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         if progressScope:isCanceled() then break end
 
         if success then
-            local existingId, existingDeviceId = immich:checkIfAssetExists(rendition.photo.localIdentifier,
-                rendition.photo:getFormattedMetadata("fileName"), rendition.photo:getFormattedMetadata("dateCreated"))
+            local photo = rendition.photo
+            local deviceAssetId = util.getPhotoDeviceId(photo)
+            local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
+                photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
             local id
 
             if existingId == nil then
-                id = immich:uploadAsset(pathOrMessage, rendition.photo.localIdentifier)
+                id = immich:uploadAsset(pathOrMessage, deviceAssetId)
             else
-                id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId)
+                id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
             end
 
             if not id then
                 table.insert(failures, pathOrMessage)
             else
                 atLeastSomeSuccess = true
+                -- Store assetId in metadata for future duplicate detection
+                MetadataTask.setImmichAssetId(photo, id)
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
 
@@ -84,7 +96,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                         immich:addAssetToAlbum(folderBasedAlbumId, id)
                     end
                 else
-                    if util.table_contains(albumAssetIds, id) == false then
+                    if albumId and (not albumAssetIds or util.table_contains(albumAssetIds, id) == false) then
                         immich:addAssetToAlbum(albumId, id)
                     end
                 end
@@ -127,30 +139,34 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
             -- Check if the published collection is an Immich collection and still exists on the server.
             if string.sub(publishedCollection:getService():getPluginId(), 1, -3) == _PLUGIN.id then
                 log:trace('publishedCollection : ' .. publishedCollection:getName() .. " is an Immich collection.")
-                if ImmichAPI:checkIfAlbumExists(publishedCollection:getRemoteId()) then
+                if immich:checkIfAlbumExists(publishedCollection:getRemoteId()) then
                     log:trace("... and it exists on the server.")
                     -- Get activities for the photo in the published collection.
-                    local activities = ImmichAPI:getActivities(publishedCollection:getRemoteId(),
+                    local activities = immich:getActivities(publishedCollection:getRemoteId(),
                         photoInfo.publishedPhoto:getRemoteId())
-                    if activities ~= nil  then
+                    if activities and type(activities) == "table" then
                         for k, activity in ipairs(activities) do
-                            local comment = {}
+                            if activity and activity.createdAt then
+                                local comment = {}
 
-                            local year, month, day, hour, minute = string.sub(activity.createdAt, 1, 15):match(
-                            "(%d+)%-(%d+)%-(%d+)%a(%d+)%:(%d+)")
+                                local year, month, day, hour, minute = string.sub(activity.createdAt, 1, 15):match(
+                                "(%d+)%-(%d+)%-(%d+)%a(%d+)%:(%d+)")
 
-                            -- Convert from date string to EPOC to COCOA
-                            comment.dateCreated = os.time { year = year, month = month, day = day, hour = hour, min = minute } - 978307200
-                            comment.commentId = activity.id
-                            comment.username = activity.user.email
-                            comment.realname = activity.user.name
+                                if year and month and day and hour and minute then
+                                    -- Convert from date string to EPOC to COCOA
+                                    comment.dateCreated = os.time { year = year, month = month, day = day, hour = hour, min = minute } - 978307200
+                                end
+                                comment.commentId = activity.id
+                                comment.username = (activity.user and activity.user.email) or ""
+                                comment.realname = (activity.user and activity.user.name) or ""
 
-                            if activity.type == 'comment' then
-                                comment.commentText = activity.comment
-                                table.insert(comments, comment)
-                            elseif activity.type == 'like' then
-                                comment.commentText = 'Like'
-                                table.insert(comments, comment)
+                                if activity.type == 'comment' then
+                                    comment.commentText = activity.comment or ''
+                                    table.insert(comments, comment)
+                                elseif activity.type == 'like' then
+                                    comment.commentText = 'Like'
+                                    table.insert(comments, comment)
+                                end
                             end
                          end
                     end
@@ -164,17 +180,41 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
 end
 
 function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
-   local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    if util.nilOrEmpty(publishSettings.url) or util.nilOrEmpty(publishSettings.apiKey) then
+        util.handleError('deletePhotosFromPublishedCollection: URL or API key not set', 'Configure Immich in plugin settings.')
+        return nil
+    end
+    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
-            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.',
+            'Immich connection not working. Check URL and API key in plugin settings.')
         return nil
     end
 
-    local delete = LrDialogs.confirm('Delete photos', 'Should removed photos be trashed in Immich?', 'If not included in any album', 'No', 'Yes (dangerous!)')
+    local delete = LrDialogs.promptForActionWithDoNotShow({
+        actionPrefKey = 'immichDeletePhotosTrashBehavior',
+        message = 'Delete photos',
+        info = 'Should removed photos be trashed in Immich?',
+        verbBtns = {
+            { verb = 'no', label = 'No' },
+            { verb = 'only_if_not_in_album', label = 'If not included in any album' },
+            { verb = 'always', label = 'Yes (dangerous!)' },
+        },
+    })
+    if delete == nil then
+        return nil
+    end
 
     local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        util.handleError('deletePhotosFromPublishedCollection: cannot access catalog', 'Lightroom catalog not available.')
+        return nil
+    end
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
+    if not publishedCollection then
+        util.handleError('deletePhotosFromPublishedCollection: published collection not found', 'Collection not found.')
+        return nil
+    end
     local publishedPhotos = publishedCollection:getPublishedPhotos()
 
     local notExistingAlbums = {}
@@ -194,7 +234,7 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
             end
 
             if albumCreationStrategy == 'folder' then
-                local albums = ImmichAPI:getAlbumsByNameFolderBased(folderName)
+                local albums = immich:getAlbumsByNameFolderBased(folderName)
                 log:trace("Album found for folder based strategy: " .. util.dumpTable(albums))
                 if albums ~= nil and #albums == 1 then
                     albumId = albums[1].value
@@ -211,13 +251,14 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
             end
 
             local deletionSuccess = true
-            if delete == 'other' then
+            if delete == 'always' then
                 deletionSuccess = immich:deleteAsset(photoRemoteId)
-            elseif delete == 'ok' then
+            elseif delete == 'only_if_not_in_album' then
                 if not immich:checkIfAssetIsInAnAlbum(photoRemoteId) then
                     deletionSuccess = immich:deleteAsset(photoRemoteId)
                 end
             end
+            -- delete == 'no': only remove from album, do not trash
             if not deletionSuccess then
                 util.handleError('Failed to delete asset ' .. photoRemoteId .. ' from Immich', 'Failed to delete asset (check logs)')
             end
@@ -246,8 +287,12 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
     end
 
     -- remoteId is nil, if the collection isn't yet published.
-    if info.remoteId ~= nil then
-        ImmichAPI:deleteAlbum(info.remoteId)
+    if info.remoteId ~= nil and info.remoteId ~= '' then
+        local ok = immich:deleteAlbum(info.remoteId)
+        if not ok then
+            util.handleError('deletePublishedCollection: failed to delete album ' .. tostring(info.remoteId),
+                'Could not delete album on Immich. Check logs.')
+        end
     end
 end
 
@@ -260,8 +305,12 @@ function PublishTask.renamePublishedCollection(publishSettings, info)
     end
 
     -- remoteId is nil, if the collection isn't yet published.
-    if info.remoteId ~= nil then
-        ImmichAPI:renameAlbum(info.remoteId, info.name)
+    if info.remoteId ~= nil and info.remoteId ~= '' and info.name and info.name ~= '' then
+        local ok = immich:renameAlbum(info.remoteId, info.name)
+        if not ok then
+            util.handleError('renamePublishedCollection: failed to rename album ' .. tostring(info.remoteId),
+                'Could not rename album on Immich. Check logs.')
+        end
     end
 end
 
@@ -366,17 +415,33 @@ end
 
 function PublishTask.updateCollectionSettings(publishSettings, info)
     log:trace("updateCollectionSettings called")
+    if not info or not info.collectionSettings then
+        return
+    end
     local props = info.collectionSettings
     if props.albumCreationStrategy == 'existing' and props.remoteId then
-        log:trace("Binding collection to existing album with id " .. props.remoteId)
-        local name = ImmichAPI:getAlbumNameById(props.remoteId)
-        log:trace("Setting collection name to " .. name)
-        local url = ImmichAPI:getAlbumUrl(props.remoteId)
-        log:trace("Setting collection url to " .. url)
-        LrApplication.activeCatalog():withWriteAccessDo("Update published collection info", function()
-            info.publishedCollection:setRemoteId(props.remoteId)
-            info.publishedCollection:setRemoteUrl(url)
-            info.publishedCollection:setName(name)
-        end)
+        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        if not immich:checkConnectivity() then
+            log:warn("updateCollectionSettings: Immich connection not available")
+            return
+        end
+        log:trace("Binding collection to existing album with id " .. tostring(props.remoteId))
+        local name = immich:getAlbumNameById(props.remoteId)
+        local url = immich:getAlbumUrl(props.remoteId)
+        if not name then
+            name = "Album " .. tostring(props.remoteId)
+        end
+        if not url then
+            url = ""
+        end
+        log:trace("Setting collection name to " .. tostring(name) .. ", url to " .. tostring(url))
+        local catalog = LrApplication.activeCatalog()
+        if catalog and info.publishedCollection then
+            catalog:withWriteAccessDo("Update published collection info", function()
+                info.publishedCollection:setRemoteId(props.remoteId)
+                info.publishedCollection:setRemoteUrl(url)
+                info.publishedCollection:setName(name)
+            end)
+        end
     end
 end

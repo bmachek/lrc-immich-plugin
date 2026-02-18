@@ -1,3 +1,5 @@
+require "ImmichAPI"
+
 PublishDialogSections = {}
 
 local function _updateCantExportBecause(propertyTable)
@@ -42,43 +44,35 @@ function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 					truncation = 'middle',
 					immediate = false,
 					fill_horizontal = 1,
-					validate = function (v, url)
-						local sanitizedURL = propertyTable.immich:sanityCheckAndFixURL(url)
-						if sanitizedURL == url then
-							return true, url, ''
-						elseif not (sanitizedURL == nil) then
-							LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
-							return true, sanitizedURL, ''
-						end
-						return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+					validate = function(_, url)
+						return ImmichAPI.validateUrlForDialog(url, propertyTable.url, propertyTable.apiKey)
 					end,
 				},
 				f:push_button {
-                    title = 'Test connection',
-                    action = function(button)
-                        LrTasks.startAsyncTask(function()
-                            propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
-                            if propertyTable.immich:checkConnectivity() then
-                                LrDialogs.message('Connection test successful')
-                            else
-                                LrDialogs.message('Connection test NOT successful')
-                            end
-                        end)
-                    end,
-                },
+					title = "Test connection",
+					action = function()
+						LrTasks.startAsyncTask(function()
+							local success, message, api = ImmichAPI.testConnection(
+								propertyTable.url, propertyTable.apiKey, propertyTable.immich)
+							if api then
+								propertyTable.immich = api
+							end
+							LrDialogs.message(message)
+						end)
+					end,
+				},
 			},
 
 			f:row {
 				f:static_text {
 					title = "API Key:",
-					alignment = 'right',
-					width = share 'labelWidth',
-					visible = bind 'hasNoError',
+					alignment = "right",
+					width = share "labelWidth",
 				},
 				f:password_field {
-					value = bind 'apiKey',
-					truncation = 'middle',
-					immediate = true,
+					value = bind "apiKey",
+					truncation = "middle",
+					immediate = false,
 					fill_horizontal = 1,
 				},
 			},
