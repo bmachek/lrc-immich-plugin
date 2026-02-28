@@ -77,6 +77,34 @@ function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				},
 			},
 		},
+		{
+			title = "Stacks",
+			bind_to_object = propertyTable,
+			f:column {
+				f:row {
+					f:static_text {
+						title = "DNG+JPG:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:checkbox {
+						title = "In Immich stapeln (bearbeitetes JPG als Primär)",
+						value = bind 'stackDngJpg',
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Lightroom-Stacks:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:checkbox {
+						title = "Lightroom-Stacks in Immich übernehmen",
+						value = bind 'stackLrStacks',
+					},
+				},
+			},
+		},
 	}
 
 	return result

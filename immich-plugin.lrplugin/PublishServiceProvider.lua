@@ -4,6 +4,7 @@ require "PublishTask"
 return {
 	startDialog = PublishDialogSections.startDialog,
 	sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
+	sectionsForBottomOfDialog = PublishDialogSections.sectionsForBottomOfDialog,
 	hideSections = { 'exportLocation' },
 	allowFileFormats = nil,
 	allowColorSpaces = nil,
@@ -15,6 +16,8 @@ return {
 	exportPresetFields = {
 		{ key = 'url', default = '' },
 		{ key = "apiKey", default = '' },
+		{ key = 'stackDngJpg', default = false },
+		{ key = 'stackLrStacks', default = false },
 	},
 
 	small_icon = 'icons/logo_small.png',

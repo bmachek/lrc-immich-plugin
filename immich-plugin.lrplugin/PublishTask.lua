@@ -1,5 +1,21 @@
 require "ImmichAPI"
 require "MetadataTask"
+require "StackManager"
+
+local LrFileUtils = import 'LrFileUtils'
+
+-- File extension to type for DNG+JPG stacking: 'raw', 'jpeg', or 'other'
+local RAW_EXT = { dng = true, nef = true, nefw = true, nrw = true, arw = true, cr2 = true, cr3 = true, crw = true, orf = true, raf = true, rw2 = true, pef = true, srw = true, erf = true, dcr = true, raw = true, ['3fr'] = true, x3f = true, mrw = true, rwl = true }
+local function getExtension(path)
+    if not path or type(path) ~= "string" then return "" end
+    return string.lower(string.match(path, "%.([^%.]+)$") or "")
+end
+local function getFileType(path)
+    local ext = getExtension(path)
+    if ext == "jpg" or ext == "jpeg" then return "jpeg" end
+    if RAW_EXT[ext] then return "raw" end
+    return "other"
+end
 
 PublishTask = {}
 
@@ -58,53 +74,206 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
 
     -- Iterate through photo renditions.
     local failures = {}
+    local stackWarnings = {}
     local atLeastSomeSuccess = false
     local pendingMetadataWrites = {}
+    local exportedPrimaryByPhoto = {}
 
-    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-        -- Wait for next photo to render.
-        local success, pathOrMessage = rendition:waitForRender()
+    local function uploadOneAndReport(immich, path, deviceAssetId, photo, filename, dateCreated)
+        local existingId, existingDeviceId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
+        local id
+        if existingId == nil then
+            id = immich:uploadAsset(path, deviceAssetId)
+        else
+            id = immich:replaceAsset(existingId, path, existingDeviceId)
+        end
+        return id
+    end
 
-        -- Check for cancellation again after photo has been rendered.
-        if progressScope:isCanceled() then break end
-
-        if success then
-            local photo = rendition.photo
-            local deviceAssetId = util.getPhotoDeviceId(photo)
-            local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
-                photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
-            local id
-
-            if existingId == nil then
-                id = immich:uploadAsset(pathOrMessage, deviceAssetId)
-            else
-                id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
+    if exportParams.stackDngJpg then
+        -- Phase 1: collect all renditions (same photo can have DNG + JPG)
+        local collected = {}
+        for _, rendition in exportContext:renditions { stopIfCanceled = true } do
+            local success, pathOrMessage = rendition:waitForRender()
+            if progressScope:isCanceled() then break end
+            if success then
+                table.insert(collected, {
+                    path = pathOrMessage,
+                    photo = rendition.photo,
+                    rendition = rendition,
+                    ext = getExtension(pathOrMessage),
+                    fileType = getFileType(pathOrMessage),
+                })
             end
+        end
+        -- Phase 2: group by photo
+        local byPhoto = {}
+        for _, item in ipairs(collected) do
+            local lid = item.photo.localIdentifier
+            if not byPhoto[lid] then byPhoto[lid] = {} end
+            table.insert(byPhoto[lid], item)
+        end
+        -- Phase 3: process each group
+        for lid, items in pairs(byPhoto) do
+            if progressScope:isCanceled() then break end
+            local photo = items[1].photo
+            local filename = photo:getFormattedMetadata("fileName")
+            local dateCreated = photo:getFormattedMetadata("dateCreated")
 
-            if not id then
-                table.insert(failures, pathOrMessage)
-            else
-                atLeastSomeSuccess = true
-                -- Defer metadata write to avoid nested catalog write (publish already holds write access)
-                table.insert(pendingMetadataWrites, { photo = photo, assetId = id })
-                rendition:recordPublishedPhotoId(id)
-                rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+            local hasRaw, hasJpeg = false, false
+            for _, item in ipairs(items) do
+                if item.fileType == "raw" then hasRaw = true end
+                if item.fileType == "jpeg" then hasJpeg = true end
+            end
+            local shouldStackDngJpg = hasRaw and hasJpeg
 
-                if albumCreationStrategy == 'folder' then
-                    local folderName = rendition.photo:getFormattedMetadata("folderName")
-                    local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
-                    if folderBasedAlbumId ~= nil then
-                        immich:addAssetToAlbum(folderBasedAlbumId, id)
+            if shouldStackDngJpg and #items >= 2 then
+                table.sort(items, function(a, b)
+                    local order = { jpeg = 1, raw = 2, other = 3 }
+                    return (order[a.fileType] or 3) < (order[b.fileType] or 3)
+                end)
+                local assetIds = {}
+                local primaryId = nil
+                for i, item in ipairs(items) do
+                    local deviceAssetId = lid .. "_" .. tostring(i)
+                    local id = uploadOneAndReport(immich, item.path, deviceAssetId, photo, filename, dateCreated)
+                    LrFileUtils.delete(item.path)
+                    if not id then
+                        table.insert(failures, item.path)
+                    else
+                        atLeastSomeSuccess = true
+                        table.insert(assetIds, id)
+                        if primaryId == nil then primaryId = id end
+                        item.rendition:recordPublishedPhotoId(id)
+                        item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
                     end
+                end
+                if primaryId then
+                    table.insert(pendingMetadataWrites, { photo = photo, assetId = primaryId })
+                end
+                if #assetIds >= 2 and primaryId then
+                    local stackId = immich:createStack(assetIds)
+                    if not stackId then
+                        table.insert(stackWarnings, filename .. ": Failed to create DNG+JPG stack")
+                    end
+                end
+                if primaryId then
+                    exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
+                    if albumCreationStrategy == 'folder' then
+                        local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
+                        if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, primaryId) end
+                    elseif albumId and (not albumAssetIds or util.table_contains(albumAssetIds, primaryId) == false) then
+                        immich:addAssetToAlbum(albumId, primaryId)
+                    end
+                end
+            else
+                local firstPrimaryId = nil
+                for i, item in ipairs(items) do
+                    local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
+                    local id = uploadOneAndReport(immich, item.path, deviceAssetId, photo, filename, dateCreated)
+                    LrFileUtils.delete(item.path)
+                    if not id then
+                        table.insert(failures, item.path)
+                    else
+                        atLeastSomeSuccess = true
+                        if firstPrimaryId == nil then firstPrimaryId = id end
+                        item.rendition:recordPublishedPhotoId(id)
+                        item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+                        if albumCreationStrategy == 'folder' then
+                            local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
+                            if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
+                        elseif albumId and (not albumAssetIds or util.table_contains(albumAssetIds, id) == false) then
+                            immich:addAssetToAlbum(albumId, id)
+                        end
+                    end
+                end
+                if firstPrimaryId then
+                    exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
+                    table.insert(pendingMetadataWrites, { photo = photo, assetId = firstPrimaryId })
+                end
+            end
+        end
+    else
+        -- Single-rendition flow
+        for _, rendition in exportContext:renditions { stopIfCanceled = true } do
+            local success, pathOrMessage = rendition:waitForRender()
+            if progressScope:isCanceled() then break end
+
+            if success then
+                local photo = rendition.photo
+                local deviceAssetId = util.getPhotoDeviceId(photo)
+                local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
+                    photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
+                local id
+
+                if existingId == nil then
+                    id = immich:uploadAsset(pathOrMessage, deviceAssetId)
                 else
-                    if albumId and (not albumAssetIds or util.table_contains(albumAssetIds, id) == false) then
-                        immich:addAssetToAlbum(albumId, id)
+                    id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
+                end
+
+                if not id then
+                    table.insert(failures, pathOrMessage)
+                else
+                    atLeastSomeSuccess = true
+                    table.insert(pendingMetadataWrites, { photo = photo, assetId = id })
+                    rendition:recordPublishedPhotoId(id)
+                    rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+                    exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
+
+                    if albumCreationStrategy == 'folder' then
+                        local folderName = rendition.photo:getFormattedMetadata("folderName")
+                        local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
+                        if folderBasedAlbumId ~= nil then
+                            immich:addAssetToAlbum(folderBasedAlbumId, id)
+                        end
+                    else
+                        if albumId and (not albumAssetIds or util.table_contains(albumAssetIds, id) == false) then
+                            immich:addAssetToAlbum(albumId, id)
+                        end
+                    end
+                end
+
+                LrFileUtils.delete(pathOrMessage)
+            end
+        end
+    end
+
+    -- Preserve Lightroom stacks in Immich
+    if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
+        local processedStackKeys = {}
+        for lid, rec in pairs(exportedPrimaryByPhoto) do
+            local photo = rec.photo
+            if photo:getRawMetadata("isInStackInFolder") then
+                local top = photo:getRawMetadata("topOfStackInFolderContainingPhoto")
+                local stackKey = (top and top.localIdentifier) or lid
+                if not processedStackKeys[stackKey] then
+                    processedStackKeys[stackKey] = true
+                    local members = photo:getRawMetadata("stackInFolderMembers")
+                    if members and type(members) == "table" then
+                        local ordered = {}
+                        for _, member in ipairs(members) do
+                            local ex = exportedPrimaryByPhoto[member.localIdentifier]
+                            if ex then
+                                local pos = member:getRawMetadata("stackPositionInFolder")
+                                if type(pos) == "string" then pos = tonumber(string.match(pos, "%d+")) end
+                                table.insert(ordered, { pos = pos or 999, assetId = ex.assetId })
+                            end
+                        end
+                        table.sort(ordered, function(a, b) return (a.pos or 999) < (b.pos or 999) end)
+                        if #ordered >= 2 then
+                            local assetIds = {}
+                            for _, e in ipairs(ordered) do table.insert(assetIds, e.assetId) end
+                            local stackId = immich:createStack(assetIds)
+                            if not stackId then
+                                table.insert(stackWarnings, "LR stack: failed to create Immich stack")
+                            else
+                                log:trace("LR stack created in Immich: " .. stackId)
+                            end
+                        end
                     end
                 end
             end
-
-            -- When done with photo, delete temp file.
-            LrFileUtils.delete(pathOrMessage)
         end
     end
 
@@ -117,6 +286,16 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             message = tostring(#failures) .. " files failed to upload correctly."
         end
         LrDialogs.message(message, table.concat(failures, "\n"))
+    end
+
+    if #stackWarnings > 0 then
+        local message
+        if #stackWarnings == 1 then
+            message = "1 photo had stacking issues (uploaded without stack):"
+        else
+            message = tostring(#stackWarnings) .. " photos had stacking issues (uploaded without stacks):"
+        end
+        LrDialogs.message(message, table.concat(stackWarnings, "\n"))
     end
 
     -- Write Immich asset IDs to catalog metadata after publish completes (avoids nested write access).
