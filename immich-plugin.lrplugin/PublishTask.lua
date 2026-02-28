@@ -2,8 +2,6 @@ require "ImmichAPI"
 require "MetadataTask"
 require "StackManager"
 
-local LrFileUtils = import 'LrFileUtils'
-
 -- File extension to type for DNG+JPG stacking: 'raw', 'jpeg', or 'other'
 local RAW_EXT = { dng = true, nef = true, nefw = true, nrw = true, arw = true, cr2 = true, cr3 = true, crw = true, orf = true, raf = true, rw2 = true, pef = true, srw = true, erf = true, dcr = true, raw = true, ['3fr'] = true, x3f = true, mrw = true, rwl = true }
 local function getExtension(path)

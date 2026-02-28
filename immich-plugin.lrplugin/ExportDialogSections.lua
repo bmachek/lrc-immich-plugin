@@ -1,9 +1,6 @@
 require "ImmichAPI"
 require "StackManager"
 
-local LrTasks = import 'LrTasks'
-local LrColor = import 'LrColor'
-
 ExportDialogSections = {}
 
 local function _updateCantExportBecause(propertyTable)

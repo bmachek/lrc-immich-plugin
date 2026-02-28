@@ -9,11 +9,6 @@ This module provides functionality to:
 
 --]]
 
-local LrPathUtils = import 'LrPathUtils'
-local LrFileUtils = import 'LrFileUtils'
-local LrLogger = import 'LrLogger'
-local LrApplication = import 'LrApplication'
-
 require "ImmichAPI"
 
 -- Initialize logging

@@ -2,9 +2,6 @@ require "ImmichAPI"
 require "MetadataTask"
 require "StackManager"
 
-local LrPathUtils = import 'LrPathUtils'
-local LrFileUtils = import 'LrFileUtils'
-
 --============================================================================--
 
 -- File extension to type for DNG+JPG stacking: 'raw', 'jpeg', or 'other'
