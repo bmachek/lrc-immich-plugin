@@ -219,12 +219,12 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				},
 				f:row {
 					f:static_text {
-						title = "Stack-Auswahl:",
+						title = "Stacked photos:",
 						alignment = 'right',
 						width = LrView.share "label_width",
 					},
 					f:checkbox {
-						title = "Bei ausgewähltem Stack alle Fotos im Stack exportieren",
+						title = "Expand stacks for export",
 						value = bind 'expandStacksForExport',
 					},
 				},

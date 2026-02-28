@@ -88,18 +88,18 @@ function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 						width = LrView.share "label_width",
 					},
 					f:checkbox {
-						title = "In Immich stapeln (bearbeitetes JPG als Primär)",
+						title = "Stack in Immich (edited JPG as primary)",
 						value = bind 'stackDngJpg',
 					},
 				},
 				f:row {
 					f:static_text {
-						title = "Lightroom-Stacks:",
+						title = "Lightroom stacks:",
 						alignment = 'right',
 						width = LrView.share "label_width",
 					},
 					f:checkbox {
-						title = "Lightroom-Stacks in Immich übernehmen",
+						title = "Preserve Lightroom stacks in Immich",
 						value = bind 'stackLrStacks',
 					},
 				},
