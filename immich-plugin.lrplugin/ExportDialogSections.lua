@@ -41,45 +41,6 @@ local function _updateEditedPhotosCount(propertyTable)
     end)
 end
 
--- Expand current selection to include all stack members (for option "expandStacksForExport").
--- Returns expanded array of LrPhoto, or nil if nothing selected / no expansion needed.
-local function _expandSelectionToStackMembers()
-	local catalog = LrApplication.activeCatalog()
-	if not catalog then return nil end
-	local selected = catalog:getTargetPhotos()
-	if not selected or #selected == 0 then return nil end
-
-	local seen = {}
-	local expanded = {}
-	for _, photo in ipairs(selected) do
-		if photo:getRawMetadata("isInStackInFolder") then
-			local members = photo:getRawMetadata("stackInFolderMembers")
-			if members and type(members) == "table" then
-				for _, member in ipairs(members) do
-					local lid = member.localIdentifier
-					if not seen[lid] then
-						seen[lid] = true
-						table.insert(expanded, member)
-					end
-				end
-			else
-				local lid = photo.localIdentifier
-				if not seen[lid] then
-					seen[lid] = true
-					table.insert(expanded, photo)
-				end
-			end
-		else
-			local lid = photo.localIdentifier
-			if not seen[lid] then
-				seen[lid] = true
-				table.insert(expanded, photo)
-			end
-		end
-	end
-	return expanded
-end
-
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.startDialog(propertyTable)
@@ -108,20 +69,6 @@ function ExportDialogSections.startDialog(propertyTable)
 		end)
 	end
 
-	-- Option: when a stacked photo is selected, expand selection to all stack members for export
-	if propertyTable.expandStacksForExport then
-		local catalog = LrApplication.activeCatalog()
-		if catalog then
-			local selected = catalog:getTargetPhotos()
-			if selected and #selected > 0 then
-				local expanded = _expandSelectionToStackMembers()
-				if expanded and #expanded > #selected then
-					propertyTable._originalExportSelection = selected
-					catalog:setSelectedPhotos(expanded)
-				end
-			end
-		end
-	end
 end
 
 function ExportDialogSections.endDialog(propertyTable, why)
@@ -215,17 +162,6 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					f:checkbox {
 						title = "Preserve Lightroom stacks in Immich",
 						value = bind 'stackLrStacks',
-					},
-				},
-				f:row {
-					f:static_text {
-						title = "Stacked photos:",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
-					f:checkbox {
-						title = "Expand stacks for export",
-						value = bind 'expandStacksForExport',
 					},
 				},
 			},
