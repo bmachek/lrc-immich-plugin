@@ -305,7 +305,10 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                     end
                     -- Original file stacking (from disk) with primary as the "edited" asset
                     if exportParams.originalFileMode and exportParams.originalFileMode ~= "none" then
-                        local shouldStack = (exportParams.originalFileMode == "all") or (exportParams.originalFileMode == "edited" and StackManager.hasEdits(photo, editedPhotosCache))
+                        local hasEdits = StackManager.hasEdits(photo, editedPhotosCache)
+                        local shouldStack = (exportParams.originalFileMode == "all")
+                            or (exportParams.originalFileMode == "edited" and hasEdits)
+                            or (exportParams.originalFileMode == "original_plus_jpeg_if_edited" and hasEdits)
                         if shouldStack then
                             local _, stackError = StackManager.processPhotoWithStack(immich, items[1].rendition, primaryId, exportParams)
                             if stackError then
@@ -332,7 +335,10 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
                         end
                         if #items == 1 and exportParams.originalFileMode and exportParams.originalFileMode ~= "none" then
-                            local shouldStack = (exportParams.originalFileMode == "all") or (exportParams.originalFileMode == "edited" and StackManager.hasEdits(photo, editedPhotosCache))
+                            local hasEdits = StackManager.hasEdits(photo, editedPhotosCache)
+                            local shouldStack = (exportParams.originalFileMode == "all")
+                                or (exportParams.originalFileMode == "edited" and hasEdits)
+                                or (exportParams.originalFileMode == "original_plus_jpeg_if_edited" and hasEdits)
                             if shouldStack then
                                 local _, stackError = StackManager.processPhotoWithStack(immich, item.rendition, id, exportParams)
                                 if stackError then table.insert(stackWarnings, filename .. ": " .. stackError) end
@@ -432,7 +438,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             local shouldStack = false
                             if originalFileMode == 'all' then
                                 shouldStack = true
-                            elseif originalFileMode == 'edited' then
+                            elseif originalFileMode == 'edited' or originalFileMode == 'original_plus_jpeg_if_edited' then
                                 shouldStack = StackManager.hasEdits(photo, editedPhotosCache)
                                 log:trace('Photo ' .. photo.localIdentifier .. ' has edits: ' .. tostring(shouldStack))
                             end
