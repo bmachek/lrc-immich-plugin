@@ -317,6 +317,50 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                         end
                     end
                 end
+            elseif #items == 1 and (exportParams.originalFileMode == "original_only" or exportParams.originalFileMode == "original_plus_jpeg_if_edited") then
+                -- Single rendition but user wants original as primary: upload original first, JPG only if edited
+                local deviceAssetId = lid
+                local originalPath = StackManager.getOriginalFilePath(photo)
+                if not originalPath then
+                    table.insert(failures, filename .. " (original not found)")
+                else
+                    local existingId, existingDeviceId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
+                    local id
+                    if existingId == nil then
+                        id = immich:uploadAsset(originalPath, deviceAssetId)
+                    else
+                        id = immich:replaceAsset(existingId, originalPath, existingDeviceId)
+                    end
+                    if not id then
+                        table.insert(failures, originalPath)
+                    else
+                        atLeastSomeSuccess = true
+                        if exportParams.originalFileMode == "original_plus_jpeg_if_edited" and StackManager.hasEdits(photo, editedPhotosCache) then
+                            local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
+                            local existingJpegId, existingJpegDeviceId = immich:checkIfAssetExists(deviceAssetIdEdited, filename, dateCreated)
+                            local jpegId
+                            if existingJpegId then
+                                jpegId = immich:replaceAsset(existingJpegId, items[1].path, existingJpegDeviceId or deviceAssetIdEdited)
+                            else
+                                jpegId = immich:uploadAsset(items[1].path, deviceAssetIdEdited)
+                            end
+                            if jpegId then
+                                local stackId = immich:createStack({ id, jpegId })
+                                if not stackId then
+                                    table.insert(stackWarnings, filename .. ": Failed to create stack")
+                                end
+                            end
+                        end
+                        exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
+                        MetadataTask.setImmichAssetId(photo, id)
+                        if useAlbum then immich:addAssetToAlbum(albumId, id)
+                        elseif exportParams.albumMode == "folder" then
+                            local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
+                            if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
+                        end
+                    end
+                end
+                LrFileUtils.delete(items[1].path)
             else
                 -- Single file or no raw+jpeg pair: upload each with stable id
                 local firstPrimaryId = nil
@@ -334,11 +378,10 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
                             if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
                         end
-                        if #items == 1 and exportParams.originalFileMode and exportParams.originalFileMode ~= "none" then
+                        if #items == 1 and exportParams.originalFileMode and exportParams.originalFileMode ~= "none" and exportParams.originalFileMode ~= "original_plus_jpeg_if_edited" then
                             local hasEdits = StackManager.hasEdits(photo, editedPhotosCache)
                             local shouldStack = (exportParams.originalFileMode == "all")
                                 or (exportParams.originalFileMode == "edited" and hasEdits)
-                                or (exportParams.originalFileMode == "original_plus_jpeg_if_edited" and hasEdits)
                             if shouldStack then
                                 local _, stackError = StackManager.processPhotoWithStack(immich, item.rendition, id, exportParams)
                                 if stackError then table.insert(stackWarnings, filename .. ": " .. stackError) end
