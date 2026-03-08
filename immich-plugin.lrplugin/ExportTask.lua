@@ -4,19 +4,6 @@ require "StackManager"
 
 --============================================================================--
 
--- File extension to type for DNG+JPG stacking: 'raw', 'jpeg', or 'other'
-local RAW_EXT = { dng = true, nef = true, nefw = true, nrw = true, arw = true, cr2 = true, cr3 = true, crw = true, orf = true, raf = true, rw2 = true, pef = true, srw = true, erf = true, dcr = true, raw = true, ['3fr'] = true, x3f = true, mrw = true, rwl = true }
-local function getExtension(path)
-    if not path or type(path) ~= "string" then return "" end
-    return string.lower(string.match(path, "%.([^%.]+)$") or "")
-end
-local function getFileType(path)
-    local ext = getExtension(path)
-    if ext == "jpg" or ext == "jpeg" then return "jpeg" end
-    if RAW_EXT[ext] then return "raw" end
-    return "other"
-end
-
 ExportTask = {}
 
 --------------------------------------------------------------------------------
@@ -222,17 +209,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     -- For "Preserve Lightroom stacks": photo localIdentifier -> { assetId, photo } (primary asset per exported photo)
     local exportedPrimaryByPhoto = {}
 
-    local function uploadOneAndReport(immich, path, deviceAssetId, photo, filename, dateCreated)
-        local existingId, existingDeviceId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
-        local id
-        if existingId == nil then
-            id = immich:uploadAsset(path, deviceAssetId)
-        else
-            id = immich:replaceAsset(existingId, path, existingDeviceId)
-        end
-        return id
-    end
-
     if exportParams.stackDngJpg then
         -- Phase 1: collect all renditions (same photo can have DNG + JPG)
         local collected = {}
@@ -244,8 +220,8 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                     path = pathOrMessage,
                     photo = rendition.photo,
                     rendition = rendition,
-                    ext = getExtension(pathOrMessage),
-                    fileType = getFileType(pathOrMessage),
+                    ext = util.getExtension(pathOrMessage),
+                    fileType = StackManager.getFileType(pathOrMessage),
                 })
             end
         end
@@ -280,7 +256,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 local primaryId = nil
                 for i, item in ipairs(items) do
                     local deviceAssetId = lid .. "_" .. tostring(i)
-                    local id = uploadOneAndReport(immich, item.path, deviceAssetId, photo, filename, dateCreated)
+                    local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
                     LrFileUtils.delete(item.path)
                     if not id then
                         table.insert(failures, item.path)
@@ -367,7 +343,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 local firstPrimaryId = nil
                 for i, item in ipairs(items) do
                     local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
-                    local id = uploadOneAndReport(immich, item.path, deviceAssetId, photo, filename, dateCreated)
+                    local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
                     LrFileUtils.delete(item.path)
                     if not id then
                         table.insert(failures, item.path)
@@ -449,58 +425,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                                 end
                             end
 
-                            exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-                            MetadataTask.setImmichAssetId(photo, id)
-                            if useAlbum then
-                                log:trace('Adding asset to album')
-                                immich:addAssetToAlbum(albumId, id)
-                            elseif exportParams.albumMode == 'folder' then
-                                local folderName = photo:getFormattedMetadata("folderName")
-                                local folderAlbumId = immich:createOrGetAlbumFolderBased(folderName)
-                                if folderAlbumId ~= nil then
-                                    immich:addAssetToAlbum(folderAlbumId, id)
-                                end
-                            end
-                        end
-                    end
-                    LrFileUtils.delete(pathOrMessage)
-                elseif originalFileMode == 'original_plus_jpeg_if_edited' then
-                    -- Fallback: same as "original first" when we landed in else (e.g. preset binding)
-                    local originalPath = StackManager.getOriginalFilePath(photo)
-                    if not originalPath then
-                        table.insert(failures, photo:getFormattedMetadata("fileName") .. " (original not found)")
-                    else
-                        local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
-                            photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
-                        if existingId == nil then
-                            id = immich:uploadAsset(originalPath, deviceAssetId)
-                        else
-                            id = immich:replaceAsset(existingId, originalPath, existingDeviceId or deviceAssetId)
-                        end
-                        if not id then
-                            table.insert(failures, photo:getFormattedMetadata("fileName"))
-                        else
-                            atLeastSomeSuccess = true
-                            if StackManager.hasEdits(photo, editedPhotosCache) then
-                                local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
-                                local fileName = photo:getFormattedMetadata("fileName")
-                                local dateCreated = photo:getFormattedMetadata("dateCreated")
-                                local existingJpegId, existingJpegDeviceId = immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
-                                local jpegId
-                                if existingJpegId then
-                                    jpegId = immich:replaceAsset(existingJpegId, pathOrMessage, existingJpegDeviceId or deviceAssetIdEdited)
-                                else
-                                    jpegId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited)
-                                end
-                                if jpegId then
-                                    local stackId = immich:createStack({ id, jpegId })
-                                    if not stackId then
-                                        table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": failed to create stack")
-                                    end
-                                else
-                                    table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": failed to upload JPG")
-                                end
-                            end
                             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
                             MetadataTask.setImmichAssetId(photo, id)
                             if useAlbum then

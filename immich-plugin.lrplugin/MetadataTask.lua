@@ -10,26 +10,6 @@ local function getPlugin()
 end
 
 
--- function MetadataTask.updateFromEarlierSchemaVersion(catalog, previousSchemaVersion, progressScope)
---     catalog:assertHasPrivateWriteAccess("ImmichPlugin.updateFromEarlierSchemaVersion")
-
---     if previousSchemaVersion == nil or previousSchemaVersion < 6 then
---         log:trace("MetadataTask.updateFromEarlierSchemaVersion: Updating to version 5.")
---         local photosToMigrate = catalog:findPhotosWithProperty(pluginId, keyAssetId)
---         log:trace("MetadataTask.updateFromEarlierSchemaVersion: Found " .. tostring(#photosToMigrate) .. " photos to migrate")
---         local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
-
---         for i, photo in ipairs (photosToMigrate) do
---             log:trace("Migrating photo with local identifier: " .. tostring(photo.localIdentifier))
---             assetId, deviceAssetId = immich:checkIfAssetExists(photo.localIdentifier, photo:getFormattedMetadata( "fileName" ), photo:getFormattedMetadata( "dateCreated" ))
---             if assetId then
---                 log:trace("Asset found, trying to write Immich asset id " .. assetId ..  " to catalog.")
---                 photo:setPropertyForPlugin(_PLUGIN, keyAssetId, assetId)
---             end
---         end
---     end
--- end
-
 function MetadataTask.setImmichAssetId(photo, assetId)
     if not photo then
         log:warn("setImmichAssetId: photo is nil")
@@ -47,19 +27,11 @@ function MetadataTask.setImmichAssetId(photo, assetId)
     end
     
     local success = false
-    local ok, err = pcall(function()
+    local ok, err = LrTasks.startAsyncTask(function()
         catalog:withPrivateWriteAccessDo(function()
-            photo:setPropertyForPlugin(getPlugin(), keyAssetId, tostring(assetId))
-            success = true
-            log:trace("setImmichAssetId: stored assetId " .. tostring(assetId) .. " for photo " .. tostring(photo.localIdentifier))
+            photo:setPropertyForPlugin(_PLUGIN, keyAssetId, tostring(assetId))
         end)
     end)
-    if not ok then
-        log:error("setImmichAssetId: failed to write metadata: " .. tostring(err))
-        return false
-    end
-    
-    return success
 end
 
 function MetadataTask.getImmichAssetId(photo)

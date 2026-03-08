@@ -2,19 +2,6 @@ require "ImmichAPI"
 require "MetadataTask"
 require "StackManager"
 
--- File extension to type for DNG+JPG stacking: 'raw', 'jpeg', or 'other'
-local RAW_EXT = { dng = true, nef = true, nefw = true, nrw = true, arw = true, cr2 = true, cr3 = true, crw = true, orf = true, raf = true, rw2 = true, pef = true, srw = true, erf = true, dcr = true, raw = true, ['3fr'] = true, x3f = true, mrw = true, rwl = true }
-local function getExtension(path)
-    if not path or type(path) ~= "string" then return "" end
-    return string.lower(string.match(path, "%.([^%.]+)$") or "")
-end
-local function getFileType(path)
-    local ext = getExtension(path)
-    if ext == "jpg" or ext == "jpeg" then return "jpeg" end
-    if RAW_EXT[ext] then return "raw" end
-    return "other"
-end
-
 PublishTask = {}
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
@@ -77,17 +64,6 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     local pendingMetadataWrites = {}
     local exportedPrimaryByPhoto = {}
 
-    local function uploadOneAndReport(immich, path, deviceAssetId, photo, filename, dateCreated)
-        local existingId, existingDeviceId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
-        local id
-        if existingId == nil then
-            id = immich:uploadAsset(path, deviceAssetId)
-        else
-            id = immich:replaceAsset(existingId, path, existingDeviceId)
-        end
-        return id
-    end
-
     if exportParams.stackDngJpg then
         -- Phase 1: collect all renditions (same photo can have DNG + JPG)
         local collected = {}
@@ -99,8 +75,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                     path = pathOrMessage,
                     photo = rendition.photo,
                     rendition = rendition,
-                    ext = getExtension(pathOrMessage),
-                    fileType = getFileType(pathOrMessage),
+                    ext = util.getExtension(pathOrMessage),
+                    fileType = StackManager.getFileType(pathOrMessage),
                 })
             end
         end
@@ -134,7 +110,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 local primaryId = nil
                 for i, item in ipairs(items) do
                     local deviceAssetId = lid .. "_" .. tostring(i)
-                    local id = uploadOneAndReport(immich, item.path, deviceAssetId, photo, filename, dateCreated)
+                    local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
                     LrFileUtils.delete(item.path)
                     if not id then
                         table.insert(failures, item.path)
@@ -168,7 +144,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 local firstPrimaryId = nil
                 for i, item in ipairs(items) do
                     local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
-                    local id = uploadOneAndReport(immich, item.path, deviceAssetId, photo, filename, dateCreated)
+                    local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
                     LrFileUtils.delete(item.path)
                     if not id then
                         table.insert(failures, item.path)
