@@ -184,13 +184,17 @@ local function showConfigurationDialog()
                 width_in_chars = 28,
                 validate = function (v, url)
                     local sanitizedURL = ImmichAPI:sanityCheckAndFixURL(url)
-                    if sanitizedURL == url then
-                        return true, url, ''
-                    elseif not (sanitizedURL == nil) then
-                        LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
+                    if sanitizedURL == false then
+                        return false, url, "URL must not be empty. Example: https://demo.immich.app"
+                    end
+                    if sanitizedURL == nil then
+                        return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+                    end
+                    if sanitizedURL == url or (type(url) == "string" and sanitizedURL == url:match("^%s*(.-)%s*$")) then
                         return true, sanitizedURL, ''
                     end
-                    return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
+                    LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
+                    return true, sanitizedURL, ''
                 end,
             },
             f:push_button {
@@ -293,7 +297,7 @@ local function showConfigurationDialog()
                 log:info("Configuration saved successfully")
             else
                 log:error("Connection test failed for URL: " .. propertyTable.url)
-                util.handleError("Invalid import configuration, settings not saved to preferences.", "Invalid import configuration. Settings haven't been saved.")
+                ErrorHandler.handleError("Invalid import configuration. Settings haven't been saved.", "Invalid import configuration, settings not saved to preferences.")
             end
         end)
     else

@@ -1,13 +1,6 @@
 MetadataTask = {}
 
-local pluginId = 'lrc-immich-plugin'
 local keyAssetId = 'immichAssetId'
-
--- Get plugin reference for metadata operations
--- In Lightroom SDK, we use the pluginId string directly for metadata operations
-local function getPlugin()
-    return pluginId
-end
 
 
 function MetadataTask.setImmichAssetId(photo, assetId)

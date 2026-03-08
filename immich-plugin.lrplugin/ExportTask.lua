@@ -1,5 +1,6 @@
 require "ImmichAPI"
 require "StackManager"
+require "UploadHelpers"
 
 --============================================================================--
 
@@ -9,20 +10,20 @@ ExportTask = {}
 
 function ExportTask.processRenderedPhotos(functionContext, exportContext)
     if not exportContext or not exportContext.exportSession or not exportContext.propertyTable then
-        util.handleError('ExportTask: invalid export context', 'Export context is missing. Please try again.')
+        ErrorHandler.handleError('Export context is missing. Please try again.', 'ExportTask: invalid export context')
         return nil
     end
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
 
     if util.nilOrEmpty(exportParams.url) or util.nilOrEmpty(exportParams.apiKey) then
-        util.handleError('ExportTask: URL or API key not set', 'Configure Immich URL and API key in the export settings.')
+        ErrorHandler.handleError('Configure Immich URL and API key in the export settings.', 'ExportTask: URL or API key not set')
         return nil
     end
     local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.',
-            'Immich connection not working. Check URL and API key in export settings.')
+        ErrorHandler.handleError('Immich connection not working. Check URL and API key in export settings.',
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
 
@@ -210,29 +211,12 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
 
     if exportParams.stackDngJpg then
         -- Phase 1: collect all renditions (same photo can have DNG + JPG)
-        local collected = {}
-        for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-            local success, pathOrMessage = rendition:waitForRender()
-            if progressScope:isCanceled() then break end
-            if success then
-                table.insert(collected, {
-                    path = pathOrMessage,
-                    photo = rendition.photo,
-                    rendition = rendition,
-                    ext = util.getExtension(pathOrMessage),
-                    fileType = StackManager.getFileType(pathOrMessage),
-                })
-            end
-        end
-        -- Phase 2: group by photo
-        local byPhoto = {}
-        for _, item in ipairs(collected) do
-            local lid = item.photo.localIdentifier
-            if not byPhoto[lid] then byPhoto[lid] = {} end
-            table.insert(byPhoto[lid], item)
-        end
-        -- Phase 3: process each group
-        for lid, items in pairs(byPhoto) do
+        local collected = UploadHelpers.collectRenditions(exportContext, progressScope)
+        if collected then
+            -- Phase 2: group by photo
+            local byPhoto = UploadHelpers.groupByPhoto(collected)
+            -- Phase 3: process each group
+            for lid, items in pairs(byPhoto) do
             if progressScope:isCanceled() then break end
             local photo = items[1].photo
             local filename = photo:getFormattedMetadata("fileName")
@@ -246,17 +230,13 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
             local shouldStackDngJpg = hasRaw and hasJpeg
 
             if shouldStackDngJpg and #items >= 2 then
-                -- Sort: jpeg first (primary), then raw, then other
-                table.sort(items, function(a, b)
-                    local order = { jpeg = 1, raw = 2, other = 3 }
-                    return (order[a.fileType] or 3) < (order[b.fileType] or 3)
-                end)
+                UploadHelpers.sortDngJpgItems(items)
                 local assetIds = {}
                 local primaryId = nil
                 for i, item in ipairs(items) do
                     local deviceAssetId = lid .. "_" .. tostring(i)
                     local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-                    LrFileUtils.delete(item.path)
+                    UploadHelpers.safeDeleteTempFile(item.path)
                     if not id then
                         table.insert(failures, item.path)
                     else
@@ -334,14 +314,14 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                         end
                     end
                 end
-                LrFileUtils.delete(items[1].path)
+                UploadHelpers.safeDeleteTempFile(items[1].path)
             else
                 -- Single file or no raw+jpeg pair: upload each with stable id
                 local firstPrimaryId = nil
                 for i, item in ipairs(items) do
                     local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
                     local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-                    LrFileUtils.delete(item.path)
+                    UploadHelpers.safeDeleteTempFile(item.path)
                     if not id then
                         table.insert(failures, item.path)
                     else
@@ -367,6 +347,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                     exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
                 end
             end
+        end
         end
     else
         -- Original single-rendition flow
@@ -434,7 +415,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             end
                         end
                     end
-                    LrFileUtils.delete(pathOrMessage)
+                    UploadHelpers.safeDeleteTempFile(pathOrMessage)
                 else
                     -- Default: JPG as primary, optionally stack original (none / edited / all)
                     local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
@@ -478,7 +459,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             end
                         end
                     end
-                    LrFileUtils.delete(pathOrMessage)
+                    UploadHelpers.safeDeleteTempFile(pathOrMessage)
                 end
             end
         end
@@ -486,40 +467,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
 
     -- Preserve Lightroom stacks in Immich (LrPhoto getRawMetadata: isInStackInFolder, stackInFolderMembers, stackPositionInFolder)
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
-        local processedStackKeys = {}
-        for lid, rec in pairs(exportedPrimaryByPhoto) do
-            local photo = rec.photo
-            if photo:getRawMetadata("isInStackInFolder") then
-                local top = photo:getRawMetadata("topOfStackInFolderContainingPhoto")
-                local stackKey = (top and top.localIdentifier) or lid
-                if not processedStackKeys[stackKey] then
-                    processedStackKeys[stackKey] = true
-                    local members = photo:getRawMetadata("stackInFolderMembers")
-                    if members and type(members) == "table" then
-                        local ordered = {}
-                        for _, member in ipairs(members) do
-                            local ex = exportedPrimaryByPhoto[member.localIdentifier]
-                            if ex then
-                                local pos = member:getRawMetadata("stackPositionInFolder")
-                                if type(pos) == "string" then pos = tonumber(string.match(pos, "%d+")) end
-                                table.insert(ordered, { pos = pos or 999, assetId = ex.assetId })
-                            end
-                        end
-                        table.sort(ordered, function(a, b) return (a.pos or 999) < (b.pos or 999) end)
-                        if #ordered >= 2 then
-                            local assetIds = {}
-                            for _, e in ipairs(ordered) do table.insert(assetIds, e.assetId) end
-                            local stackId = immich:createStack(assetIds)
-                            if not stackId then
-                                table.insert(stackWarnings, "LR stack: failed to create Immich stack")
-                            else
-                                log:trace("LR stack created in Immich: " .. stackId)
-                            end
-                        end
-                    end
-                end
-            end
-        end
+        UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
     end
 
     -- If no upload succeeded, delete album if newly created.

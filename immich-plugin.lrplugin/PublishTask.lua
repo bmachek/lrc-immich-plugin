@@ -1,24 +1,25 @@
 require "ImmichAPI"
 require "StackManager"
+require "UploadHelpers"
 
 PublishTask = {}
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
     if not exportContext or not exportContext.exportSession or not exportContext.propertyTable then
-        util.handleError('PublishTask: invalid export context', 'Export context is missing. Please try again.')
+        ErrorHandler.handleError('Export context is missing. Please try again.', 'PublishTask: invalid export context')
         return nil
     end
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
 
     if util.nilOrEmpty(exportParams.url) or util.nilOrEmpty(exportParams.apiKey) then
-        util.handleError('PublishTask: URL or API key not set', 'Configure Immich URL and API key in the plugin settings.')
+        ErrorHandler.handleError('Configure Immich URL and API key in the plugin settings.', 'PublishTask: URL or API key not set')
         return nil
     end
     local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.',
-            'Immich connection not working. Check URL and API key in plugin settings.')
+        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
 
@@ -64,29 +65,12 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
 
     if exportParams.stackDngJpg then
         -- Phase 1: collect all renditions (same photo can have DNG + JPG)
-        local collected = {}
-        for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-            local success, pathOrMessage = rendition:waitForRender()
-            if progressScope:isCanceled() then break end
-            if success then
-                table.insert(collected, {
-                    path = pathOrMessage,
-                    photo = rendition.photo,
-                    rendition = rendition,
-                    ext = util.getExtension(pathOrMessage),
-                    fileType = StackManager.getFileType(pathOrMessage),
-                })
-            end
-        end
-        -- Phase 2: group by photo
-        local byPhoto = {}
-        for _, item in ipairs(collected) do
-            local lid = item.photo.localIdentifier
-            if not byPhoto[lid] then byPhoto[lid] = {} end
-            table.insert(byPhoto[lid], item)
-        end
-        -- Phase 3: process each group
-        for lid, items in pairs(byPhoto) do
+        local collected = UploadHelpers.collectRenditions(exportContext, progressScope)
+        if collected then
+            -- Phase 2: group by photo
+            local byPhoto = UploadHelpers.groupByPhoto(collected)
+            -- Phase 3: process each group
+            for lid, items in pairs(byPhoto) do
             if progressScope:isCanceled() then break end
             local photo = items[1].photo
             local filename = photo:getFormattedMetadata("fileName")
@@ -100,16 +84,13 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             local shouldStackDngJpg = hasRaw and hasJpeg
 
             if shouldStackDngJpg and #items >= 2 then
-                table.sort(items, function(a, b)
-                    local order = { jpeg = 1, raw = 2, other = 3 }
-                    return (order[a.fileType] or 3) < (order[b.fileType] or 3)
-                end)
+                UploadHelpers.sortDngJpgItems(items)
                 local assetIds = {}
                 local primaryId = nil
                 for i, item in ipairs(items) do
                     local deviceAssetId = lid .. "_" .. tostring(i)
                     local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-                    LrFileUtils.delete(item.path)
+                    UploadHelpers.safeDeleteTempFile(item.path)
                     if not id then
                         table.insert(failures, item.path)
                     else
@@ -140,7 +121,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 for i, item in ipairs(items) do
                     local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
                     local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-                    LrFileUtils.delete(item.path)
+                    UploadHelpers.safeDeleteTempFile(item.path)
                     if not id then
                         table.insert(failures, item.path)
                     else
@@ -159,6 +140,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 if firstPrimaryId then
                     exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
                 end
+            end
             end
         end
     else
@@ -201,47 +183,14 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                     end
                 end
 
-                LrFileUtils.delete(pathOrMessage)
+                UploadHelpers.safeDeleteTempFile(pathOrMessage)
             end
         end
     end
 
     -- Preserve Lightroom stacks in Immich
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
-        local processedStackKeys = {}
-        for lid, rec in pairs(exportedPrimaryByPhoto) do
-            local photo = rec.photo
-            if photo:getRawMetadata("isInStackInFolder") then
-                local top = photo:getRawMetadata("topOfStackInFolderContainingPhoto")
-                local stackKey = (top and top.localIdentifier) or lid
-                if not processedStackKeys[stackKey] then
-                    processedStackKeys[stackKey] = true
-                    local members = photo:getRawMetadata("stackInFolderMembers")
-                    if members and type(members) == "table" then
-                        local ordered = {}
-                        for _, member in ipairs(members) do
-                            local ex = exportedPrimaryByPhoto[member.localIdentifier]
-                            if ex then
-                                local pos = member:getRawMetadata("stackPositionInFolder")
-                                if type(pos) == "string" then pos = tonumber(string.match(pos, "%d+")) end
-                                table.insert(ordered, { pos = pos or 999, assetId = ex.assetId })
-                            end
-                        end
-                        table.sort(ordered, function(a, b) return (a.pos or 999) < (b.pos or 999) end)
-                        if #ordered >= 2 then
-                            local assetIds = {}
-                            for _, e in ipairs(ordered) do table.insert(assetIds, e.assetId) end
-                            local stackId = immich:createStack(assetIds)
-                            if not stackId then
-                                table.insert(stackWarnings, "LR stack: failed to create Immich stack")
-                            else
-                                log:trace("LR stack created in Immich: " .. stackId)
-                            end
-                        end
-                    end
-                end
-            end
-        end
+        UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
     end
 
     -- Report failures.
@@ -272,7 +221,7 @@ end
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
             'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
@@ -328,13 +277,13 @@ end
 
 function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
     if util.nilOrEmpty(publishSettings.url) or util.nilOrEmpty(publishSettings.apiKey) then
-        util.handleError('deletePhotosFromPublishedCollection: URL or API key not set', 'Configure Immich in plugin settings.')
+        ErrorHandler.handleError('Configure Immich in plugin settings.', 'deletePhotosFromPublishedCollection: URL or API key not set')
         return nil
     end
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.',
-            'Immich connection not working. Check URL and API key in plugin settings.')
+        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
 
@@ -354,12 +303,12 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
 
     local catalog = LrApplication.activeCatalog()
     if not catalog then
-        util.handleError('deletePhotosFromPublishedCollection: cannot access catalog', 'Lightroom catalog not available.')
+        ErrorHandler.handleError('Lightroom catalog not available.', 'deletePhotosFromPublishedCollection: cannot access catalog')
         return nil
     end
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
     if not publishedCollection then
-        util.handleError('deletePhotosFromPublishedCollection: published collection not found', 'Collection not found.')
+        ErrorHandler.handleError('Collection not found.', 'deletePhotosFromPublishedCollection: published collection not found')
         return nil
     end
     local publishedPhotos = publishedCollection:getPublishedPhotos()
@@ -407,7 +356,7 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
             end
             -- delete == 'no': only remove from album, do not trash
             if not deletionSuccess then
-                util.handleError('Failed to delete asset ' .. photoRemoteId .. ' from Immich', 'Failed to delete asset (check logs)')
+                ErrorHandler.handleError('Failed to delete asset (check logs)', 'Failed to delete asset ' .. photoRemoteId .. ' from Immich')
             end
 
             if removeFromAlbumSuccess and deletionSuccess then
@@ -428,7 +377,7 @@ end
 function PublishTask.deletePublishedCollection(publishSettings, info)
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
             'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
@@ -440,8 +389,8 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
         else
             local ok = immich:deleteAlbum(info.remoteId)
             if not ok then
-                util.handleError('deletePublishedCollection: failed to delete album ' .. tostring(info.remoteId),
-                    'Could not delete album on Immich. Check logs.')
+                ErrorHandler.handleError('Could not delete album on Immich. Check logs.',
+                    'deletePublishedCollection: failed to delete album ' .. tostring(info.remoteId))
             end
         end
     end
@@ -450,7 +399,7 @@ end
 function PublishTask.renamePublishedCollection(publishSettings, info)
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        util.handleError('Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.', 
+        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
             'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
         return nil
     end
@@ -459,8 +408,8 @@ function PublishTask.renamePublishedCollection(publishSettings, info)
     if info.remoteId ~= nil and info.remoteId ~= '' and info.name and info.name ~= '' then
         local ok = immich:renameAlbum(info.remoteId, info.name)
         if not ok then
-            util.handleError('renamePublishedCollection: failed to rename album ' .. tostring(info.remoteId),
-                'Could not rename album on Immich. Check logs.')
+            ErrorHandler.handleError('Could not rename album on Immich. Check logs.',
+                'renamePublishedCollection: failed to rename album ' .. tostring(info.remoteId))
         end
     end
 end
@@ -550,7 +499,7 @@ function PublishTask.endDialogForCollectionSettings(publishSettings, info)
                 info.collectionSettings.albumCreationStrategy = 'existing'
                 info.collectionSettings.remoteId = props.selectedAlbum
             elseif props.albumCreationStrategy == 'existing' and props.selectedAlbum == 0 then
-                util.handleError("No album selected", "No album selected")
+                ErrorHandler.handleError("No album selected", "No album selected")
             else
                 log:trace("Setting album creation strategy to: " .. props.albumCreationStrategy)
                 info.collectionSettings.albumCreationStrategy = props.albumCreationStrategy

@@ -30,18 +30,6 @@ function util.dumpTable(t)
     return s:gsub(pattern, '%1%2...%4')
 end
 
--- Utility function to log errors and show user-facing error message
-function util.handleError(logMsg, userErrorMsg)
-    local logMessage = (type(logMsg) == "string" and logMsg ~= "") and logMsg or "Unknown error"
-    local displayMessage = (type(userErrorMsg) == "string" and userErrorMsg ~= "") and userErrorMsg or logMessage
-    if log and log.error then
-        log:error(logMessage)
-    end
-    if LrDialogs and LrDialogs.showError then
-        LrDialogs.showError(displayMessage)
-    end
-end
-
 -- Check if val is empty or nil
 -- Taken from https://github.com/midzelis/mi.Immich.Publisher/blob/main/utils.lua
 local function trim(s)
