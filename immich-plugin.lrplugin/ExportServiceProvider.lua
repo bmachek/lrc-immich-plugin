@@ -17,7 +17,6 @@ return {
 		{ key = 'originalFileMode', default = 'none' },
 		{ key = 'stackDngJpg', default = false },
 		{ key = 'stackLrStacks', default = false },
-		{ key = 'expandStacksForExport', default = false },
 	},
 
 	canExportVideo = true,
