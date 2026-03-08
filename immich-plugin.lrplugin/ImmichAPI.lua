@@ -31,7 +31,7 @@ end
 
 local function ensureConnectivity(api)
     if not api:checkConnectivity() then
-        util.handleError('Immich connection not setup.', 'Immich connection not setup. Go to module manager.')
+        ErrorHandler.handleError('Immich connection not setup. Go to module manager.', 'Immich connection not setup.')
         return false
     end
     return true
@@ -134,7 +134,7 @@ end
 
 function ImmichAPI:downloadAsset(assetId)
     if util.nilOrEmpty(assetId) then
-        util.handleError('downloadAsset: assetId empty', 'No asset ID provided. Check logs.')
+        ErrorHandler.handleError('No asset ID provided. Check logs.', 'downloadAsset: assetId empty')
         return nil
     end
 
@@ -145,7 +145,7 @@ function ImmichAPI:downloadAsset(assetId)
 
     if not headers then
         log:error("downloadAsset: no response headers (network or server error) for asset " .. tostring(assetId))
-        util.handleError('downloadAsset: no response from server', 'Could not download asset. Check connection and Immich URL.')
+        ErrorHandler.handleError('Could not download asset. Check connection and Immich URL.', 'downloadAsset: no response from server')
         return nil
     end
     if headers.status == 200 then
@@ -163,7 +163,7 @@ end
 
 function ImmichAPI:hasLivePhotoVideo(assetId)
     if util.nilOrEmpty(assetId) then
-        util.handleError('hasLivePhotoVideo: assetId empty', 'No asset ID provided. Check logs.')
+        ErrorHandler.handleError('No asset ID provided. Check logs.', 'hasLivePhotoVideo: assetId empty')
         return nil
     end
 
@@ -181,7 +181,7 @@ end
 
 function ImmichAPI:getLivePhotoVideoId(assetId)
     if util.nilOrEmpty(assetId) then
-        util.handleError('getLivePhotoVideoId: assetId empty', 'No asset ID provided. Check logs.')
+        ErrorHandler.handleError('No asset ID provided. Check logs.', 'getLivePhotoVideoId: assetId empty')
         return nil
     end
 
@@ -199,7 +199,7 @@ end
 
 function ImmichAPI:getOriginalFileName(assetId)
     if util.nilOrEmpty(assetId) then
-        util.handleError('getOriginalFileName: assetId empty', 'No asset ID provided. Check logs.')
+        ErrorHandler.handleError('No asset ID provided. Check logs.', 'getOriginalFileName: assetId empty')
         return nil
     end
 
@@ -219,7 +219,7 @@ end
 
 function ImmichAPI:getAlbumAssets(albumId)
     if util.nilOrEmpty(albumId) then
-        util.handleError('getAlbumAssets: albumId empty', 'No album ID provided. Check logs.')
+        ErrorHandler.handleError('No album ID provided. Check logs.', 'getAlbumAssets: albumId empty')
         return nil
     end
 
@@ -275,19 +275,17 @@ function ImmichAPI:createHeadersForMultipartPut(boundary, length)
     }
 end
 
--- Returns fixed URL on success; nil or false on failure. Caller must assign: url = api:sanityCheckAndFixURL(url)
+-- Returns sanitized URL (string) on success; false on empty; nil on invalid format.
+-- Does not show dialogs (for use in validate callbacks). Callers should show errors or return error messages.
 function ImmichAPI:sanityCheckAndFixURL(url)
     if util.nilOrEmpty(url) then
-        util.handleError('sanityCheckAndFixURL: URL is empty', "Error: Immich server URL is empty.")
         return false
     end
     if not string.match(url, "^https?://") then
-        util.handleError('sanityCheckAndFixURL: URL is missing protocol (http:// or https://).', 'Please enter a valid URL starting with http:// or https://')
         return nil
     end
     local sanitized = string.match(url, "^https?://[%w%.%-]+[:%d]*")
     if not sanitized then
-        util.handleError('sanityCheckAndFixURL: invalid URL format.', 'Please enter a valid Immich server URL.')
         return nil
     end
     if string.len(sanitized) < string.len(url) then
@@ -394,12 +392,12 @@ end
 
 function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId)
     if util.nilOrEmpty(pathOrMessage) then
-        util.handleError('uploadAsset: pathOrMessage empty', 'No filename given. Check logs.')
+        ErrorHandler.handleError('No filename given. Check logs.', 'uploadAsset: pathOrMessage empty')
         return nil
     end
 
     if util.nilOrEmpty(deviceAssetId) then
-        util.handleError('uploadAsset: deviceAssetId empty', 'Device asset ID missing. Check logs.')
+        ErrorHandler.handleError('Device asset ID missing. Check logs.', 'uploadAsset: deviceAssetId empty')
         return nil
     end
 
@@ -427,17 +425,17 @@ end
 
 function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
     if util.nilOrEmpty(immichId) then
-        util.handleError('replaceAsset: immichId empty', 'Immich asset ID missing. Check logs.')
+        ErrorHandler.handleError('Immich asset ID missing. Check logs.', 'replaceAsset: immichId empty')
         return nil
     end
 
     if util.nilOrEmpty(pathOrMessage) then
-        util.handleError('replaceAsset: pathOrMessage empty', 'No filename given. Check logs.')
+        ErrorHandler.handleError('No filename given. Check logs.', 'replaceAsset: pathOrMessage empty')
         return nil
     end
 
     if util.nilOrEmpty(deviceAssetId) then
-        util.handleError('replaceAsset: deviceAssetId empty', 'Device asset ID missing. Check logs.')
+        ErrorHandler.handleError('Device asset ID missing. Check logs.', 'replaceAsset: deviceAssetId empty')
         return nil
     end
 
@@ -453,13 +451,13 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
                 log:trace('copyAssetMetadata: Successfully replaced asset ' .. immichId .. ' with new asset ' .. newImmichId)
                 return newImmichId
             else
-                util.handleError('copyAssetMetadata: Failed to delete old asset ' .. immichId,
-                    'Failed to delete old asset after replacement. Check logs.')
+                ErrorHandler.handleError('Failed to delete old asset after replacement. Check logs.',
+                    'copyAssetMetadata: Failed to delete old asset ' .. immichId)
                 return newImmichId
             end
         else
-            util.handleError('replaceAsset: Failed to copy metadata from old asset ' .. immichId .. ' to new asset ' .. newImmichId,
-                'Failed to copy metadata to new asset after replacement. Check logs. New asset will be deleted.')
+            ErrorHandler.handleError('Failed to copy metadata to new asset after replacement. Check logs. New asset will be deleted.',
+                'replaceAsset: Failed to copy metadata from old asset ' .. immichId .. ' to new asset ' .. newImmichId)
             self:deleteAsset(newImmichId)
             return nil
         end
@@ -469,12 +467,12 @@ end
 
 function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
     if util.nilOrEmpty(sourceAssetId) then
-        util.handleError('copyAssetMetadata: sourceAssetId empty', 'Source Immich asset ID missing. Check logs.')
+        ErrorHandler.handleError('Source Immich asset ID missing. Check logs.', 'copyAssetMetadata: sourceAssetId empty')
         return nil
     end
 
     if util.nilOrEmpty(targetAssetId) then
-        util.handleError('copyAssetMetadata: targetAssetId empty', 'Target Immich asset ID missing. Check logs.')
+        ErrorHandler.handleError('Target Immich asset ID missing. Check logs.', 'copyAssetMetadata: targetAssetId empty')
         return nil
     end
 
@@ -491,7 +489,7 @@ end
 
 function ImmichAPI:deleteAsset(immichId)
     if util.nilOrEmpty(immichId) then
-        util.handleError('deleteAsset: immichId empty', 'Immich asset ID missing. Check logs.')
+        ErrorHandler.handleError('Immich asset ID missing. Check logs.', 'deleteAsset: immichId empty')
         return false
     end
 
@@ -509,12 +507,12 @@ end
 
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
     if util.nilOrEmpty(albumId) then
-        util.handleError('removeAssetFromAlbum: albumId empty', 'Immich album ID missing. Check logs.')
+        ErrorHandler.handleError('Immich album ID missing. Check logs.', 'removeAssetFromAlbum: albumId empty')
         return false
     end
 
     if util.nilOrEmpty(assetId) then
-        util.handleError('removeAssetFromAlbum: assetId empty', 'No Immich asset ID given. Check logs.')
+        ErrorHandler.handleError('No Immich asset ID given. Check logs.', 'removeAssetFromAlbum: assetId empty')
         return false
     end
 
@@ -532,12 +530,12 @@ end
 
 function ImmichAPI:addAssetToAlbum(albumId, assetId)
     if util.nilOrEmpty(albumId) then
-        util.handleError('addAssetToAlbum: albumId empty', 'Immich album ID missing. Check logs.')
+        ErrorHandler.handleError('Immich album ID missing. Check logs.', 'addAssetToAlbum: albumId empty')
         return nil
     end
 
     if util.nilOrEmpty(assetId) then
-        util.handleError('addAssetToAlbum: assetId empty', 'No Immich asset ID given. Check logs.')
+        ErrorHandler.handleError('No Immich asset ID given. Check logs.', 'addAssetToAlbum: assetId empty')
         return nil
     end
 
@@ -559,7 +557,7 @@ end
 
 function ImmichAPI:createStack(assetIds)
     if not assetIds or #assetIds < 2 then
-        util.handleError('createStack: need at least 2 assets', 'Need at least 2 assets to create a stack. Check logs.')
+        ErrorHandler.handleError('Need at least 2 assets to create a stack. Check logs.', 'createStack: need at least 2 assets')
         return nil
     end
 
@@ -584,7 +582,7 @@ end
 
 function ImmichAPI:createAlbum(albumName)
     if util.nilOrEmpty(albumName) then
-        util.handleError('createAlbum: albumName empty', 'No album name given. Check logs.')
+        ErrorHandler.handleError('No album name given. Check logs.', 'createAlbum: albumName empty')
         return nil
     end
 
@@ -600,7 +598,7 @@ end
 
 function ImmichAPI:getAlbumNameById(albumId)
     if util.nilOrEmpty(albumId) then
-        util.handleError('getAlbumNameById: albumId empty', 'No album ID given. Check logs.')
+        ErrorHandler.handleError('No album ID given. Check logs.', 'getAlbumNameById: albumId empty')
         return nil
     end
 
@@ -619,7 +617,7 @@ end
 
 function ImmichAPI:createOrGetAlbumFolderBased(albumName)
     if util.nilOrEmpty(albumName) then
-        util.handleError('createAlbum: albumName empty', 'No album name given. Check logs.')
+        ErrorHandler.handleError('No album name given. Check logs.', 'createAlbum: albumName empty')
         return nil
     end
 
@@ -643,14 +641,14 @@ end
 
 function ImmichAPI:deleteAlbum(albumId)
     if util.nilOrEmpty(albumId) then
-        util.handleError('deleteAlbum: albumId empty', 'No album ID provided. Cannot delete album.')
+        ErrorHandler.handleError('No album ID provided. Cannot delete album.', 'deleteAlbum: albumId empty')
         return false
     end
     local path = '/albums/' .. albumId
 
     local parsedResponse = self:doCustomRequest('DELETE', path, {})
     if parsedResponse == nil then
-        util.handleError("Unable to delete album (" .. albumId .. ").", "Error deleting album, please consult logs.")
+        ErrorHandler.handleError("Error deleting album, please consult logs.", "Unable to delete album (" .. albumId .. ").")
         return false
     else
         return true
@@ -659,11 +657,11 @@ end
 
 function ImmichAPI:renameAlbum(albumId, newName)
     if util.nilOrEmpty(albumId) then
-        util.handleError('renameAlbum: albumId empty', 'No album ID provided. Cannot rename album.')
+        ErrorHandler.handleError('No album ID provided. Cannot rename album.', 'renameAlbum: albumId empty')
         return false
     end
     if util.nilOrEmpty(newName) then
-        util.handleError('renameAlbum: newName empty', 'No new name provided. Cannot rename album.')
+        ErrorHandler.handleError('No new name provided. Cannot rename album.', 'renameAlbum: newName empty')
         return false
     end
     local path = '/albums/' .. albumId
@@ -673,7 +671,7 @@ function ImmichAPI:renameAlbum(albumId, newName)
 
     local parsedResponse = self:doCustomRequest('PATCH', path, postBody)
     if parsedResponse == nil then
-        util.handleError("Unable to rename album (" .. tostring(albumId) .. ").", "Error renaming album, please consult logs.")
+        ErrorHandler.handleError("Error renaming album, please consult logs.", "Unable to rename album (" .. tostring(albumId) .. ").")
         return false
     else
         return true
@@ -994,7 +992,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
 
     if not headers then
         log:error('ImmichAPI POST: no response headers (network error): ' .. apiPath)
-        util.handleError('Connection failed', 'No response from Immich server. Check URL and network.')
+        ErrorHandler.handleError('No response from Immich server. Check URL and network.', 'Connection failed')
         return nil
     end
     if SUCCESS_STATUS_POST[headers.status] then
@@ -1017,7 +1015,7 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
 
     if not headers then
         log:error('ImmichAPI ' .. tostring(method) .. ': no response headers (network error): ' .. apiPath)
-        util.handleError('Connection failed', 'No response from Immich server. Check URL and network.')
+        ErrorHandler.handleError('No response from Immich server. Check URL and network.', 'Connection failed')
         return nil
     end
     if SUCCESS_STATUS_CUSTOM[headers.status] then
@@ -1037,7 +1035,7 @@ function ImmichAPI:doGetRequest(apiPath)
 
     if not headers then
         log:error('ImmichAPI GET: no response headers (network error): ' .. apiPath)
-        util.handleError('Connection failed', 'No response from Immich server. Check URL and network.')
+        ErrorHandler.handleError('No response from Immich server. Check URL and network.', 'Connection failed')
         return nil
     end
     if headers.status == SUCCESS_STATUS_GET then
@@ -1057,7 +1055,7 @@ function ImmichAPI:doGetRequestAllow404(apiPath)
 
     if not headers then
         log:error('ImmichAPI GET: no response headers (network error): ' .. apiPath)
-        util.handleError('Connection failed', 'No response from Immich server. Check URL and network.')
+        ErrorHandler.handleError('No response from Immich server. Check URL and network.', 'Connection failed')
         return nil
     end
     if headers.status == SUCCESS_STATUS_GET then
@@ -1080,7 +1078,7 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
 
     if not headers then
         log:error('ImmichAPI multipart POST: no response headers (network error): ' .. apiPath)
-        util.handleError('Connection failed', 'No response from Immich server. Check URL and network.')
+        ErrorHandler.handleError('No response from Immich server. Check URL and network.', 'Connection failed')
         return nil
     end
     if SUCCESS_STATUS_POST[headers.status] then
@@ -1099,7 +1097,7 @@ function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
     local body = generateMultiPartBody(boundary, formData, filePath)
     if not body then
         log:error('doMultiPartPutRequest: failed to build multipart body for ' .. tostring(filePath))
-        util.handleError('Upload failed', 'Could not read or build upload data. Check file path and permissions.')
+        ErrorHandler.handleError('Could not read or build upload data. Check file path and permissions.', 'Upload failed')
         return nil
     end
     local reqhdrs = self:createHeadersForMultipartPut(boundary, string.len(body))
@@ -1112,7 +1110,7 @@ function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
 
     if not headers then
         log:error('ImmichAPI multipart PUT: no response headers (network error): ' .. apiPath)
-        util.handleError('Connection failed', 'No response from Immich server. Check URL and network.')
+        ErrorHandler.handleError('No response from Immich server. Check URL and network.', 'Connection failed')
         return nil
     end
     if SUCCESS_STATUS_POST[headers.status] then

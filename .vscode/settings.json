@@ -1,6 +1,7 @@
 {
     "Lua.diagnostics.globals": [
         "_PLUGIN",
-        "MAC_ENV"
+        "MAC_ENV",
+        "WIN_ENV"
     ]
 }

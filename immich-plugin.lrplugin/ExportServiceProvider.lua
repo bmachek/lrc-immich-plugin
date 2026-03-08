@@ -22,7 +22,6 @@ return {
 	canExportVideo = true,
 
 	startDialog = ExportDialogSections.startDialog,
-	endDialog = ExportDialogSections.endDialog,
 	sectionsForTopOfDialog = ExportDialogSections.sectionsForTopOfDialog,
 	sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
 
