@@ -27,7 +27,9 @@ function MetadataTask.setImmichAssetId(photo, assetId)
     end
     
     local success = false
-    local ok, err = pcall(function()
+    local ok, err = LrTasks.pcall(function()
+        -- Timeout required so the call waits for catalog lock instead of failing immediately
+        -- (e.g. when called from async task right after export/publish).
         catalog:withPrivateWriteAccessDo(function()
             photo:setPropertyForPlugin(_PLUGIN, keyAssetId, tostring(assetId))
             success = true
@@ -45,7 +47,7 @@ function MetadataTask.getImmichAssetId(photo)
         return nil
     end
     
-    local assetId = photo:getPropertyForPlugin(getPlugin(), keyAssetId)
+    local assetId = photo:getPropertyForPlugin(_PLUGIN, keyAssetId)
     if assetId and assetId ~= "" then
         log:trace("getImmichAssetId: Found assetId " .. assetId .. " for photo " .. tostring(photo.localIdentifier))
     end

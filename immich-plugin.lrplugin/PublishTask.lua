@@ -1,5 +1,4 @@
 require "ImmichAPI"
-require "MetadataTask"
 require "StackManager"
 
 PublishTask = {}
@@ -61,7 +60,6 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     local failures = {}
     local stackWarnings = {}
     local atLeastSomeSuccess = false
-    local pendingMetadataWrites = {}
     local exportedPrimaryByPhoto = {}
 
     if exportParams.stackDngJpg then
@@ -122,9 +120,6 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                         item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
                     end
                 end
-                if primaryId then
-                    table.insert(pendingMetadataWrites, { photo = photo, assetId = primaryId })
-                end
                 if #assetIds >= 2 and primaryId then
                     local stackId = immich:createStack(assetIds)
                     if not stackId then
@@ -163,7 +158,6 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                 end
                 if firstPrimaryId then
                     exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
-                    table.insert(pendingMetadataWrites, { photo = photo, assetId = firstPrimaryId })
                 end
             end
         end
@@ -190,7 +184,6 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
                     table.insert(failures, pathOrMessage)
                 else
                     atLeastSomeSuccess = true
-                    table.insert(pendingMetadataWrites, { photo = photo, assetId = id })
                     rendition:recordPublishedPhotoId(id)
                     rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
                     exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
@@ -270,16 +263,6 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             message = tostring(#stackWarnings) .. " photos had stacking issues (uploaded without stacks):"
         end
         LrDialogs.message(message, table.concat(stackWarnings, "\n"))
-    end
-
-    -- Write Immich asset IDs to catalog metadata after publish completes (avoids nested write access).
-    if #pendingMetadataWrites > 0 then
-        local toWrite = pendingMetadataWrites
-        LrTasks.startAsyncTask(function()
-            for _, entry in ipairs(toWrite) do
-                MetadataTask.setImmichAssetId(entry.photo, entry.assetId)
-            end
-        end)
     end
 end
 

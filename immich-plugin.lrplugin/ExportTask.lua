@@ -1,5 +1,4 @@
 require "ImmichAPI"
-require "MetadataTask"
 require "StackManager"
 
 --============================================================================--
@@ -274,7 +273,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 end
                 if primaryId then
                     exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
-                    MetadataTask.setImmichAssetId(photo, primaryId)
                     if useAlbum then immich:addAssetToAlbum(albumId, primaryId)
                     elseif exportParams.albumMode == "folder" then
                         local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
@@ -329,7 +327,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             end
                         end
                         exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-                        MetadataTask.setImmichAssetId(photo, id)
                         if useAlbum then immich:addAssetToAlbum(albumId, id)
                         elseif exportParams.albumMode == "folder" then
                             local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
@@ -368,7 +365,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 end
                 if firstPrimaryId then
                     exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
-                    MetadataTask.setImmichAssetId(photo, firstPrimaryId)
                 end
             end
         end
@@ -426,7 +422,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             end
 
                             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-                            MetadataTask.setImmichAssetId(photo, id)
                             if useAlbum then
                                 log:trace('Adding asset to album')
                                 immich:addAssetToAlbum(albumId, id)
@@ -472,7 +467,6 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                             end
                         end
 
-                        MetadataTask.setImmichAssetId(photo, id)
                         if useAlbum then
                             log:trace('Adding asset to album')
                             immich:addAssetToAlbum(albumId, id)
