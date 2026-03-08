@@ -4,33 +4,17 @@ require "UploadHelpers"
 
 PublishTask = {}
 
-function PublishTask.processRenderedPhotos(functionContext, exportContext)
-    if not exportContext or not exportContext.exportSession or not exportContext.propertyTable then
-        ErrorHandler.handleError('Export context is missing. Please try again.', 'PublishTask: invalid export context')
-        return nil
-    end
-    local exportSession = exportContext.exportSession
-    local exportParams = exportContext.propertyTable
-
-    if util.nilOrEmpty(exportParams.url) or util.nilOrEmpty(exportParams.apiKey) then
-        ErrorHandler.handleError('Configure Immich URL and API key in the plugin settings.', 'PublishTask: URL or API key not set')
-        return nil
-    end
-    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
-    if not immich:checkConnectivity() then
-        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
-            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
-        return nil
-    end
-
+--------------------------------------------------------------------------------
+-- Resolve or create album for publish; record remote id/url on exportSession.
+-- Returns: albumCreationStrategy, albumId, albumAssetIds.
+local function resolvePublishAlbum(immich, exportContext)
     local publishedCollection = exportContext.publishedCollection
-    local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
-    if albumCreationStrategy == nil then
-        albumCreationStrategy = 'collection' -- Default strategy for old collections.
-    end
+    local collectionSettings = publishedCollection:getCollectionInfoSummary().collectionSettings
+    local albumCreationStrategy = collectionSettings.albumCreationStrategy or 'collection'
     local albumId = publishedCollection and publishedCollection:getRemoteId()
     local albumName = publishedCollection and publishedCollection:getName()
-    local albumAssetIds
+    local albumAssetIds = nil
+    local exportSession = exportContext.exportSession
 
     log:trace("Album creation strategy used: " .. albumCreationStrategy)
 
@@ -46,173 +30,183 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             exportSession:recordRemoteCollectionUrl(immich:getAlbumUrl(albumId))
         end
     end
+    return albumCreationStrategy, albumId, albumAssetIds
+end
 
+--------------------------------------------------------------------------------
+-- Add asset to album (publish logic: folder vs collection/existing).
+local function addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, assetId, folderName)
+    if albumCreationStrategy == 'folder' then
+        local folderAlbumId = immich:createOrGetAlbumFolderBased(folderName)
+        if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, assetId) end
+    elseif albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, assetId)) then
+        immich:addAssetToAlbum(albumId, assetId)
+    end
+end
 
-    -- Set progress title.
-    local nPhotos = exportSession:countRenditions()
-    local progressTitle = (prefs and prefs.url and prefs.url ~= "") and prefs.url or "Immich"
-    local progressScope = exportContext:configureProgress {
-        title = nPhotos > 1
-            and ("Publishing " .. nPhotos .. " photos to " .. progressTitle)
-            or ("Publishing one photo to " .. progressTitle)
-    }
+--------------------------------------------------------------------------------
+-- Process one photo group in DNG+JPG publish flow. Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
+local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStrategy, albumId, albumAssetIds,
+    failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+    if not items or not items[1] then return end
+    local photo = items[1].photo
+    local filename = photo:getFormattedMetadata("fileName")
+    local dateCreated = photo:getFormattedMetadata("dateCreated")
+    local hasRaw, hasJpeg = false, false
+    for _, item in ipairs(items) do
+        if item.fileType == "raw" then hasRaw = true end
+        if item.fileType == "jpeg" then hasJpeg = true end
+    end
+    local shouldStackDngJpg = hasRaw and hasJpeg
 
-    -- Iterate through photo renditions.
-    local failures = {}
-    local stackWarnings = {}
-    local atLeastSomeSuccess = false
-    local exportedPrimaryByPhoto = {}
-
-    if exportParams.stackDngJpg then
-        -- Phase 1: collect all renditions (same photo can have DNG + JPG)
-        local collected = UploadHelpers.collectRenditions(exportContext, progressScope)
-        if collected then
-            -- Phase 2: group by photo
-            local byPhoto = UploadHelpers.groupByPhoto(collected)
-            -- Phase 3: process each group
-            for lid, items in pairs(byPhoto) do
-            if progressScope:isCanceled() then break end
-            local photo = items[1].photo
-            local filename = photo:getFormattedMetadata("fileName")
-            local dateCreated = photo:getFormattedMetadata("dateCreated")
-
-            local hasRaw, hasJpeg = false, false
-            for _, item in ipairs(items) do
-                if item.fileType == "raw" then hasRaw = true end
-                if item.fileType == "jpeg" then hasJpeg = true end
-            end
-            local shouldStackDngJpg = hasRaw and hasJpeg
-
-            if shouldStackDngJpg and #items >= 2 then
-                UploadHelpers.sortDngJpgItems(items)
-                local assetIds = {}
-                local primaryId = nil
-                for i, item in ipairs(items) do
-                    local deviceAssetId = lid .. "_" .. tostring(i)
-                    local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-                    UploadHelpers.safeDeleteTempFile(item.path)
-                    if not id then
-                        table.insert(failures, item.path)
-                    else
-                        atLeastSomeSuccess = true
-                        table.insert(assetIds, id)
-                        if primaryId == nil then primaryId = id end
-                        item.rendition:recordPublishedPhotoId(id)
-                        item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-                    end
-                end
-                if #assetIds >= 2 and primaryId then
-                    local stackId = immich:createStack(assetIds)
-                    if not stackId then
-                        table.insert(stackWarnings, filename .. ": Failed to create DNG+JPG stack")
-                    end
-                end
-                if primaryId then
-                    exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
-                    if albumCreationStrategy == 'folder' then
-                        local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
-                        if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, primaryId) end
-                    elseif albumId and (not albumAssetIds or util.table_contains(albumAssetIds, primaryId) == false) then
-                        immich:addAssetToAlbum(albumId, primaryId)
-                    end
-                end
+    if shouldStackDngJpg and #items >= 2 then
+        UploadHelpers.sortDngJpgItems(items)
+        local assetIds = {}
+        local primaryId = nil
+        for i, item in ipairs(items) do
+            local deviceAssetId = lid .. "_" .. tostring(i)
+            local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            UploadHelpers.safeDeleteTempFile(item.path)
+            if not id then
+                table.insert(failures, item.path)
             else
-                local firstPrimaryId = nil
-                for i, item in ipairs(items) do
-                    local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
-                    local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-                    UploadHelpers.safeDeleteTempFile(item.path)
-                    if not id then
-                        table.insert(failures, item.path)
-                    else
-                        atLeastSomeSuccess = true
-                        if firstPrimaryId == nil then firstPrimaryId = id end
-                        item.rendition:recordPublishedPhotoId(id)
-                        item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-                        if albumCreationStrategy == 'folder' then
-                            local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
-                            if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
-                        elseif albumId and (not albumAssetIds or util.table_contains(albumAssetIds, id) == false) then
-                            immich:addAssetToAlbum(albumId, id)
-                        end
-                    end
-                end
-                if firstPrimaryId then
-                    exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
-                end
+                atLeastSomeSuccess[1] = true
+                table.insert(assetIds, id)
+                if primaryId == nil then primaryId = id end
+                item.rendition:recordPublishedPhotoId(id)
+                item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
             end
+        end
+        if #assetIds >= 2 and primaryId then
+            if not immich:createStack(assetIds) then
+                table.insert(stackWarnings, filename .. ": Failed to create DNG+JPG stack")
             end
+        end
+        if primaryId then
+            exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
+            addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
+                photo:getFormattedMetadata("folderName"))
         end
     else
-        -- Single-rendition flow
-        for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-            local success, pathOrMessage = rendition:waitForRender()
-            if progressScope:isCanceled() then break end
-
-            if success then
-                local photo = rendition.photo
-                local deviceAssetId = util.getPhotoDeviceId(photo)
-                local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
-                    photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
-                local id
-
-                if existingId == nil then
-                    id = immich:uploadAsset(pathOrMessage, deviceAssetId)
-                else
-                    id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
-                end
-
-                if not id then
-                    table.insert(failures, pathOrMessage)
-                else
-                    atLeastSomeSuccess = true
-                    rendition:recordPublishedPhotoId(id)
-                    rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-                    exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-
-                    if albumCreationStrategy == 'folder' then
-                        local folderName = rendition.photo:getFormattedMetadata("folderName")
-                        local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
-                        if folderBasedAlbumId ~= nil then
-                            immich:addAssetToAlbum(folderBasedAlbumId, id)
-                        end
-                    else
-                        if albumId and (not albumAssetIds or util.table_contains(albumAssetIds, id) == false) then
-                            immich:addAssetToAlbum(albumId, id)
-                        end
-                    end
-                end
-
-                UploadHelpers.safeDeleteTempFile(pathOrMessage)
+        local firstPrimaryId = nil
+        for i, item in ipairs(items) do
+            local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
+            local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            UploadHelpers.safeDeleteTempFile(item.path)
+            if not id then
+                table.insert(failures, item.path)
+            else
+                atLeastSomeSuccess[1] = true
+                if firstPrimaryId == nil then firstPrimaryId = id end
+                item.rendition:recordPublishedPhotoId(id)
+                item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+                addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, id,
+                    photo:getFormattedMetadata("folderName"))
             end
         end
+        if firstPrimaryId then
+            exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
+        end
     end
+end
 
-    -- Preserve Lightroom stacks in Immich
+--------------------------------------------------------------------------------
+local function processPublishStackDngJpgRenditions(immich, exportContext, progressScope, exportParams,
+    albumCreationStrategy, albumId, albumAssetIds)
+    local failures, stackWarnings = {}, {}
+    local atLeastSomeSuccess = { false }
+    local exportedPrimaryByPhoto = {}
+    local collected = UploadHelpers.collectRenditions(exportContext, progressScope)
+    if not collected then return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto end
+    local byPhoto = UploadHelpers.groupByPhoto(collected)
+    for lid, items in pairs(byPhoto) do
+        if progressScope:isCanceled() then break end
+        processPublishOnePhotoGroup(immich, lid, items, albumCreationStrategy, albumId, albumAssetIds,
+            failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+    end
+    return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto
+end
+
+--------------------------------------------------------------------------------
+local function processPublishSingleRenditionRenditions(immich, exportContext, progressScope, exportParams,
+    albumCreationStrategy, albumId, albumAssetIds)
+    local failures, stackWarnings = {}, {}
+    local atLeastSomeSuccess = false
+    local exportedPrimaryByPhoto = {}
+    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
+        local success, pathOrMessage = rendition:waitForRender()
+        if progressScope:isCanceled() then break end
+        if not success then goto continue end
+
+        local photo = rendition.photo
+        local deviceAssetId = util.getPhotoDeviceId(photo)
+        local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
+            photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
+        local id
+        if existingId == nil then
+            id = immich:uploadAsset(pathOrMessage, deviceAssetId)
+        else
+            id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
+        end
+
+        if not id then
+            table.insert(failures, pathOrMessage)
+        else
+            atLeastSomeSuccess = true
+            rendition:recordPublishedPhotoId(id)
+            rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+            exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
+            if albumCreationStrategy == 'folder' then
+                local folderName = rendition.photo:getFormattedMetadata("folderName")
+                local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
+                if folderBasedAlbumId then immich:addAssetToAlbum(folderBasedAlbumId, id) end
+            else
+                if albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, id)) then
+                    immich:addAssetToAlbum(albumId, id)
+                end
+            end
+        end
+        UploadHelpers.safeDeleteTempFile(pathOrMessage)
+        ::continue::
+    end
+    return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
+end
+
+--------------------------------------------------------------------------------
+local function runPublishExport(immich, exportContext, progressScope, exportParams,
+    albumCreationStrategy, albumId, albumAssetIds)
+    local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
+    if exportParams.stackDngJpg then
+        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishStackDngJpgRenditions(
+            immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+    else
+        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
+            immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+    end
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
         UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
     end
+    return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
+end
 
-    -- Report failures.
-    if #failures > 0 then
-        local message
-        if #failures == 1 then
-            message = "1 file failed to upload correctly."
-        else
-            message = tostring(#failures) .. " files failed to upload correctly."
-        end
-        LrDialogs.message(message, table.concat(failures, "\n"))
-    end
+--------------------------------------------------------------------------------
 
-    if #stackWarnings > 0 then
-        local message
-        if #stackWarnings == 1 then
-            message = "1 photo had stacking issues (uploaded without stack):"
-        else
-            message = tostring(#stackWarnings) .. " photos had stacking issues (uploaded without stacks):"
-        end
-        LrDialogs.message(message, table.concat(stackWarnings, "\n"))
-    end
+function PublishTask.processRenderedPhotos(functionContext, exportContext)
+    local exportSession, exportParams, immich = util.validateExportContextAndConnect(exportContext, "Publish")
+    if not exportSession then return nil end
+
+    local albumCreationStrategy, albumId, albumAssetIds = resolvePublishAlbum(immich, exportContext)
+
+    local nPhotos = exportSession:countRenditions()
+    local progressTitle = (prefs and prefs.url and prefs.url ~= "") and prefs.url or "Immich"
+    local progressScope = exportContext:configureProgress {
+        title = util.buildSimpleUploadProgressTitle(nPhotos, "Publishing", progressTitle)
+    }
+
+    local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = runPublishExport(
+        immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+
+    util.reportUploadFailuresAndWarnings(failures, stackWarnings)
 end
 
 function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, commentText)

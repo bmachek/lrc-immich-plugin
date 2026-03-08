@@ -112,3 +112,45 @@ function util.getPhotoDeviceId(photo)
     log:warn("Neither UUID nor localIdentifier available for photo")
     return nil
 end
+
+-- Shared by Export and Publish: validate export context and connect to Immich.
+-- contextLabel: "Export" or "Publish" (used in error messages and task name).
+-- Returns: exportSession, exportParams, immich or nil.
+function util.validateExportContextAndConnect(exportContext, contextLabel)
+    if not exportContext or not exportContext.exportSession or not exportContext.propertyTable then
+        ErrorHandler.handleError('Export context is missing. Please try again.', (contextLabel or "Export") .. "Task: invalid export context")
+        return nil
+    end
+    local exportSession = exportContext.exportSession
+    local exportParams = exportContext.propertyTable
+    local settingsText = (contextLabel == "Publish") and "plugin settings" or "export settings"
+    if util.nilOrEmpty(exportParams.url) or util.nilOrEmpty(exportParams.apiKey) then
+        ErrorHandler.handleError('Configure Immich URL and API key in the ' .. settingsText .. '.', (contextLabel or "Export") .. "Task: URL or API key not set")
+        return nil
+    end
+    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
+    if not immich:checkConnectivity() then
+        ErrorHandler.handleError('Immich connection not working. Check URL and API key in ' .. settingsText .. '.',
+            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        return nil
+    end
+    return exportSession, exportParams, immich
+end
+
+-- Shared: build a simple progress title, e.g. "Publishing 5 photos to Immich".
+function util.buildSimpleUploadProgressTitle(nPhotos, verb, suffix)
+    local countStr = (nPhotos > 1) and (nPhotos .. " photos") or "one photo"
+    return verb .. " " .. countStr .. " to " .. (suffix or "Immich")
+end
+
+-- Shared: show failure and stack-warning dialogs after upload.
+function util.reportUploadFailuresAndWarnings(failures, stackWarnings)
+    if failures and #failures > 0 then
+        local message = (#failures == 1) and "1 file failed to upload correctly." or (tostring(#failures) .. " files failed to upload correctly.")
+        LrDialogs.message(message, table.concat(failures, "\n"))
+    end
+    if stackWarnings and #stackWarnings > 0 then
+        local message = (#stackWarnings == 1) and "1 photo had stacking issues (uploaded without stack):" or (tostring(#stackWarnings) .. " photos had stacking issues (uploaded without stacks):")
+        LrDialogs.message(message, table.concat(stackWarnings, "\n"))
+    end
+end
