@@ -421,7 +421,9 @@ end
 
 --------------------------------------------------------------------------------
 local function finalizeExport(immich, exportParams, albumId, useAlbum, atLeastSomeSuccess, failures, stackWarnings)
-    if not atLeastSomeSuccess and exportParams.albumMode == 'new' and albumId then
+    -- Use explicit true check so we behave correctly whether we receive a boolean or (if ever) the DNG+JPG table reference.
+    local anySuccess = atLeastSomeSuccess == true or (type(atLeastSomeSuccess) == "table" and atLeastSomeSuccess[1] == true)
+    if not anySuccess and exportParams.albumMode == 'new' and albumId then
         log:trace('Deleting newly created album, as no upload succeeded, and album would remain as orphan.')
         immich:deleteAlbum(albumId)
     end
