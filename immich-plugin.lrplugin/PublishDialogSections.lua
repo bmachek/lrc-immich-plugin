@@ -77,6 +77,34 @@ function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 				},
 			},
 		},
+		{
+			title = "Stacks",
+			bind_to_object = propertyTable,
+			f:column {
+				f:row {
+					f:static_text {
+						title = "DNG+JPG:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:checkbox {
+						title = "Stack in Immich (edited JPG as primary)",
+						value = bind 'stackDngJpg',
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Lightroom stacks:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:checkbox {
+						title = "Preserve Lightroom stacks in Immich",
+						value = bind 'stackLrStacks',
+					},
+				},
+			},
+		},
 	}
 
 	return result

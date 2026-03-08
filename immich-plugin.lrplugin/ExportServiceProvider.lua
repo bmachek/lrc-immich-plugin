@@ -15,11 +15,14 @@ return {
 		{ key = 'album',     default = nil },
 		{ key = 'albumMode', default = 'none' },
 		{ key = 'originalFileMode', default = 'none' },
+		{ key = 'stackDngJpg', default = false },
+		{ key = 'stackLrStacks', default = false },
 	},
 
 	canExportVideo = true,
 
 	startDialog = ExportDialogSections.startDialog,
+	endDialog = ExportDialogSections.endDialog,
 	sectionsForTopOfDialog = ExportDialogSections.sectionsForTopOfDialog,
 	sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
 

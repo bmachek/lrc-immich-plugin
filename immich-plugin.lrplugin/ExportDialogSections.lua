@@ -1,9 +1,6 @@
 require "ImmichAPI"
 require "StackManager"
 
-local LrTasks = import 'LrTasks'
-local LrColor = import 'LrColor'
-
 ExportDialogSections = {}
 
 local function _updateCantExportBecause(propertyTable)
@@ -71,6 +68,7 @@ function ExportDialogSections.startDialog(propertyTable)
 			_updateEditedPhotosCount(propertyTable)
 		end)
 	end
+
 end
 
 -------------------------------------------------------------------------------
@@ -131,6 +129,28 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 						fill_horizontal = 1,
 						font = '<system/small>',
 						text_color = LrColor(0.2, 0.6, 0.2),
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "DNG+JPG export:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:checkbox {
+						title = "Stack in Immich (edited JPG as primary)",
+						value = bind 'stackDngJpg',
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Lightroom stacks:",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:checkbox {
+						title = "Preserve Lightroom stacks in Immich",
+						value = bind 'stackLrStacks',
 					},
 				},
 			},

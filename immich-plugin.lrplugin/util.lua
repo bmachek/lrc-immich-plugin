@@ -57,6 +57,12 @@ function util.nilOrEmpty(val)
     end
 end
 
+-- Get lowercase file extension from path (e.g. "photo.dng" -> "dng")
+function util.getExtension(path)
+    if not path or type(path) ~= "string" then return "" end
+    return string.lower(string.match(path, "%.([^%.]+)$") or "")
+end
+
 function util.cutApiKey(key)
     if key == nil or type(key) ~= "string" then
         return "(no key)"
