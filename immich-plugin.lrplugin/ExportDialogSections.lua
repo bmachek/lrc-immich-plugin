@@ -71,17 +71,6 @@ function ExportDialogSections.startDialog(propertyTable)
 
 end
 
-function ExportDialogSections.endDialog(propertyTable, why)
-	-- Restore original selection when user cancels (so we don't leave selection expanded)
-	if why ~= 'ok' and propertyTable._originalExportSelection then
-		local catalog = LrApplication.activeCatalog()
-		if catalog then
-			catalog:setSelectedPhotos(propertyTable._originalExportSelection)
-		end
-		propertyTable._originalExportSelection = nil
-	end
-end
-
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
