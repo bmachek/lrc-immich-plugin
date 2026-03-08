@@ -298,6 +298,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 end
                 if primaryId then
                     exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
+                    MetadataTask.setImmichAssetId(photo, primaryId)
                     if useAlbum then immich:addAssetToAlbum(albumId, primaryId)
                     elseif exportParams.albumMode == "folder" then
                         local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
@@ -391,6 +392,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
                 end
                 if firstPrimaryId then
                     exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
+                    MetadataTask.setImmichAssetId(photo, firstPrimaryId)
                 end
             end
         end
