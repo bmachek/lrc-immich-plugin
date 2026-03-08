@@ -27,11 +27,17 @@ function MetadataTask.setImmichAssetId(photo, assetId)
     end
     
     local success = false
-    local ok, err = LrTasks.startAsyncTask(function()
+    local ok, err = pcall(function()
         catalog:withPrivateWriteAccessDo(function()
             photo:setPropertyForPlugin(_PLUGIN, keyAssetId, tostring(assetId))
+            success = true
         end)
     end)
+    if not ok then
+        log:error("setImmichAssetId: failed to write metadata: " .. tostring(err))
+        return false
+    end
+    return success
 end
 
 function MetadataTask.getImmichAssetId(photo)
