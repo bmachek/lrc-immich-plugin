@@ -334,6 +334,8 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
                 log:trace("Album found for folder based strategy: " .. util.dumpTable(albums))
                 if albums ~= nil and #albums == 1 then
                     albumId = albums[1].value
+                elseif not util.table_contains(notExistingAlbums, folderName or "(unknown folder)") then
+                    table.insert(notExistingAlbums, folderName or "(unknown folder)")
                 end
             else
                 albumId = publishedCollection:getRemoteId()
@@ -440,6 +442,7 @@ function PublishTask.viewForCollectionSettings(f, publishSettings, info)
 
     info.pluginContext.albumCreationStrategy = 'collection'
     info.pluginContext.selectedAlbum = 0
+    info.pluginContext.immichAlbums = { { title = "Please select", value = 0 } }
 
     LrTasks.startAsyncTask(function()
         local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)

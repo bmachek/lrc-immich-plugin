@@ -70,7 +70,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
         local result = LrFunctionContext.callWithContext('albumChooser', function(context)
             local f = LrView.osFactory()
             exportParams.albumMode = 'none'
-            exportParams.albums = immich:getAlbums()
+            exportParams.albums = immich:getAlbums() or {}
 
             local dialogContent = f:column {
                 bind_to_object = exportParams,

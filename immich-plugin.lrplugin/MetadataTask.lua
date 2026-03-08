@@ -3,28 +3,26 @@ MetadataTask = {}
 local keyAssetId = 'immichAssetId'
 
 
+-- Set or clear stored Immich asset ID for a photo. Pass nil or "" to clear (e.g. when asset was deleted in Immich).
 function MetadataTask.setImmichAssetId(photo, assetId)
     if not photo then
         log:warn("setImmichAssetId: photo is nil")
         return false
     end
-    if assetId == nil or (type(assetId) == "string" and assetId == "") then
-        log:warn("setImmichAssetId: assetId is nil or empty")
-        return false
-    end
-    
+
     local catalog = LrApplication.activeCatalog()
     if not catalog then
         log:warn("setImmichAssetId: cannot access catalog")
         return false
     end
-    
+
+    local valueToSet = (assetId ~= nil and assetId ~= "") and tostring(assetId) or ""
     local success = false
     local ok, err = LrTasks.pcall(function()
         -- Timeout required so the call waits for catalog lock instead of failing immediately
         -- (e.g. when called from async task right after export/publish).
         catalog:withPrivateWriteAccessDo(function()
-            photo:setPropertyForPlugin(_PLUGIN, keyAssetId, tostring(assetId))
+            photo:setPropertyForPlugin(_PLUGIN, keyAssetId, valueToSet)
             success = true
         end)
     end)
