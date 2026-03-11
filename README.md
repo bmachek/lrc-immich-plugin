@@ -4,10 +4,6 @@
 Lightroom Classic plug‑in to upload and download photos between Lightroom Classic and an Immich server using the Immich API.  
 Provides both **Export** and **Publish Services**, plus tools to **import assets from Immich back into Lightroom**.
 
-> ℹ️ For full documentation, visit the **GitHub Wiki**.  
-> Additional background and screenshots are available on the blog:  
-> [lrc-immich-plugin on blog.fokuspunk.de](https://blog.fokuspunk.de/lrc-immich-plugin/)
-
 ---
 
 ## Features
