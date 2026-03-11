@@ -50,10 +50,6 @@ All setup and usage details live in the **GitHub Wiki**:
 
 You can find the Wiki from the repository home page under the **Wiki** tab.
 
-Additional, more narrative documentation and screenshots are available on the blog:
-
-- [lrc-immich-plugin on blog.fokuspunk.de](https://blog.fokuspunk.de/lrc-immich-plugin/)
-
 ---
 
 ## Credits
