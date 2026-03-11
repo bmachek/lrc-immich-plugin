@@ -14,7 +14,6 @@ local function getImmichAlbums()
     return immichAPI:getAlbumsWODate()
 end
 
--- Optimized function to download album assets in parallel and update progress in real-time
 local function downloadAlbumAssets(immichAPI, albumId, myPath)
     local albumAssets = immichAPI:getAlbumAssets(albumId)
 
@@ -83,8 +82,12 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
         end)
     end
 
-    -- Execute tasks in batches to avoid overwhelming the system
-    local batchSize = 5 -- Adjust batch size as needed
+    -- Execute tasks in batches to avoid overwhelming the system.
+    -- Batch size is configurable; default to 5 if preference not set or invalid.
+    local batchSize = tonumber(prefs.importBatchSize)
+    if not batchSize or batchSize < 1 then
+        batchSize = 5
+    end
     while #taskQueue > 0 do
         local batch = {}
         for i = 1, math.min(batchSize, #taskQueue) do
@@ -154,6 +157,7 @@ local function showConfigurationDialog()
         propertyTable.url = ""
         propertyTable.apiKey = ""
         propertyTable.importPath = ""
+        propertyTable.importBatchSize = prefs.importBatchSize or 5
 
         if prefs.url ~= nil then
             propertyTable.url = prefs.url
@@ -270,7 +274,27 @@ local function showConfigurationDialog()
                     end
                 end,
             },
-        }
+        },
+
+        f:row {
+            f:static_text {
+                title = "Import Batch Size:",
+                alignment = 'right',
+                width = share 'labelWidth',
+            },
+            f:edit_field {
+                value = bind 'importBatchSize',
+                width_in_chars = 5,
+                immediate = false,
+                validate = function(_, value)
+                    local n = tonumber(value)
+                    if not n or n < 1 then
+                        return false, value, "Batch size must be a positive integer (>= 1)."
+                    end
+                    return true, tostring(math.floor(n + 0.5)), ""
+                end,
+            },
+        },
     }
 
     -- Show the dialog
@@ -294,6 +318,7 @@ local function showConfigurationDialog()
                 prefs.url = propertyTable.url
                 prefs.apiKey = propertyTable.apiKey
                 prefs.importPath = propertyTable.importPath
+                prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 5
                 log:info("Configuration saved successfully")
             else
                 log:error("Connection test failed for URL: " .. propertyTable.url)

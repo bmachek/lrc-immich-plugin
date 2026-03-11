@@ -136,38 +136,37 @@ local function processPublishSingleRenditionRenditions(immich, exportContext, pr
     for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         local success, pathOrMessage = rendition:waitForRender()
         if progressScope:isCanceled() then break end
-        if not success then goto continue end
-
-        local photo = rendition.photo
-        local deviceAssetId = util.getPhotoDeviceId(photo)
-        local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
-            photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
-        local id
-        if existingId == nil then
-            id = immich:uploadAsset(pathOrMessage, deviceAssetId)
-        else
-            id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
-        end
-
-        if not id then
-            table.insert(failures, pathOrMessage)
-        else
-            atLeastSomeSuccess = true
-            rendition:recordPublishedPhotoId(id)
-            rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-            exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-            if albumCreationStrategy == 'folder' then
-                local folderName = rendition.photo:getFormattedMetadata("folderName")
-                local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
-                if folderBasedAlbumId then immich:addAssetToAlbum(folderBasedAlbumId, id) end
+        if success then
+            local photo = rendition.photo
+            local deviceAssetId = util.getPhotoDeviceId(photo)
+            local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
+                photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
+            local id
+            if existingId == nil then
+                id = immich:uploadAsset(pathOrMessage, deviceAssetId)
             else
-                if albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, id)) then
-                    immich:addAssetToAlbum(albumId, id)
+                id = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
+            end
+
+            if not id then
+                table.insert(failures, pathOrMessage)
+            else
+                atLeastSomeSuccess = true
+                rendition:recordPublishedPhotoId(id)
+                rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+                exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
+                if albumCreationStrategy == 'folder' then
+                    local folderName = rendition.photo:getFormattedMetadata("folderName")
+                    local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
+                    if folderBasedAlbumId then immich:addAssetToAlbum(folderBasedAlbumId, id) end
+                else
+                    if albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, id)) then
+                        immich:addAssetToAlbum(albumId, id)
+                    end
                 end
             end
+            UploadHelpers.safeDeleteTempFile(pathOrMessage)
         end
-        UploadHelpers.safeDeleteTempFile(pathOrMessage)
-        ::continue::
     end
     return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
 end
