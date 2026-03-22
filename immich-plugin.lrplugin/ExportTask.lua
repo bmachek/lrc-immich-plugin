@@ -248,7 +248,7 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
                 -- Original copy arrived; export did not render or is not expected in this mode/format.
                 if exportParams.originalFileMode == "original_plus_jpeg_if_edited" and StackManager.hasEdits(photo, editedPhotosCache) then
                     if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
-                        table.insert(stackWarnings, filename .. ": skipped rendered export — 'Original / no reformat' does not produce an edited version. Change export format to JPEG or TIFF.")
+                        table.insert(stackWarnings, filename .. ": skipped rendered export — 'Original / no reformat' does not produce an edited version. Switch to any rendered format (e.g. JPEG, TIFF, PNG).")
                     else
                         table.insert(stackWarnings, filename .. ": rendered export did not arrive; uploaded original only")
                     end
@@ -339,7 +339,7 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                         local primaryId = id
                         if originalFileMode == 'original_plus_jpeg_if_edited' and StackManager.hasEdits(photo, editedPhotosCache) then
                             if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
-                                table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": skipped rendered export — 'Original / no reformat' does not produce an edited version. Change export format to JPEG or TIFF.")
+                                table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": skipped rendered export — 'Original / no reformat' does not produce an edited version. Switch to any rendered format (e.g. JPEG, TIFF, PNG).")
                             else
                                 local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
                                 local fileName, dateCreated = photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated")

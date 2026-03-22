@@ -21,7 +21,7 @@ local function _updateWarnings(propertyTable)
     local mode = propertyTable.originalFileMode
     local format = string.upper(propertyTable.LR_format or "")
     if mode == 'original_plus_jpeg_if_edited' and format == "ORIGINAL" then
-        propertyTable.originalFormatWarning = "No reformat selected: switch to JPEG or TIFF to render edits."
+        propertyTable.originalFormatWarning = "No reformat selected: switch to any rendered format (e.g. JPEG, TIFF, PNG) to render edits."
     else
         propertyTable.originalFormatWarning = ""
     end
