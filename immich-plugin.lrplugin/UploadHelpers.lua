@@ -69,11 +69,11 @@ end
 -- Role is determined by the isOriginal flag set at item creation time (extension-based).
 -- insertionOrder is used as a stable tiebreaker because Lua's table.sort is not stable:
 -- returning false for equal elements does not preserve insertion order.
--- For same-extension pairs (e.g. JPEG→JPEG) where both have isOriginal=true, insertion
--- order is preserved (original copy arrives first, rendered export arrives second), so
--- items[1] will be the original. The caller assigns _export/_orig by index, so the
--- label is semantically wrong for same-ext pairs but the IDs are always distinct and
--- consistent across re-exports.
+-- For same-extension pairs (e.g. JPEG→JPEG) where both have isOriginal=true, the tiebreaker
+-- uses HIGHER insertionOrder first. Lightroom renders the original copy first (insertionOrder=0)
+-- and the edited export second (insertionOrder=1), so the export (insertionOrder=1) sorts first
+-- and becomes items[1] (primary in Immich), as intended. IDs are always distinct and consistent
+-- across re-exports.
 function UploadHelpers.sortOriginalExportItems(items)
     table.sort(items, function(a, b)
         local aIsOrig = a.isOriginal == true
@@ -81,7 +81,7 @@ function UploadHelpers.sortOriginalExportItems(items)
         if aIsOrig ~= bIsOrig then
             return not aIsOrig  -- export (non-original) sorts first
         end
-        return (a.insertionOrder or 0) < (b.insertionOrder or 0)  -- stable tiebreaker
+        return (a.insertionOrder or 0) > (b.insertionOrder or 0)  -- higher insertionOrder = rendered export = sorts first
     end)
 end
 

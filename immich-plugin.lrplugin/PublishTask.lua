@@ -134,7 +134,8 @@ local function processPublishStackOriginalExportRenditions(immich, exportContext
         local success, pathOrMessage = rendition:waitForRender()
         if progressScope:isCanceled() then break end
         if success then
-            local lid = rendition.photo.localIdentifier
+            -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
+            local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
             if not accumulator[lid] then accumulator[lid] = {} end
             local srcPath = StackManager.getOriginalFilePath(rendition.photo)
             local srcExt = srcPath and util.getExtension(srcPath) or ""

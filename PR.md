@@ -41,7 +41,7 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 **Fix:** Each item receives an `isOriginal` flag at accumulation time (true if the rendered file's extension matches the source file's extension, indicating an original-format copy) and an `insertionOrder` counter (0-based, evaluated before the item is inserted into the accumulator). `sortOriginalExportItems` sorts items so the export (`isOriginal == false`) comes first; when both items have the same `isOriginal` value, `insertionOrder` is used as a stable tiebreaker. Index-based suffixes are then assigned after the sort: `_export` for `items[1]` (primary in Immich), `_orig` for `items[2]`. IDs are stable regardless of rendering failures and distinct regardless of file format pairing.
 
-**JPEG→JPEG edge case:** When source and export share the same extension, both items have `isOriginal=true`. Sort falls back to `insertionOrder`, so the rendition Lightroom produced first (typically the original copy) becomes `items[1]` and receives the `_export` label; the edited export receives `_orig`. Role labels are semantically inverted for same-extension pairs, but IDs remain distinct and consistent across re-exports. See Known limitations.
+**JPEG→JPEG case:** When source and export share the same extension, both items have `isOriginal=true`. Sort falls back to `insertionOrder` with the tiebreaker reversed (`>`, higher first): since Lightroom renders the original copy first (insertionOrder=0) and the edited export second (insertionOrder=1), the export sorts first and becomes `items[1]` (primary in Immich), as intended. IDs are always distinct and consistent across re-exports.
 
 **Idempotency:** On re-export, `checkIfAssetExists` finds each asset by exact `deviceAssetId` and calls `replaceAsset` rather than uploading fresh, so repeated exports of the same photo produce exactly one original and one export in one stack.
 
@@ -123,6 +123,22 @@ The dead `else` block is removed from both functions.
 
 ---
 
+### 12. `processPhotoWithStack` called redundantly in `#items >= 2` path (ExportTask.lua)
+
+**Problem:** After uploading both renditions and creating a stack in the `stackOriginalExport` `#items >= 2` branch, the code additionally called `StackManager.processPhotoWithStack`. That function re-fetches the disk original, uploads it under a second `deviceAssetId` (using the `_original` suffix scheme from `generateOriginalDeviceAssetId`), and creates a second Immich stack — resulting in a duplicate original asset and a spurious extra stack.
+
+**Fix:** Removed the `processPhotoWithStack` call from the `#items >= 2` branch. The stack is already created by `immich:createStack(assetIds)` using the renditions that were just uploaded. A comment is left explaining why the call is intentionally absent.
+
+---
+
+### 13. Accumulator keyed on `localIdentifier` instead of stable device ID (ExportTask.lua, PublishTask.lua)
+
+**Problem:** The accumulator in `processStackOriginalExportRenditions` (and its publish counterpart) grouped renditions by `rendition.photo.localIdentifier`, and used that value as the `deviceAssetId` prefix (`lid .. "_export"`/`"_orig"`). The `localIdentifier` is an internal Lightroom database integer that can change if the catalog is recreated or the photo is re-imported, causing the next export to not find previously uploaded assets and creating duplicate uploads.
+
+**Fix:** The accumulator now keys by `util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier`. `getPhotoDeviceId` returns a stable UUID (same as the single-rendition path uses) when available, falling back to `localIdentifier` only if the UUID is absent. The `exportedPrimaryByPhoto` map still uses `photo.localIdentifier` as its key (required by `applyLrStacksInImmich` which looks up members by `localIdentifier`).
+
+---
+
 ## Format-agnostic cleanup
 
 The original+export stacking feature was implemented with DNG+JPG as the only use case in mind. All format-specific naming and file-type logic has been removed so the feature works correctly for any pairing (DNG+JPG, CR2+TIF, original JPG+export JPG, etc.).
@@ -183,12 +199,12 @@ If any individual upload or stack creation fails, it is reported as a warning af
 
 | File | Changes |
 |------|---------|
-| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, `#items == 1` branch unified and corrected, inline accumulator, missing export-upload warning, format-agnostic renames |
-| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, `#items == 1` branch unified and corrected, inline accumulator, format-agnostic renames |
+| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected, removed redundant `processPhotoWithStack`, inline accumulator, missing export-upload warning, format-agnostic renames |
+| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected, inline accumulator, format-agnostic renames |
 | `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
 | `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
 | `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
 | `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
 | `ImmichAPI.lua` | Timeout increases, `HTTP_TIMEOUT_UPLOAD` wired into `postMultipart`, `table.concat` multipart body, explicit POST timeout |
 | `StackManager.lua` | `hasEdits` cache short-circuit and comment fix, removed `getFileType` / `RAW_EXT` |
-| `UploadHelpers.lua` | `sortOriginalExportItems` with extension-based `isOriginal` flag and `insertionOrder` tiebreaker, removed `fileType` field, updated comment |
+| `UploadHelpers.lua` | `sortOriginalExportItems` with extension-based `isOriginal` flag and inverted `insertionOrder` tiebreaker (higher = rendered export = primary), removed `fileType` field, updated comment |

@@ -211,16 +211,10 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
                 local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
                 if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, primaryId) end
             end
-            if exportParams.originalFileMode and exportParams.originalFileMode ~= "none" then
-                local hasEdits = StackManager.hasEdits(photo, editedPhotosCache)
-                local shouldStack = (exportParams.originalFileMode == "all")
-                    or (exportParams.originalFileMode == "edited" and hasEdits)
-                    or (exportParams.originalFileMode == "original_plus_jpeg_if_edited" and hasEdits)
-                if shouldStack then
-                    local _, stackError = StackManager.processPhotoWithStack(immich, items[1].rendition, primaryId, exportParams)
-                    if stackError then table.insert(stackWarnings, filename .. ": " .. stackError) end
-                end
-            end
+            -- Note: processPhotoWithStack is intentionally NOT called here. Both renditions
+            -- (original copy + rendered export) have already been uploaded and stacked by
+            -- immich:createStack above. Calling processPhotoWithStack would re-upload the disk
+            -- original under a different deviceAssetId and create a duplicate stack.
         end
     elseif #items == 1 then
         -- One rendition arrived (the other failed to render or was not expected for this photo/mode).
@@ -231,7 +225,7 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
         local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
-            table.insert(failures, filename)
+            table.insert(failures, item.path)
         else
             atLeastSomeSuccess[1] = true
             local primaryId = id
@@ -283,7 +277,8 @@ local function processStackOriginalExportRenditions(immich, exportContext, progr
         local success, pathOrMessage = rendition:waitForRender()
         if progressScope:isCanceled() then break end
         if success then
-            local lid = rendition.photo.localIdentifier
+            -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
+            local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
             if not accumulator[lid] then accumulator[lid] = {} end
             local srcPath = StackManager.getOriginalFilePath(rendition.photo)
             local srcExt = srcPath and util.getExtension(srcPath) or ""
