@@ -159,7 +159,7 @@ The original+export stacking feature was implemented with DNG+JPG as the only us
 
 **Before:** `sortDngJpgItems` sorted by file type (`jpeg=1`, `raw=2`, `other=3`). For pairings where the export is not a JPEG (e.g., DNG+TIF), the sort placed the original first, making it the Immich stack primary — the opposite of the intended behaviour.
 
-**After:** `sortOriginalExportItems` identifies the original by comparing `item.path` to `StackManager.getOriginalFilePath(item.photo)`. The export (non-original) always sorts first regardless of format.
+**After:** `sortOriginalExportItems` uses an `isOriginal` flag set on each item at accumulation time (`isOriginal = itemExt == srcExt`, where `srcExt` is the source file's extension). Items with `isOriginal == false` (the rendered export) sort first; ties fall back to `insertionOrder` (higher = rendered export = sorts first, so the export is always primary regardless of format).
 
 ### File-type checks removed (ExportTask.lua, PublishTask.lua)
 

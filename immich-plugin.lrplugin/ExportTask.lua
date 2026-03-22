@@ -333,7 +333,7 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                     local id = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
                         or immich:replaceAsset(existingId, originalPath, existingDeviceId or deviceAssetId)
                     if not id then
-                        table.insert(failures, photo:getFormattedMetadata("fileName"))
+                        table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. originalPath)
                     else
                         atLeastSomeSuccess = true
                         local primaryId = id
