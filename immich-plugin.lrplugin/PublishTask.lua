@@ -56,10 +56,10 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         UploadHelpers.sortOriginalExportItems(items)
         local assetIds = {}
         local primaryId = nil
-        local originalPath = StackManager.getOriginalFilePath(photo)
-        for _, item in ipairs(items) do
-            local isOriginal = originalPath ~= nil and (item.path == originalPath)
-            local deviceAssetId = lid .. (isOriginal and "_orig" or "_export")
+        for i, item in ipairs(items) do
+            -- After sort: items[1]=export (primary), items[2]=original.
+            -- Index-based suffix guarantees distinct IDs regardless of format pairing.
+            local deviceAssetId = lid .. (i == 1 and "_export" or "_orig")
             local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
@@ -82,25 +82,40 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
             addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
                 photo:getFormattedMetadata("folderName"))
         end
-    else
-        local firstPrimaryId = nil
-        for i, item in ipairs(items) do
-            local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
-            local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-            UploadHelpers.safeDeleteTempFile(item.path)
-            if not id then
-                table.insert(failures, item.path)
-            else
-                atLeastSomeSuccess[1] = true
-                if firstPrimaryId == nil then firstPrimaryId = id end
-                item.rendition:recordPublishedPhotoId(id)
-                item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-                addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, id,
-                    photo:getFormattedMetadata("folderName"))
+    elseif #items == 1 then
+        -- One rendition arrived (the other failed to render or was not expected for this photo/mode).
+        -- Use isOriginal to determine the role: original copy (_orig) vs rendered export (_export).
+        local item = items[1]
+        local isOrig = item.isOriginal == true
+        local deviceAssetId = lid .. (isOrig and "_orig" or "_export")
+        local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+        UploadHelpers.safeDeleteTempFile(item.path)
+        if not id then
+            table.insert(failures, item.path)
+        else
+            atLeastSomeSuccess[1] = true
+            local primaryId = id
+            item.rendition:recordPublishedPhotoId(id)
+            item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+            if not isOrig then
+                -- Export rendition arrived; upload disk original and create stack.
+                local originalPath = StackManager.getOriginalFilePath(photo)
+                if originalPath then
+                    local origId = StackManager.uploadOneAssetOrReplace(immich, originalPath, lid .. "_orig", filename, dateCreated)
+                    if origId then
+                        if not immich:createStack({ id, origId }) then
+                            table.insert(stackWarnings, filename .. ": failed to create original+export stack")
+                        end
+                    else
+                        table.insert(stackWarnings, filename .. ": failed to upload original file")
+                    end
+                else
+                    table.insert(stackWarnings, filename .. ": original file not accessible; uploaded export only")
+                end
             end
-        end
-        if firstPrimaryId then
-            exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
+            exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
+            addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
+                photo:getFormattedMetadata("folderName"))
         end
     end
 end
@@ -121,11 +136,16 @@ local function processPublishStackOriginalExportRenditions(immich, exportContext
         if success then
             local lid = rendition.photo.localIdentifier
             if not accumulator[lid] then accumulator[lid] = {} end
+            local srcPath = StackManager.getOriginalFilePath(rendition.photo)
+            local srcExt = srcPath and util.getExtension(srcPath) or ""
+            local itemExt = util.getExtension(pathOrMessage)
             table.insert(accumulator[lid], {
                 path = pathOrMessage,
                 photo = rendition.photo,
                 rendition = rendition,
-                ext = util.getExtension(pathOrMessage),
+                ext = itemExt,
+                isOriginal = srcExt ~= "" and itemExt == srcExt,
+                insertionOrder = #accumulator[lid],  -- 0-based; used as stable sort tiebreaker
             })
             -- Both renditions for this photo are ready: upload and stack immediately.
             if #accumulator[lid] == 2 then

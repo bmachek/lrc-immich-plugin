@@ -66,15 +66,22 @@ end
 
 --------------------------------------------------------------------------------
 -- Original+export sort order: rendered export first (primary in Immich), original second.
--- The original is identified by comparing its path to the source file on disk.
+-- Role is determined by the isOriginal flag set at item creation time (extension-based).
+-- insertionOrder is used as a stable tiebreaker because Lua's table.sort is not stable:
+-- returning false for equal elements does not preserve insertion order.
+-- For same-extension pairs (e.g. JPEG→JPEG) where both have isOriginal=true, insertion
+-- order is preserved (original copy arrives first, rendered export arrives second), so
+-- items[1] will be the original. The caller assigns _export/_orig by index, so the
+-- label is semantically wrong for same-ext pairs but the IDs are always distinct and
+-- consistent across re-exports.
 function UploadHelpers.sortOriginalExportItems(items)
     table.sort(items, function(a, b)
-        local aIsOriginal = (a.path == StackManager.getOriginalFilePath(a.photo))
-        local bIsOriginal = (b.path == StackManager.getOriginalFilePath(b.photo))
-        if aIsOriginal ~= bIsOriginal then
-            return not aIsOriginal  -- export (non-original) sorts first
+        local aIsOrig = a.isOriginal == true
+        local bIsOrig = b.isOriginal == true
+        if aIsOrig ~= bIsOrig then
+            return not aIsOrig  -- export (non-original) sorts first
         end
-        return false  -- preserve order for items of the same kind
+        return (a.insertionOrder or 0) < (b.insertionOrder or 0)  -- stable tiebreaker
     end)
 end
 

@@ -37,19 +37,21 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 ### 4. original+export stacking deviceAssetId was unstable and collision-prone (ExportTask.lua, PublishTask.lua)
 
-**Problem:** Device asset IDs for multi-rendition groups were generated as `lid_1`, `lid_2` based on loop position. If one rendition failed to render, subsequent files shifted positions and collided with previously uploaded asset IDs on retry, causing Immich's dedup check to match the wrong asset. A subsequent fix to key by file extension (`lid_dng`, `lid_jpg`) addressed position-dependency but introduced a new collision: if both renditions share the same extension (e.g. JPEG source exported as JPEG) or `util.getExtension` returns `""`, both uploads receive the same `deviceAssetId` — Immich deduplicates the wrong asset and stack creation breaks.
+**Problem:** Device asset IDs for multi-rendition groups were generated as `lid_1`, `lid_2` based on loop position. If one rendition failed to render, subsequent files shifted positions and collided with previously uploaded asset IDs on retry, causing Immich's dedup check to match the wrong asset. Keying by file extension (`lid_dng`, `lid_jpg`) addressed position-dependency but introduced a new collision when both renditions share the same extension (e.g. JPEG source exported as JPEG) or `util.getExtension` returns `""` — both uploads receive the same `deviceAssetId` and Immich deduplicates the wrong asset.
 
-**Fix:** Replaced both approaches with role-based suffixes: `_orig` for the original file (identified by comparing `item.path` to `StackManager.getOriginalFilePath(photo)`) and `_export` for the rendered export. IDs are now stable regardless of rendering failures and unique regardless of file format pairing.
+**Fix:** Each item receives an `isOriginal` flag at accumulation time (true if the rendered file's extension matches the source file's extension, indicating an original-format copy) and an `insertionOrder` counter (0-based, evaluated before the item is inserted into the accumulator). `sortOriginalExportItems` sorts items so the export (`isOriginal == false`) comes first; when both items have the same `isOriginal` value, `insertionOrder` is used as a stable tiebreaker. Index-based suffixes are then assigned after the sort: `_export` for `items[1]` (primary in Immich), `_orig` for `items[2]`. IDs are stable regardless of rendering failures and distinct regardless of file format pairing.
+
+**JPEG→JPEG edge case:** When source and export share the same extension, both items have `isOriginal=true`. Sort falls back to `insertionOrder`, so the rendition Lightroom produced first (typically the original copy) becomes `items[1]` and receives the `_export` label; the edited export receives `_orig`. Role labels are semantically inverted for same-extension pairs, but IDs remain distinct and consistent across re-exports. See Known limitations.
 
 **Idempotency:** On re-export, `checkIfAssetExists` finds each asset by exact `deviceAssetId` and calls `replaceAsset` rather than uploading fresh, so repeated exports of the same photo produce exactly one original and one export in one stack.
 
 ---
 
-### 5. `checkIfAssetExists` used inconsistently (ExportTask.lua)
+### 5. `checkIfAssetExistsEnhanced` used in wrong path (ExportTask.lua)
 
-**Problem:** The `original_only` / `original_plus_jpeg_if_edited` path in `processOnePhotoGroup` called the basic `checkIfAssetExists`, while `processSingleRenditionRenditions` called `checkIfAssetExistsEnhanced`. The enhanced version also checks stored Lightroom metadata (`immichAssetId`) and legacy `localIdentifier` uploads. This meant a photo previously exported via one path would not be recognised as already uploaded when re-exported via the other, creating duplicate assets.
+**Problem:** The `stackOriginalExport` multi-rendition path used `checkIfAssetExistsEnhanced` for asset lookups. The enhanced version also checks stored Lightroom `immichAssetId` metadata, which points to the primary (export) asset. Using it in this path risked matching the primary when looking up the original, then calling `replaceAsset` on the wrong asset and corrupting the export.
 
-**Fix:** Changed the `processOnePhotoGroup` original path to use `checkIfAssetExistsEnhanced` consistently.
+**Fix:** The entire `stackOriginalExport` path (`processOnePhotoGroup`, `processPublishOnePhotoGroup`) uses only basic `checkIfAssetExists` via `StackManager.uploadOneAssetOrReplace`, keyed by stable role-based `deviceAssetId` (`_orig`/`_export`). The enhanced check is retained exclusively in `processSingleRenditionRenditions`, where stored metadata correctly identifies the single primary asset per photo.
 
 ---
 
@@ -96,6 +98,28 @@ Edge cases handled:
 **Problem:** In `processOnePhotoGroup`, when the `original_plus_jpeg_if_edited` mode uploaded the original successfully but the rendered export upload returned nil, the failure was silent — no entry was added to `stackWarnings`. The equivalent path in `processSingleRenditionRenditions` did emit a warning.
 
 **Fix:** Added an `else` branch to append `"failed to upload rendered export"` to `stackWarnings` when `exportId` is nil, matching the behaviour of the single-rendition path.
+
+---
+
+### 11. `#items == 1` single-rendition fallback: wrong file, wrong ID, dead code (ExportTask.lua, PublishTask.lua)
+
+**Problem:** When only one of the two expected renditions arrived for a photo (e.g., the export render failed), `processOnePhotoGroup` and `processPublishOnePhotoGroup` fell into a `#items == 1` path with three bugs:
+
+1. **Wrong file uploaded as export.** When `items[1].isOriginal == true` (original copy arrived, export failed to render), the code still uploaded `items[1].path` as the "rendered export" — producing an identical duplicate rather than skipping.
+
+2. **Inconsistent `deviceAssetId` naming.** The path used `lid` (no suffix) for the original and `lid_edited` for the export, while the `#items >= 2` branch used `_orig`/`_export`. On re-export when both renditions arrive, dedup fails to match the previous `lid`/`lid_edited` assets by exact `deviceAssetId`, causing redundant uploads.
+
+3. **Dead `else` block.** Both functions contained an `else` block with a loop over all items including positions `i > 1`. The accumulator flushes at exactly 2 items (handled by `#items >= 2`), so `#items > 2` is unreachable. The `i > 1` loop body was dead code. Additionally, `processPublishOnePhotoGroup` recorded `exportedPrimaryByPhoto[lid]` (inconsistent with `photo.localIdentifier` used in `#items >= 2`) and added each individual item to the album instead of only the primary.
+
+**Fix:** Both functions now have a unified `elseif #items == 1` branch that:
+
+- Reads `item.isOriginal` to determine the role of the single rendition.
+- Assigns `lid_orig` if the original copy arrived, `lid_export` if the rendered export arrived — consistent with `#items >= 2`.
+- If the export arrived (`isOrig == false`): fetches the disk original via `getOriginalFilePath`, uploads it with `lid_orig`, and creates a stack.
+- If the original arrived (`isOrig == true`): uploads with `lid_orig`; emits a warning if `original_plus_jpeg_if_edited` mode was active and the photo has edits (with the `LR_format == "ORIGINAL"` guard).
+- Records only the primary in `exportedPrimaryByPhoto` and in the album.
+
+The dead `else` block is removed from both functions.
 
 ---
 
@@ -159,12 +183,12 @@ If any individual upload or stack creation fails, it is reported as a warning af
 
 | File | Changes |
 |------|---------|
-| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), `checkIfAssetExistsEnhanced`, role-based deviceAssetId (`_orig`/`_export`), inline accumulator, missing export-upload warning, format-agnostic renames |
-| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`), inline accumulator, format-agnostic renames |
+| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, `#items == 1` branch unified and corrected, inline accumulator, missing export-upload warning, format-agnostic renames |
+| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, `#items == 1` branch unified and corrected, inline accumulator, format-agnostic renames |
 | `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
 | `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
 | `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
 | `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
 | `ImmichAPI.lua` | Timeout increases, `HTTP_TIMEOUT_UPLOAD` wired into `postMultipart`, `table.concat` multipart body, explicit POST timeout |
 | `StackManager.lua` | `hasEdits` cache short-circuit and comment fix, removed `getFileType` / `RAW_EXT` |
-| `UploadHelpers.lua` | `sortOriginalExportItems` with path-based sort, removed `fileType` field, updated comment |
+| `UploadHelpers.lua` | `sortOriginalExportItems` with extension-based `isOriginal` flag and `insertionOrder` tiebreaker, removed `fileType` field, updated comment |
