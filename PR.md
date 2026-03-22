@@ -84,7 +84,7 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 **Problem:** `processStackOriginalExportRenditions` (and its publish counterpart) called `UploadHelpers.collectRenditions`, which waited for every rendition across the entire export batch to finish rendering before the first upload began. On large exports this caused all temp files to accumulate on disk simultaneously, risking temp-disk exhaustion and delaying any upload feedback.
 
-**Fix:** Replaced `collectRenditions` + `groupByPhoto` with an inline accumulator loop in both `processStackOriginalExportRenditions` (ExportTask.lua) and `processPublishStackOriginalExportRenditions` (PublishTask.lua). Each photo group is flushed — uploaded, stacked, temp files deleted — as soon as both of its renditions have arrived. Groups where one rendition failed to render are flushed as a single-item group at the end of the loop. `UploadHelpers.collectRenditions` and `groupByPhoto` are retained for other callers.
+**Fix:** Replaced `collectRenditions` + `groupByPhoto` with an inline accumulator loop in both `processStackOriginalExportRenditions` (ExportTask.lua) and `processPublishStackOriginalExportRenditions` (PublishTask.lua). Each photo group is flushed — uploaded, stacked, temp files deleted — as soon as both of its renditions have arrived. Groups where one rendition failed to render are flushed as a single-item group at the end of the loop. `UploadHelpers.collectRenditions` and `groupByPhoto` had no remaining callers after this change and were removed.
 
 Edge cases handled:
 
@@ -201,11 +201,11 @@ If any individual upload or stack creation fails, it is reported as a warning af
 | File | Changes |
 | ---- | ------- |
 | `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected, removed redundant `processPhotoWithStack`, inline accumulator, missing export-upload warning, format-agnostic renames |
-| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected, inline accumulator, format-agnostic renames |
+| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (publish: no untracked original upload), removed unused `exportParams` from `processPublishStackOriginalExportRenditions`, inline accumulator, format-agnostic renames |
 | `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
 | `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
 | `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
 | `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
 | `ImmichAPI.lua` | Timeout increases, `HTTP_TIMEOUT_UPLOAD` wired into `postMultipart`, `table.concat` multipart body, explicit POST timeout |
 | `StackManager.lua` | `hasEdits` cache short-circuit and comment fix, removed `getFileType` / `RAW_EXT` |
-| `UploadHelpers.lua` | `sortOriginalExportItems` with extension-based `isOriginal` flag and inverted `insertionOrder` tiebreaker (higher = rendered export = primary), removed `fileType` field, updated comment |
+| `UploadHelpers.lua` | `sortOriginalExportItems` with extension-based `isOriginal` flag and inverted `insertionOrder` tiebreaker (higher = rendered export = primary), removed `fileType` field, removed dead `collectRenditions`/`groupByPhoto`, updated comment |

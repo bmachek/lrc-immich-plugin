@@ -2,7 +2,7 @@
 UploadHelpers.lua - Shared upload logic for Export and Publish
 
 Provides:
-- Collecting and grouping renditions (original+export flow)
+- Sorting original+export rendition pairs for correct Immich stack ordering
 - Preserving Lightroom stacks in Immich
 - Safe temporary file deletion (ensures cleanup on error or cancel)
 ]]
@@ -24,44 +24,6 @@ function UploadHelpers.safeDeleteTempFile(path)
     if not ok and log and log.warn then
         log:warn("UploadHelpers: could not delete temp file: " .. tostring(path) .. " - " .. tostring(err))
     end
-end
-
---------------------------------------------------------------------------------
--- Collect all renditions from exportContext into an array of
--- { path, photo, rendition, ext }. Stops if progressScope is canceled.
--- Returns collected array, or nil if canceled.
-function UploadHelpers.collectRenditions(exportContext, progressScope)
-    local collected = {}
-    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-        if progressScope and progressScope:isCanceled() then
-            return nil
-        end
-        local success, pathOrMessage = rendition:waitForRender()
-        if progressScope and progressScope:isCanceled() then
-            return nil
-        end
-        if success then
-            table.insert(collected, {
-                path = pathOrMessage,
-                photo = rendition.photo,
-                rendition = rendition,
-                ext = util.getExtension(pathOrMessage),
-            })
-        end
-    end
-    return collected
-end
-
---------------------------------------------------------------------------------
--- Group collected items by photo localIdentifier. Returns map lid -> array of items.
-function UploadHelpers.groupByPhoto(collected)
-    local byPhoto = {}
-    for _, item in ipairs(collected) do
-        local lid = item.photo.localIdentifier
-        if not byPhoto[lid] then byPhoto[lid] = {} end
-        table.insert(byPhoto[lid], item)
-    end
-    return byPhoto
 end
 
 --------------------------------------------------------------------------------

@@ -115,7 +115,7 @@ end
 --------------------------------------------------------------------------------
 -- Original+export flow: accumulate renditions per photo, flush each group as soon as
 -- both renditions are ready. This avoids buffering all renders before any upload starts.
-local function processPublishStackOriginalExportRenditions(immich, exportContext, progressScope, exportParams,
+local function processPublishStackOriginalExportRenditions(immich, exportContext, progressScope,
     albumCreationStrategy, albumId, albumAssetIds)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
@@ -208,7 +208,7 @@ local function runPublishExport(immich, exportContext, progressScope, exportPara
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     if exportParams.stackOriginalExport then
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishStackOriginalExportRenditions(
-            immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+            immich, exportContext, progressScope, albumCreationStrategy, albumId, albumAssetIds)
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
             immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
