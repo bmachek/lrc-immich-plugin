@@ -98,20 +98,12 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
             item.rendition:recordPublishedPhotoId(id)
             item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
             if not isOrig then
-                -- Export rendition arrived; upload disk original and create stack.
-                local originalPath = StackManager.getOriginalFilePath(photo)
-                if originalPath then
-                    local origId = StackManager.uploadOneAssetOrReplace(immich, originalPath, lid .. "_orig", filename, dateCreated)
-                    if origId then
-                        if not immich:createStack({ id, origId }) then
-                            table.insert(stackWarnings, filename .. ": failed to create original+export stack")
-                        end
-                    else
-                        table.insert(stackWarnings, filename .. ": failed to upload original file")
-                    end
-                else
-                    table.insert(stackWarnings, filename .. ": original file not accessible; uploaded export only")
-                end
+                -- Export rendition arrived but original rendition did not. Do NOT upload the disk
+                -- original here: assets uploaded outside of rendition:recordPublishedPhotoId cannot
+                -- be tracked by Lightroom and will become orphans when the photo is later removed
+                -- from the publish collection (deletePhotosFromPublishedCollection only cleans up
+                -- assets registered via recordPublishedPhotoId). Warn instead.
+                table.insert(stackWarnings, filename .. ": only export rendition available; original not uploaded to avoid untracked orphan in Immich")
             end
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,

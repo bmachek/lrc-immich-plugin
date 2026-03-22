@@ -29,6 +29,7 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 **Problem:** When Lightroom's export format is set to "Original / no reformat", Lightroom copies the source file byte-for-byte without rendering an edited version. The plugin then uploaded both copies as if they were distinct, resulting in two identical files in Immich with no meaningful stack.
 
 **Fix:**
+
 - Added a runtime guard in both `processOnePhotoGroup` and `processSingleRenditionRenditions`: if `LR_format == "ORIGINAL"`, skip the rendered export upload and emit a stack warning instead.
 - Added a live warning in the export dialog (orange text) when this incompatible combination is detected.
 - Detection uses `exportParams.LR_format` directly — no hardcoded format lists.
@@ -115,8 +116,8 @@ Edge cases handled:
 
 - Reads `item.isOriginal` to determine the role of the single rendition.
 - Assigns `lid_orig` if the original copy arrived, `lid_export` if the rendered export arrived — consistent with `#items >= 2`.
-- If the export arrived (`isOrig == false`): fetches the disk original via `getOriginalFilePath`, uploads it with `lid_orig`, and creates a stack.
-- If the original arrived (`isOrig == true`): uploads with `lid_orig`; emits a warning if `original_plus_jpeg_if_edited` mode was active and the photo has edits (with the `LR_format == "ORIGINAL"` guard).
+- If the export arrived (`isOrig == false`): in **export mode**, fetches the disk original via `getOriginalFilePath`, uploads it with `lid_orig`, and creates a stack. In **publish mode**, the disk original is intentionally NOT uploaded — an asset uploaded outside `rendition:recordPublishedPhotoId` cannot be tracked by Lightroom and would become an orphan when the photo is later removed from the publish collection (`deletePhotosFromPublishedCollection` only cleans up assets registered via `recordPublishedPhotoId`). A stack warning is emitted instead.
+- If the original arrived (`isOrig == true`): uploads with `lid_orig`; emits a warning if `original_plus_jpeg_if_edited` mode was active and the photo has edits (with the `LR_format == "ORIGINAL"` guard; export path only).
 - Records only the primary in `exportedPrimaryByPhoto` and in the album.
 
 The dead `else` block is removed from both functions.
@@ -198,7 +199,7 @@ If any individual upload or stack creation fails, it is reported as a warning af
 ## Files changed
 
 | File | Changes |
-|------|---------|
+| ---- | ------- |
 | `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected, removed redundant `processPhotoWithStack`, inline accumulator, missing export-upload warning, format-agnostic renames |
 | `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected, inline accumulator, format-agnostic renames |
 | `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
