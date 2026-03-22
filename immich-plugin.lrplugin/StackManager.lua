@@ -43,15 +43,11 @@ end
 -- Check if a photo has been edited in Lightroom
 -- Primarily uses cache lookup, with fallback to individual checks
 function StackManager.hasEdits(photo, editedPhotosCache)
-    -- If we have a cache, use it for fast lookup first
+    -- If we have a cache, use it exclusively (no fallback needed — cache was built from same queries)
     if editedPhotosCache then
-        local hasEdits = (editedPhotosCache[photo.localIdentifier] ~= nil)
-        if hasEdits then
-            log:trace("Photo " .. photo.localIdentifier .. " has edits (cache): " .. tostring(hasEdits))
-            return true
-        end
+        return editedPhotosCache[photo.localIdentifier] ~= nil
     end
-    
+
     -- Fallback: check directly using hasAdjustments criterion
     local catalog = LrApplication.activeCatalog()
     if not catalog then

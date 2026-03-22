@@ -5,8 +5,8 @@
 
 -- Constants
 local API_BASE_PATH = '/api'
-local HTTP_TIMEOUT_DEFAULT = 5
-local HTTP_TIMEOUT_UPLOAD = 15
+local HTTP_TIMEOUT_DEFAULT = 30
+local HTTP_TIMEOUT_UPLOAD = 300
 local DEVICE_ID_STRING = 'Lightroom Immich Upload Plugin'
 
 local SUCCESS_STATUS_GET = 200
@@ -63,7 +63,7 @@ local function generateMultiPartBody(boundary, formData, filePath)
         return nil
     end
     local fileName = LrPathUtils.leafName(filePath)
-    local body = ''
+    local parts = {}
     local boundaryLine = '--' .. boundary .. '\r\n'
 
     for i = 1, #formData do
@@ -71,9 +71,9 @@ local function generateMultiPartBody(boundary, formData, filePath)
         local name = part and part.name
         local value = part and part.value
         if name then
-            body = body .. boundaryLine
-            body = body .. 'Content-Disposition: form-data; name="' .. name .. '"\r\n\r\n'
-            body = body .. tostring(value or '') .. "\r\n"
+            parts[#parts + 1] = boundaryLine
+            parts[#parts + 1] = 'Content-Disposition: form-data; name="' .. name .. '"\r\n\r\n'
+            parts[#parts + 1] = tostring(value or '') .. "\r\n"
         end
     end
 
@@ -89,13 +89,13 @@ local function generateMultiPartBody(boundary, formData, filePath)
         return nil
     end
 
-    body = body .. boundaryLine
-    body = body .. 'Content-Disposition: form-data; name="assetData"; filename="' .. fileName .. '"\r\n'
-    body = body .. 'Content-Type: application/octet-stream\r\n\r\n'
-    body = body .. fileContent
-    body = body .. '\r\n--' .. boundary .. '--\r\n'
+    parts[#parts + 1] = boundaryLine
+    parts[#parts + 1] = 'Content-Disposition: form-data; name="assetData"; filename="' .. fileName .. '"\r\n'
+    parts[#parts + 1] = 'Content-Type: application/octet-stream\r\n\r\n'
+    parts[#parts + 1] = fileContent
+    parts[#parts + 1] = '\r\n--' .. boundary .. '--\r\n'
 
-    return body
+    return table.concat(parts)
 end
 
 -- ---------------------------------------------------------------------------
@@ -988,7 +988,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
     if postBody ~= nil then
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
-    local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody), self:createHeaders())
+    local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody), self:createHeaders(), 'POST', HTTP_TIMEOUT_DEFAULT)
 
     if not headers then
         log:error('ImmichAPI POST: no response headers (network error): ' .. apiPath)

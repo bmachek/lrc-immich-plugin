@@ -63,8 +63,8 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         UploadHelpers.sortDngJpgItems(items)
         local assetIds = {}
         local primaryId = nil
-        for i, item in ipairs(items) do
-            local deviceAssetId = lid .. "_" .. tostring(i)
+        for _, item in ipairs(items) do
+            local deviceAssetId = lid .. "_" .. util.getExtension(item.path)
             local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
