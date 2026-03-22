@@ -17,16 +17,6 @@ log:enable("logfile")
 
 StackManager = {}
 
---------------------------------------------------------------------------------
--- File type for DNG+JPG stacking: 'raw', 'jpeg', or 'other'
-local RAW_EXT = { dng = true, nef = true, nefw = true, nrw = true, arw = true, cr2 = true, cr3 = true, crw = true, orf = true, raf = true, rw2 = true, pef = true, srw = true, erf = true, dcr = true, raw = true, ['3fr'] = true, x3f = true, mrw = true, rwl = true }
-
-function StackManager.getFileType(path)
-    local ext = util.getExtension(path)
-    if ext == "jpg" or ext == "jpeg" then return "jpeg" end
-    if RAW_EXT[ext] then return "raw" end
-    return "other"
-end
 
 --------------------------------------------------------------------------------
 -- Upload one asset or replace existing; returns Immich asset id or nil
@@ -40,8 +30,9 @@ function StackManager.uploadOneAssetOrReplace(immich, path, deviceAssetId, filen
 end
 
 --------------------------------------------------------------------------------
--- Check if a photo has been edited in Lightroom
--- Primarily uses cache lookup, with fallback to individual checks
+-- Check if a photo has been edited in Lightroom.
+-- When a cache is provided it is used exclusively — no fallback queries are run.
+-- When no cache is provided, falls back to direct catalog queries.
 function StackManager.hasEdits(photo, editedPhotosCache)
     -- If we have a cache, use it exclusively (no fallback needed — cache was built from same queries)
     if editedPhotosCache then

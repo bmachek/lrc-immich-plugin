@@ -171,7 +171,7 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					},
 					f:checkbox {
 						title = "Stack in Immich (export as primary)",
-						value = bind 'stackDngJpg',
+						value = bind 'stackOriginalExport',
 					},
 				},
 				f:row {

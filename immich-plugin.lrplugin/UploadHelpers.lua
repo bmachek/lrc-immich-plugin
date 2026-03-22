@@ -2,7 +2,7 @@
 UploadHelpers.lua - Shared upload logic for Export and Publish
 
 Provides:
-- Collecting and grouping renditions (DNG+JPG flow)
+- Collecting and grouping renditions (original+export flow)
 - Preserving Lightroom stacks in Immich
 - Safe temporary file deletion (ensures cleanup on error or cancel)
 ]]
@@ -28,7 +28,7 @@ end
 
 --------------------------------------------------------------------------------
 -- Collect all renditions from exportContext into an array of
--- { path, photo, rendition, ext, fileType }. Stops if progressScope is canceled.
+-- { path, photo, rendition, ext }. Stops if progressScope is canceled.
 -- Returns collected array, or nil if canceled.
 function UploadHelpers.collectRenditions(exportContext, progressScope)
     local collected = {}
@@ -46,7 +46,6 @@ function UploadHelpers.collectRenditions(exportContext, progressScope)
                 photo = rendition.photo,
                 rendition = rendition,
                 ext = util.getExtension(pathOrMessage),
-                fileType = StackManager.getFileType(pathOrMessage),
             })
         end
     end
@@ -66,11 +65,16 @@ function UploadHelpers.groupByPhoto(collected)
 end
 
 --------------------------------------------------------------------------------
--- DNG+JPG sort order: jpeg first (primary), then raw, then other.
-function UploadHelpers.sortDngJpgItems(items)
+-- Original+export sort order: rendered export first (primary in Immich), original second.
+-- The original is identified by comparing its path to the source file on disk.
+function UploadHelpers.sortOriginalExportItems(items)
     table.sort(items, function(a, b)
-        local order = { jpeg = 1, raw = 2, other = 3 }
-        return (order[a.fileType] or 3) < (order[b.fileType] or 3)
+        local aIsOriginal = (a.path == StackManager.getOriginalFilePath(a.photo))
+        local bIsOriginal = (b.path == StackManager.getOriginalFilePath(b.photo))
+        if aIsOriginal ~= bIsOriginal then
+            return not aIsOriginal  -- export (non-original) sorts first
+        end
+        return false  -- preserve order for items of the same kind
     end)
 end
 

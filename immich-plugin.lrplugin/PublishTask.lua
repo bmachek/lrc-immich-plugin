@@ -45,22 +45,15 @@ local function addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, al
 end
 
 --------------------------------------------------------------------------------
--- Process one photo group in DNG+JPG publish flow. Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
+-- Process one photo group in original+export publish flow. Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
 local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStrategy, albumId, albumAssetIds,
     failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
     if not items or not items[1] then return end
     local photo = items[1].photo
     local filename = photo:getFormattedMetadata("fileName")
     local dateCreated = photo:getFormattedMetadata("dateCreated")
-    local hasRaw, hasJpeg = false, false
-    for _, item in ipairs(items) do
-        if item.fileType == "raw" then hasRaw = true end
-        if item.fileType == "jpeg" then hasJpeg = true end
-    end
-    local shouldStackDngJpg = hasRaw and hasJpeg
-
-    if shouldStackDngJpg and #items >= 2 then
-        UploadHelpers.sortDngJpgItems(items)
+    if #items >= 2 then
+        UploadHelpers.sortOriginalExportItems(items)
         local assetIds = {}
         local primaryId = nil
         for _, item in ipairs(items) do
@@ -79,7 +72,7 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         end
         if #assetIds >= 2 and primaryId then
             if not immich:createStack(assetIds) then
-                table.insert(stackWarnings, filename .. ": Failed to create DNG+JPG stack")
+                table.insert(stackWarnings, filename .. ": Failed to create original+export stack")
             end
         end
         if primaryId then
@@ -111,18 +104,41 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
 end
 
 --------------------------------------------------------------------------------
-local function processPublishStackDngJpgRenditions(immich, exportContext, progressScope, exportParams,
+-- Original+export flow: accumulate renditions per photo, flush each group as soon as
+-- both renditions are ready. This avoids buffering all renders before any upload starts.
+local function processPublishStackOriginalExportRenditions(immich, exportContext, progressScope, exportParams,
     albumCreationStrategy, albumId, albumAssetIds)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
     local exportedPrimaryByPhoto = {}
-    local collected = UploadHelpers.collectRenditions(exportContext, progressScope)
-    if not collected then return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto end
-    local byPhoto = UploadHelpers.groupByPhoto(collected)
-    for lid, items in pairs(byPhoto) do
+    local accumulator = {}
+    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         if progressScope:isCanceled() then break end
-        processPublishOnePhotoGroup(immich, lid, items, albumCreationStrategy, albumId, albumAssetIds,
-            failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+        local success, pathOrMessage = rendition:waitForRender()
+        if progressScope:isCanceled() then break end
+        if success then
+            local lid = rendition.photo.localIdentifier
+            if not accumulator[lid] then accumulator[lid] = {} end
+            table.insert(accumulator[lid], {
+                path = pathOrMessage,
+                photo = rendition.photo,
+                rendition = rendition,
+                ext = util.getExtension(pathOrMessage),
+            })
+            -- Both renditions for this photo are ready: upload and stack immediately.
+            if #accumulator[lid] == 2 then
+                processPublishOnePhotoGroup(immich, lid, accumulator[lid], albumCreationStrategy, albumId, albumAssetIds,
+                    failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+                accumulator[lid] = nil
+            end
+        end
+    end
+    -- Flush any incomplete groups (one rendition failed to render or publish was canceled).
+    for lid, items in pairs(accumulator) do
+        if not progressScope:isCanceled() then
+            processPublishOnePhotoGroup(immich, lid, items, albumCreationStrategy, albumId, albumAssetIds,
+                failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+        end
     end
     return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto
 end
@@ -175,8 +191,8 @@ end
 local function runPublishExport(immich, exportContext, progressScope, exportParams,
     albumCreationStrategy, albumId, albumAssetIds)
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
-    if exportParams.stackDngJpg then
-        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishStackDngJpgRenditions(
+    if exportParams.stackOriginalExport then
+        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishStackOriginalExportRenditions(
             immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(

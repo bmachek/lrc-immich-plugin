@@ -1,8 +1,8 @@
-# Pull Request: Fix original+export stacking, UI clarity, and reliability bugs
+# Pull Request: Fix original+export stacking, UI clarity, reliability bugs, and upload resiliency
 
 ## Summary
 
-This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), corrects several bugs that caused duplicate uploads and wrong stack ordering, improves UI labeling, and addresses memory and timeout issues that caused failures on large exports.
+This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), corrects several bugs that caused duplicate uploads and wrong stack ordering, improves UI labeling, addresses memory and timeout issues that caused failures on large exports, and replaces the batch-collect upload path with a per-photo-pair streaming accumulator to eliminate temp-disk exhaustion on large exports. All DNG/JPG-specific naming and file-type hardcoding has been replaced with format-agnostic equivalents so the stacking feature works correctly for any original+export pairing (DNG+JPG, CR2+TIF, TIF+JPG, etc.).
 
 ---
 
@@ -10,17 +10,17 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 ### 1. Stack primary image was wrong (ExportTask.lua)
 
-**Problem:** `createStack({ id, jpegId })` was called with the original file first. Immich uses the first element as the stack's key/cover image, so the unedited original was shown as the primary instead of the edited export.
+**Problem:** `createStack({ id, exportId })` was called with the original file first. Immich uses the first element as the stack's key/cover image, so the unedited original was shown as the primary instead of the edited export.
 
-**Fix:** Swapped to `createStack({ jpegId, id })` so the rendered export is the primary in both `processOnePhotoGroup` and `processSingleRenditionRenditions`.
+**Fix:** Swapped to `createStack({ exportId, id })` so the rendered export is the primary in both `processOnePhotoGroup` and `processSingleRenditionRenditions`.
 
 ---
 
 ### 2. Album received the wrong asset (ExportTask.lua)
 
-**Problem:** After creating a stack, both code paths added the original (`id`) to the album and recorded it as the primary, even when the edited export (`jpegId`) was available.
+**Problem:** After creating a stack, both code paths added the original (`id`) to the album and recorded it as the primary, even when the edited export was available.
 
-**Fix:** Introduced a `primaryId` variable that defaults to `id` and is updated to `jpegId` when the export upload succeeds. Album assignment and `exportedPrimaryByPhoto` now use `primaryId`.
+**Fix:** Introduced a `primaryId` variable that defaults to `id` and is updated to `exportId` when the export upload succeeds. Album assignment and `exportedPrimaryByPhoto` now use `primaryId`.
 
 ---
 
@@ -71,64 +71,77 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 **Problem:** When an `editedPhotosCache` was provided but the photo was not in it (meaning no edits), the function fell through to a fallback that ran two full `catalog:findPhotos` queries anyway — the same queries that were used to build the cache. For large catalogs this meant two extra full-catalog scans per unedited photo.
 
-**Fix:** When a cache is present it is now used exclusively. A cache miss immediately returns `false` without any fallback queries.
+**Fix:** When a cache is present it is now used exclusively. A cache miss immediately returns `false` without any fallback queries. Function comment updated to accurately describe this behaviour.
 
 ---
 
-## UI improvements (ExportDialogSections.lua)
+### 9. Inline accumulator replaces batch-collect in original+export flow (ExportTask.lua, PublishTask.lua)
 
-- **Dropdown labels updated** to be format-agnostic:
-  - `"Always upload original only (no JPG)"` → `"Always upload original only (no export)"`
-  - `"Always upload original, JPG only if edited"` → `"Always upload original + rendered export (if edited)"`
-- **Section label** `"original+export export:"` → `"Original + Export:"` and checkbox `"Stack in Immich (edited JPG as primary)"` → `"Stack in Immich (export as primary)"` — the feature works with any export format, not just JPEG.
-- **Warning message** displayed in orange when "Original / no reformat" export format is selected alongside the "upload original + rendered export" mode, prompting the user to switch to JPEG or TIFF.
+**Problem:** `processStackOriginalExportRenditions` (and its publish counterpart) called `UploadHelpers.collectRenditions`, which waited for every rendition across the entire export batch to finish rendering before the first upload began. On large exports this caused all temp files to accumulate on disk simultaneously, risking temp-disk exhaustion and delaying any upload feedback.
+
+**Fix:** Replaced `collectRenditions` + `groupByPhoto` with an inline accumulator loop in both `processStackOriginalExportRenditions` (ExportTask.lua) and `processPublishStackOriginalExportRenditions` (PublishTask.lua). Each photo group is flushed — uploaded, stacked, temp files deleted — as soon as both of its renditions have arrived. Groups where one rendition failed to render are flushed as a single-item group at the end of the loop. `UploadHelpers.collectRenditions` and `groupByPhoto` are retained for other callers.
+
+Edge cases handled:
+
+- Render failure on one of a pair → single-item flush at end; `processOnePhotoGroup` already handles the 1-item case.
+- Cancellation mid-export → already-flushed groups have temp files deleted; in-progress accumulator items remain (same as single-rendition path).
+- Interleaved renditions from different photos → accumulator correctly groups by `localIdentifier` regardless of render order.
 
 ---
 
-## Known limitations / not in this PR
+### 10. Missing warning when rendered export upload fails (ExportTask.lua)
 
-### collectRenditions batches all renders before upload starts (UploadHelpers.lua)
+**Problem:** In `processOnePhotoGroup`, when the `original_plus_jpeg_if_edited` mode uploaded the original successfully but the rendered export upload returned nil, the failure was silent — no entry was added to `stackWarnings`. The equivalent path in `processSingleRenditionRenditions` did emit a warning.
 
-For the original+export stacking path, `collectRenditions` waits for all renditions across the entire export batch to finish rendering before the first upload begins. On large exports this can fill temp disk before any files are cleaned up. The single-rendition path does not have this issue — it pipes render → upload → delete per photo.
+**Fix:** Added an `else` branch to append `"failed to upload rendered export"` to `stackWarnings` when `exportId` is nil, matching the behaviour of the single-rendition path.
 
-This was not fixed in this PR due to the scope of the required restructuring. Monitor temp disk usage during large original+export exports.
+---
 
-#### Plan for future fix
+## Format-agnostic cleanup
 
-Replace `collectRenditions` in `processStackDngJpgRenditions` (ExportTask.lua) and `processPublishStackDngJpgRenditions` (PublishTask.lua) with an inline accumulator loop that flushes each photo group as soon as it is complete:
+The original+export stacking feature was implemented with DNG+JPG as the only use case in mind. All format-specific naming and file-type logic has been removed so the feature works correctly for any pairing (DNG+JPG, CR2+TIF, original JPG+export JPG, etc.).
 
-```lua
-local accumulator = {}  -- lid -> { items }
-for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-    if progressScope:isCanceled() then break end
-    local success, pathOrMessage = rendition:waitForRender()
-    if progressScope:isCanceled() then break end
-    if success then
-        local lid = rendition.photo.localIdentifier
-        if not accumulator[lid] then accumulator[lid] = {} end
-        table.insert(accumulator[lid], {
-            path = pathOrMessage,
-            photo = rendition.photo,
-            rendition = rendition,
-            ext = util.getExtension(pathOrMessage),
-            fileType = StackManager.getFileType(pathOrMessage),
-        })
-        -- Two renditions = group complete: upload and delete immediately
-        if #accumulator[lid] == 2 then
-            processOnePhotoGroup(immich, lid, accumulator[lid], ...)
-            accumulator[lid] = nil
-        end
-    end
-end
--- Flush any remaining single-rendition groups (e.g. one rendition failed to render)
-for lid, items in pairs(accumulator) do
-    processOnePhotoGroup(immich, lid, items, ...)
-end
-```
+### Renamed identifiers
 
-`processOnePhotoGroup` already handles the 1-item case so the end-of-loop flush requires no changes there. `UploadHelpers.collectRenditions` and `groupByPhoto` are no longer called from these paths but can remain for other uses.
+| Before | After | Files |
+| ------ | ----- | ----- |
+| `stackDngJpg` (preference key + bindings) | `stackOriginalExport` | ExportServiceProvider.lua, PublishServiceProvider.lua, ExportDialogSections.lua, PublishDialogSections.lua, ExportTask.lua, PublishTask.lua |
+| `processStackDngJpgRenditions` | `processStackOriginalExportRenditions` | ExportTask.lua |
+| `processPublishStackDngJpgRenditions` | `processPublishStackOriginalExportRenditions` | PublishTask.lua |
+| `sortDngJpgItems` | `sortOriginalExportItems` | UploadHelpers.lua |
+| `jpegId` | `exportId` | ExportTask.lua |
+| `existingJpegId` | `existingExportId` | ExportTask.lua |
+| `existingJpegDeviceId` | `existingExportDeviceId` | ExportTask.lua |
 
-**Edge cases to test:** render failure on one of a pair (group flushes as single-item at end), cancellation mid-export (temp files from flushed groups are already deleted, only in-progress accumulator items remain), and interleaved renditions from different photos (accumulator handles this correctly regardless of order).
+### Sort logic made format-agnostic (UploadHelpers.lua)
+
+**Before:** `sortDngJpgItems` sorted by file type (`jpeg=1`, `raw=2`, `other=3`). For pairings where the export is not a JPEG (e.g., DNG+TIF), the sort placed the original first, making it the Immich stack primary — the opposite of the intended behaviour.
+
+**After:** `sortOriginalExportItems` identifies the original by comparing `item.path` to `StackManager.getOriginalFilePath(item.photo)`. The export (non-original) always sorts first regardless of format.
+
+### File-type checks removed (ExportTask.lua, PublishTask.lua)
+
+**Before:** `processOnePhotoGroup` / `processPublishOnePhotoGroup` computed `hasRaw` and `hasJpeg` from each item's file type and only stacked when both were present (`shouldStackDngJpg = hasRaw and hasJpeg`). Any pairing that wasn't exactly raw+jpeg would skip stacking silently.
+
+**After:** `#items >= 2` is the only condition for stacking. Any two renditions for the same photo in `stackOriginalExport` mode are treated as an original+export pair.
+
+### Dead code removed (StackManager.lua, UploadHelpers.lua, ExportTask.lua, PublishTask.lua)
+
+- `StackManager.getFileType` and `RAW_EXT` removed — no longer called.
+- `fileType` field removed from item tables in all three accumulators — was populated but never read after the file-type checks were removed.
+
+---
+
+## UI improvements
+
+- **ExportDialogSections.lua:** Dropdown labels updated to be format-agnostic; "Original / no reformat" warning added (orange text).
+- **PublishDialogSections.lua:** Stack section label `"DNG+JPG:"` → `"Original + Export:"`, checkbox `"Stack in Immich (edited JPG as primary)"` → `"Stack in Immich (export as primary)"`.
+
+> **Note:** The `stackDngJpg` preference key has been renamed to `stackOriginalExport`. Users with existing export presets or publish collections that had the stacking checkbox enabled will need to re-enable it after updating.
+
+---
+
+## Known limitations
 
 ### Upload timeout is configurable by editing ImmichAPI.lua
 
@@ -136,7 +149,7 @@ end
 
 ### Stack warnings in the post-export dialog
 
-If any individual upload or stack creation fails, it is reported as a warning after export completes rather than aborting the entire run. Check the post-export dialog and the log file (`ImmichPlugin.log`) for `"failed to upload"` or `"failed to create stack"` entries.
+If any individual upload or stack creation fails, it is reported as a warning after export completes rather than aborting the entire run. Check the post-export dialog and the log file (`ImmichPlugin.log`) for `"failed to upload"` or `"failed to create stack"` entries. Re-exporting is self-healing: duplicate detection finds previously uploaded assets, missing companions are uploaded fresh, and stacks are created once both IDs are available.
 
 ---
 
@@ -144,8 +157,12 @@ If any individual upload or stack creation fails, it is reported as a warning af
 
 | File | Changes |
 |------|---------|
-| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), `checkIfAssetExistsEnhanced`, extension-based deviceAssetId |
-| `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename |
+| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), `checkIfAssetExistsEnhanced`, extension-based deviceAssetId, inline accumulator, missing export-upload warning, format-agnostic renames |
+| `PublishTask.lua` | Extension-based deviceAssetId, inline accumulator, format-agnostic renames |
+| `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
+| `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
+| `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
+| `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
 | `ImmichAPI.lua` | Timeout increases, `table.concat` multipart body, explicit POST timeout |
-| `StackManager.lua` | `hasEdits` cache short-circuit |
-| `PublishTask.lua` | Extension-based deviceAssetId for original+export stacking |
+| `StackManager.lua` | `hasEdits` cache short-circuit and comment fix, removed `getFileType` / `RAW_EXT` |
+| `UploadHelpers.lua` | `sortOriginalExportItems` with path-based sort, removed `fileType` field, updated comment |
