@@ -31,7 +31,7 @@ end
 
 --------------------------------------------------------------------------------
 -- Check if a photo has been edited in Lightroom.
--- When a cache is provided it is used exclusively — no fallback queries are run.
+-- When a cache is provided it is used exclusively; no fallback queries are made.
 -- When no cache is provided, falls back to direct catalog queries.
 function StackManager.hasEdits(photo, editedPhotosCache)
     -- If we have a cache, use it exclusively (no fallback needed — cache was built from same queries)

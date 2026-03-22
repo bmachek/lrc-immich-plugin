@@ -1074,7 +1074,7 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     if not ensureConnectivity(self) then return nil end
 
     logRequestStart(self, 'multipart POST', apiPath)
-    local response, headers = LrHttp.postMultipart(self.url .. self.apiBasePath .. apiPath, mimeChunks, self:createHeadersForMultipart())
+    local response, headers = LrHttp.postMultipart(self.url .. self.apiBasePath .. apiPath, mimeChunks, self:createHeadersForMultipart(), HTTP_TIMEOUT_UPLOAD)
 
     if not headers then
         log:error('ImmichAPI multipart POST: no response headers (network error): ' .. apiPath)

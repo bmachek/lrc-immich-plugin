@@ -35,11 +35,13 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 ---
 
-### 4. original+export stacking deviceAssetId was position-dependent (ExportTask.lua, PublishTask.lua)
+### 4. original+export stacking deviceAssetId was unstable and collision-prone (ExportTask.lua, PublishTask.lua)
 
-**Problem:** Device asset IDs for multi-rendition groups were generated as `lid_1`, `lid_2` based on loop position. If one rendition failed to render, subsequent files shifted positions and collided with previously uploaded asset IDs on retry, causing Immich's dedup check to match the wrong asset.
+**Problem:** Device asset IDs for multi-rendition groups were generated as `lid_1`, `lid_2` based on loop position. If one rendition failed to render, subsequent files shifted positions and collided with previously uploaded asset IDs on retry, causing Immich's dedup check to match the wrong asset. A subsequent fix to key by file extension (`lid_dng`, `lid_jpg`) addressed position-dependency but introduced a new collision: if both renditions share the same extension (e.g. JPEG source exported as JPEG) or `util.getExtension` returns `""`, both uploads receive the same `deviceAssetId` — Immich deduplicates the wrong asset and stack creation breaks.
 
-**Fix:** Keyed by actual file extension (`lid_dng`, `lid_jpg`, `lid_tif`, etc.) using `util.getExtension(item.path)`. The ID is now stable regardless of rendering failures and agnostic to file format.
+**Fix:** Replaced both approaches with role-based suffixes: `_orig` for the original file (identified by comparing `item.path` to `StackManager.getOriginalFilePath(photo)`) and `_export` for the rendered export. IDs are now stable regardless of rendering failures and unique regardless of file format pairing.
+
+**Idempotency:** On re-export, `checkIfAssetExists` finds each asset by exact `deviceAssetId` and calls `replaceAsset` rather than uploading fresh, so repeated exports of the same photo produce exactly one original and one export in one stack.
 
 ---
 
@@ -51,11 +53,11 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 ---
 
-### 6. Upload timeout too low for large files (ImmichAPI.lua)
+### 6. Upload timeout too low and not consistently applied (ImmichAPI.lua)
 
-**Problem:** `HTTP_TIMEOUT_UPLOAD` was 15 seconds. A 50 MB RAW file at 10 Mbps takes ~40 s; a 100 MB video at 5 Mbps takes ~160 s. Uploads that exceeded 15 s silently failed with no retry. `HTTP_TIMEOUT_DEFAULT` (5 s) was also applied to API calls like stacking and album operations that may legitimately take longer on slow servers.
+**Problem:** `HTTP_TIMEOUT_UPLOAD` was 15 seconds — far too short for large RAW files or slow connections. Uploads that exceeded 15 s silently failed with no retry. `HTTP_TIMEOUT_DEFAULT` (5 s) was also applied to API calls like stacking and album operations that may legitimately take longer on slow servers. Additionally, the main upload path (`uploadAsset` → `doMultiPartPostRequest` → `LrHttp.postMultipart`) had no timeout argument at all, so the constant had no effect on multipart POST uploads even after being increased.
 
-**Fix:** Increased `HTTP_TIMEOUT_UPLOAD` to 300 s (5 min) and `HTTP_TIMEOUT_DEFAULT` to 30 s. Also added an explicit timeout to `doPostRequest`, which previously relied on an undocumented LrHttp default.
+**Fix:** Increased `HTTP_TIMEOUT_UPLOAD` to 300 s (5 min) and `HTTP_TIMEOUT_DEFAULT` to 30 s. Added an explicit timeout to `doPostRequest` (previously relied on an undocumented LrHttp default). Wired `HTTP_TIMEOUT_UPLOAD` into `LrHttp.postMultipart` in `doMultiPartPostRequest` so the timeout now applies to all upload paths.
 
 ---
 
@@ -69,7 +71,7 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 ### 8. `hasEdits` ran redundant catalog queries when cache was present (StackManager.lua)
 
-**Problem:** When an `editedPhotosCache` was provided but the photo was not in it (meaning no edits), the function fell through to a fallback that ran two full `catalog:findPhotos` queries anyway — the same queries that were used to build the cache. For large catalogs this meant two extra full-catalog scans per unedited photo.
+**Problem:** When an `editedPhotosCache` was provided but the photo was not in it (meaning no edits), the function fell through to a fallback that ran two full `catalog:findPhotos` queries anyway — the same queries that were used to build the cache. For large catalogs this meant two extra full-catalog scans per unedited photo. The function header comment also incorrectly implied the fallback always ran.
 
 **Fix:** When a cache is present it is now used exclusively. A cache miss immediately returns `false` without any fallback queries. Function comment updated to accurately describe this behaviour.
 
@@ -157,12 +159,12 @@ If any individual upload or stack creation fails, it is reported as a warning af
 
 | File | Changes |
 |------|---------|
-| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), `checkIfAssetExistsEnhanced`, extension-based deviceAssetId, inline accumulator, missing export-upload warning, format-agnostic renames |
-| `PublishTask.lua` | Extension-based deviceAssetId, inline accumulator, format-agnostic renames |
+| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), `checkIfAssetExistsEnhanced`, role-based deviceAssetId (`_orig`/`_export`), inline accumulator, missing export-upload warning, format-agnostic renames |
+| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`), inline accumulator, format-agnostic renames |
 | `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
 | `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
 | `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
 | `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
-| `ImmichAPI.lua` | Timeout increases, `table.concat` multipart body, explicit POST timeout |
+| `ImmichAPI.lua` | Timeout increases, `HTTP_TIMEOUT_UPLOAD` wired into `postMultipart`, `table.concat` multipart body, explicit POST timeout |
 | `StackManager.lua` | `hasEdits` cache short-circuit and comment fix, removed `getFileType` / `RAW_EXT` |
 | `UploadHelpers.lua` | `sortOriginalExportItems` with path-based sort, removed `fileType` field, updated comment |
