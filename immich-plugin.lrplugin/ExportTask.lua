@@ -219,10 +219,8 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
         end
     elseif #items == 1 then
         -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
-        -- delivers the rendered export (never an original-copy rendition). The isOriginal flag
-        -- is a false positive for same-extension pairs (e.g. JPG→JPG, TIF→TIF): the rendered
-        -- export and the source share the same extension, but the rendition is still the edited
-        -- export. Always treat the single rendition as the export and fetch the disk original.
+        -- delivers the rendered export (never an original-copy rendition), so item.role = "export".
+        -- Always treat the single rendition as the export and fetch the disk original.
         local item = items[1]
         local deviceAssetId = lid .. "_export"
         log:info('original+export [' .. filename .. ']: single rendition, uploading as export (' .. deviceAssetId .. ')')
@@ -274,25 +272,23 @@ local function processStackOriginalExportRenditions(immich, exportContext, progr
         if success then
             -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
             local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
-            local srcPath = StackManager.getOriginalFilePath(rendition.photo)
-            local srcExt = srcPath and util.getExtension(srcPath) or ""
-            local itemExt = util.getExtension(pathOrMessage)
+            -- role = "export": LR_exportOriginalFile is never set, so LR always delivers the
+            -- rendered export (never an original-copy rendition), regardless of file extension.
             local item = {
                 path = pathOrMessage,
                 photo = rendition.photo,
                 rendition = rendition,
-                ext = itemExt,
-                isOriginal = srcExt ~= "" and itemExt == srcExt,
-                insertionOrder = 0,
+                role = "export",
             }
             processOnePhotoGroup(immich, lid, { item }, exportParams, albumId, useAlbum, editedPhotosCache,
                 failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
-            done = done + 1
-            progressScope:setPortionComplete(done, nPhotos)
-            if done == 1 or done % 10 == 0 or done == nPhotos then
-                log:info('Export progress: ' .. done .. '/' .. nPhotos
-                    .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
-            end
+        end
+        -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
+        done = done + 1
+        progressScope:setPortionComplete(done, nPhotos)
+        if done == 1 or done % 10 == 0 or done == nPhotos then
+            log:info('Export progress: ' .. done .. '/' .. nPhotos
+                .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
         end
     end
     return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto
@@ -457,6 +453,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
 
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = runExport(
         immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
+    progressScope:done()
 
     log:info('=== Export DONE: ' .. nPhotos .. ' photos | failures=' .. #failures
         .. ' | warnings=' .. #stackWarnings .. ' ===')

@@ -85,10 +85,8 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         end
     elseif #items == 1 then
         -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
-        -- delivers the rendered export (never an original-copy rendition). The isOriginal flag
-        -- is a false positive for same-extension pairs (e.g. JPG→JPG, TIF→TIF): the rendered
-        -- export and the source share the same extension, but the rendition is still the edited
-        -- export. Always treat the single rendition as the export.
+        -- delivers the rendered export (never an original-copy rendition), so item.role = "export".
+        -- Always treat the single rendition as the export.
         -- Do NOT upload the disk original: assets uploaded outside of recordPublishedPhotoId
         -- cannot be tracked by Lightroom and become orphans when the photo is removed from the
         -- publish collection (deletePhotosFromPublishedCollection only cleans up assets
@@ -132,25 +130,23 @@ local function processPublishStackOriginalExportRenditions(immich, exportContext
         if success then
             -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
             local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
-            local srcPath = StackManager.getOriginalFilePath(rendition.photo)
-            local srcExt = srcPath and util.getExtension(srcPath) or ""
-            local itemExt = util.getExtension(pathOrMessage)
+            -- role = "export": LR_exportOriginalFile is never set, so LR always delivers the
+            -- rendered export (never an original-copy rendition), regardless of file extension.
             local item = {
                 path = pathOrMessage,
                 photo = rendition.photo,
                 rendition = rendition,
-                ext = itemExt,
-                isOriginal = srcExt ~= "" and itemExt == srcExt,
-                insertionOrder = 0,
+                role = "export",
             }
             processPublishOnePhotoGroup(immich, lid, { item }, albumCreationStrategy, albumId, albumAssetIds,
                 failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
-            done = done + 1
-            progressScope:setPortionComplete(done, nPhotos)
-            if done == 1 or done % 10 == 0 or done == nPhotos then
-                log:info('Publish progress: ' .. done .. '/' .. nPhotos
-                    .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
-            end
+        end
+        -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
+        done = done + 1
+        progressScope:setPortionComplete(done, nPhotos)
+        if done == 1 or done % 10 == 0 or done == nPhotos then
+            log:info('Publish progress: ' .. done .. '/' .. nPhotos
+                .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
         end
     end
     return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto
@@ -251,6 +247,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
 
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = runPublishExport(
         immich, exportContext, progressScope, nPhotos, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+    progressScope:done()
 
     log:info('=== Publish DONE: ' .. nPhotos .. ' photos | failures=' .. #failures
         .. ' | warnings=' .. #stackWarnings .. ' ===')
