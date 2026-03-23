@@ -232,18 +232,25 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
         else
             atLeastSomeSuccess[1] = true
             local primaryId = id
-            local originalPath = StackManager.getOriginalFilePath(photo)
-            if originalPath then
-                local origId = StackManager.uploadOneAssetOrReplace(immich, originalPath, lid .. "_orig", filename, dateCreated)
-                if origId then
-                    if not immich:createStack({ id, origId }) then
-                        table.insert(stackWarnings, filename .. ": failed to create original+export stack")
+            if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
+                -- LR_format == "ORIGINAL" means Lightroom copied the source byte-for-byte; the
+                -- rendition IS the original. Uploading the disk original as _orig would create two
+                -- identical assets. Skip original upload and warn instead.
+                table.insert(stackWarnings, filename .. ": skipped original+export stack — 'Original / no reformat' produces an identical copy. Switch to any rendered format (e.g. JPEG, TIFF, PNG).")
+            else
+                local originalPath = StackManager.getOriginalFilePath(photo)
+                if originalPath then
+                    local origId = StackManager.uploadOneAssetOrReplace(immich, originalPath, lid .. "_orig", filename, dateCreated)
+                    if origId then
+                        if not immich:createStack({ id, origId }) then
+                            table.insert(stackWarnings, filename .. ": failed to create original+export stack")
+                        end
+                    else
+                        table.insert(stackWarnings, filename .. ": failed to upload original file")
                     end
                 else
-                    table.insert(stackWarnings, filename .. ": failed to upload original file")
+                    table.insert(stackWarnings, filename .. ": original file not accessible; uploaded export only")
                 end
-            else
-                table.insert(stackWarnings, filename .. ": original file not accessible; uploaded export only")
             end
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             if useAlbum then immich:addAssetToAlbum(albumId, primaryId)

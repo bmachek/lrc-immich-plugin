@@ -20,8 +20,8 @@ end
 local function _updateWarnings(propertyTable)
     local mode = propertyTable.originalFileMode
     local format = string.upper(propertyTable.LR_format or "")
-    if mode == 'original_plus_jpeg_if_edited' and format == "ORIGINAL" then
-        propertyTable.originalFormatWarning = "No reformat selected: switch to any rendered format (e.g. JPEG, TIFF, PNG) to render edits."
+    if format == "ORIGINAL" and (mode == 'original_plus_jpeg_if_edited' or propertyTable.stackOriginalExport) then
+        propertyTable.originalFormatWarning = "No reformat selected: switch to any rendered format (e.g. JPEG, TIFF, PNG) to produce a distinct export for stacking."
     else
         propertyTable.originalFormatWarning = ""
     end
@@ -74,6 +74,11 @@ function ExportDialogSections.startDialog(propertyTable)
 
 	-- Add observer for LR_format changes (catches "Original / no reformat" selection)
 	propertyTable:addObserver('LR_format', function(key, value)
+		_updateWarnings(propertyTable)
+	end)
+
+	-- Add observer for stackOriginalExport changes (warn when ORIGINAL format + stacking enabled)
+	propertyTable:addObserver('stackOriginalExport', function(key, value)
 		_updateWarnings(propertyTable)
 	end)
 
