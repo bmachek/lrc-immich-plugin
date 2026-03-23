@@ -104,7 +104,11 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
             local primaryId = id
             item.rendition:recordPublishedPhotoId(id)
             item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-            table.insert(stackWarnings, filename .. ": only export rendition available; original not uploaded to avoid untracked orphan in Immich")
+            -- Warn once per publish run (not once per photo) to keep the post-publish dialog concise.
+            if not stackWarnings._originalNotUploadedWarned then
+                table.insert(stackWarnings, "Originals not uploaded in publish mode to avoid untracked orphans in Immich (applies to all photos in this run)")
+                stackWarnings._originalNotUploadedWarned = true
+            end
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
                 photo:getFormattedMetadata("folderName"))
