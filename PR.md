@@ -40,7 +40,7 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 **Problem:** Device asset IDs for multi-rendition groups were generated as `lid_1`, `lid_2` based on loop position. If one rendition failed to render, subsequent files shifted positions and collided with previously uploaded asset IDs on retry, causing Immich's dedup check to match the wrong asset. Keying by file extension (`lid_dng`, `lid_jpg`) addressed position-dependency but introduced a new collision when both renditions share the same extension (e.g. JPEG source exported as JPEG) or `util.getExtension` returns `""` — both uploads receive the same `deviceAssetId` and Immich deduplicates the wrong asset.
 
-**Fix:** Established a role-based `deviceAssetId` scheme: `_export` for the rendered export (primary in Immich) and `_orig` for the disk original. Each item carries an explicit `role` field (`"export"` or `"orig"`). `sortOriginalExportItems` in UploadHelpers.lua sorts items so the export comes first. The `_export`/`_orig` naming is used in both the `#items == 1` path (the active path — see fix #14) and the `#items >= 2` path (kept as a defensive fallback but currently unreachable since LR delivers exactly one rendition per photo).
+**Fix:** Established a role-based `deviceAssetId` scheme: `_export` for the rendered export (primary in Immich) and `_orig` for the disk original. Each item carries an explicit `role` field (`"export"` or `"orig"`). `sortOriginalExportItems` in UploadHelpers.lua sorts items so the export comes first. The `_export`/`_orig` naming is used in both the `#items == 1` path (the active path — see fix #14) and the `#items >= 2` path (kept as a defensive fallback but currently unreachable since LR delivers exactly one rendition per photo). Any hypothetical extra renditions beyond the expected pair receive a `_rend<i>` suffix to keep deviceAssetIds unique.
 
 **Idempotency:** On re-export, `checkIfAssetExists` finds each asset by exact `deviceAssetId` and calls `replaceAsset` rather than uploading fresh, so repeated exports of the same photo produce exactly one original and one export in one stack.
 
@@ -254,15 +254,15 @@ With logging enabled, a typical export now produces clearly readable INFO entrie
 
 **Problem:** Items built in `processStackOriginalExportRenditions` and `processPublishStackOriginalExportRenditions` carried `isOriginal = srcExt ~= "" and itemExt == srcExt` and `insertionOrder = 0` (hard-coded). `sortOriginalExportItems` used `isOriginal` as the primary sort key and `insertionOrder` as a tiebreaker for same-extension pairs. Because both items in a hypothetical two-item group would have `insertionOrder = 0`, ties were nondeterministic — the sort result depended on the Lua runtime's table.sort implementation. In practice the `#items >= 2` branch is unreachable (LR delivers exactly one rendition per photo), but the fields added dead complexity and made the code misleading.
 
-**Fix:** Replaced `isOriginal` and `insertionOrder` with `role = "export"` (set at construction time — LR always delivers the rendered export). `sortOriginalExportItems` now sorts by `a.role == "export"` vs `b.role == "export"`, which is always deterministic and unambiguous regardless of file extension. The `srcPath`/`srcExt`/`itemExt` extraction used only to compute `isOriginal` was removed.
+**Fix:** Replaced `isOriginal` and `insertionOrder` with `role = "export"` (set at construction time — LR always delivers the rendered export). `sortOriginalExportItems` now sorts by `a.role == "export"` vs `b.role == "export"`, which is always deterministic and unambiguous regardless of file extension. The `srcPath`/`srcExt`/`itemExt` extraction used only to compute `isOriginal` was removed. The sort comparator comment no longer claims equal roles stay in place (Lua's `table.sort` is not stable).
 
 ---
 
-### 21. Progress bar not advanced on failed renders in `stackOriginalExport` path (ExportTask.lua, PublishTask.lua)
+### 21. Progress bar not advanced on failed renders (ExportTask.lua, PublishTask.lua)
 
-**Problem:** In `processStackOriginalExportRenditions` and `processPublishStackOriginalExportRenditions`, `done = done + 1` and `progressScope:setPortionComplete(done, nPhotos)` were inside the `if success then` block. If a rendition failed to render (`success == false`), the progress counter was not incremented, so `setPortionComplete` never reached `nPhotos` and the bar stalled below 100% even though the export loop had finished.
+**Problem:** In all four rendition-loop functions (`processStackOriginalExportRenditions`, `processPublishStackOriginalExportRenditions`, `processSingleRenditionRenditions`, `processPublishSingleRenditionRenditions`), `done = done + 1` and `progressScope:setPortionComplete(done, nPhotos)` were inside the `if success then` block. If any rendition failed to render (`success == false`), the progress counter was not incremented, so `setPortionComplete` never reached `nPhotos` and the bar stalled below 100% even though the export loop had finished.
 
-**Fix:** Moved `done = done + 1`, `setPortionComplete`, and the progress log statement outside the `if success then` block so every rendition — successful or failed — advances the bar. Only the upload logic remains inside the success guard.
+**Fix:** Moved `done = done + 1`, `setPortionComplete`, and the progress log statement outside the `if success then` block in all four functions so every rendition — successful or failed — advances the bar. Only the upload logic remains inside the success guard.
 
 ---
 

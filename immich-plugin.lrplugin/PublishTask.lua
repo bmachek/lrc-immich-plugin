@@ -58,8 +58,9 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         local primaryId = nil
         for i, item in ipairs(items) do
             -- After sort: items[1]=export (primary), items[2]=original.
-            -- Index-based suffix guarantees distinct IDs regardless of format pairing.
-            local deviceAssetId = lid .. (i == 1 and "_export" or "_orig")
+            -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
+            local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
+            local deviceAssetId = lid .. suffix
             local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
@@ -192,12 +193,13 @@ local function processPublishSingleRenditionRenditions(immich, exportContext, pr
                 end
             end
             UploadHelpers.safeDeleteTempFile(pathOrMessage)
-            done = done + 1
-            progressScope:setPortionComplete(done, nPhotos)
-            if done == 1 or done % 10 == 0 or done == nPhotos then
-                log:info('Publish progress: ' .. done .. '/' .. nPhotos
-                    .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
-            end
+        end
+        -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
+        done = done + 1
+        progressScope:setPortionComplete(done, nPhotos)
+        if done == 1 or done % 10 == 0 or done == nPhotos then
+            log:info('Publish progress: ' .. done .. '/' .. nPhotos
+                .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
         end
     end
     return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto

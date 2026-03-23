@@ -35,7 +35,7 @@ function UploadHelpers.sortOriginalExportItems(items)
     table.sort(items, function(a, b)
         local aIsExport = a.role == "export"
         local bIsExport = b.role == "export"
-        return aIsExport and not bIsExport  -- export sorts first; equal roles stay in place
+        return aIsExport and not bIsExport  -- exports before originals
     end)
 end
 
