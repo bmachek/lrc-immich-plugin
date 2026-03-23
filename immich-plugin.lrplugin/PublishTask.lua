@@ -70,6 +70,7 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
                 if primaryId == nil then primaryId = id end
                 item.rendition:recordPublishedPhotoId(id)
                 item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
+                log:info('original+export [' .. filename .. ']: ' .. deviceAssetId .. ' -> ' .. id)
             end
         end
         if #assetIds >= 2 and primaryId then
@@ -83,11 +84,18 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
                 photo:getFormattedMetadata("folderName"))
         end
     elseif #items == 1 then
-        -- One rendition arrived (the other failed to render or was not expected for this photo/mode).
-        -- Use isOriginal to determine the role: original copy (_orig) vs rendered export (_export).
+        -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
+        -- delivers the rendered export (never an original-copy rendition). The isOriginal flag
+        -- is a false positive for same-extension pairs (e.g. JPG→JPG, TIF→TIF): the rendered
+        -- export and the source share the same extension, but the rendition is still the edited
+        -- export. Always treat the single rendition as the export.
+        -- Do NOT upload the disk original: assets uploaded outside of recordPublishedPhotoId
+        -- cannot be tracked by Lightroom and become orphans when the photo is removed from the
+        -- publish collection (deletePhotosFromPublishedCollection only cleans up assets
+        -- registered via recordPublishedPhotoId). Warn instead.
         local item = items[1]
-        local isOrig = item.isOriginal == true
-        local deviceAssetId = lid .. (isOrig and "_orig" or "_export")
+        local deviceAssetId = lid .. "_export"
+        log:info('original+export [' .. filename .. ']: single rendition, uploading as export (' .. deviceAssetId .. ')')
         local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
@@ -97,14 +105,7 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
             local primaryId = id
             item.rendition:recordPublishedPhotoId(id)
             item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-            if not isOrig then
-                -- Export rendition arrived but original rendition did not. Do NOT upload the disk
-                -- original here: assets uploaded outside of rendition:recordPublishedPhotoId cannot
-                -- be tracked by Lightroom and will become orphans when the photo is later removed
-                -- from the publish collection (deletePhotosFromPublishedCollection only cleans up
-                -- assets registered via recordPublishedPhotoId). Warn instead.
-                table.insert(stackWarnings, filename .. ": only export rendition available; original not uploaded to avoid untracked orphan in Immich")
-            end
+            table.insert(stackWarnings, filename .. ": only export rendition available; original not uploaded to avoid untracked orphan in Immich")
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
                 photo:getFormattedMetadata("folderName"))
@@ -113,14 +114,17 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
 end
 
 --------------------------------------------------------------------------------
--- Original+export flow: accumulate renditions per photo, flush each group as soon as
--- both renditions are ready. This avoids buffering all renders before any upload starts.
-local function processPublishStackOriginalExportRenditions(immich, exportContext, progressScope,
+-- Original+export flow: process each rendition immediately as it arrives, keeping
+-- renders and uploads interleaved so the Lightroom progress bar advances
+-- proportionally to real work done. LR_exportOriginalFile is never set, so LR
+-- always delivers exactly one rendition per photo; the disk original is fetched
+-- inside processPublishOnePhotoGroup (or skipped for orphan safety in publish mode).
+local function processPublishStackOriginalExportRenditions(immich, exportContext, progressScope, nPhotos,
     albumCreationStrategy, albumId, albumAssetIds)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
     local exportedPrimaryByPhoto = {}
-    local accumulator = {}
+    local done = 0
     for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         if progressScope:isCanceled() then break end
         local success, pathOrMessage = rendition:waitForRender()
@@ -128,42 +132,37 @@ local function processPublishStackOriginalExportRenditions(immich, exportContext
         if success then
             -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
             local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
-            if not accumulator[lid] then accumulator[lid] = {} end
             local srcPath = StackManager.getOriginalFilePath(rendition.photo)
             local srcExt = srcPath and util.getExtension(srcPath) or ""
             local itemExt = util.getExtension(pathOrMessage)
-            table.insert(accumulator[lid], {
+            local item = {
                 path = pathOrMessage,
                 photo = rendition.photo,
                 rendition = rendition,
                 ext = itemExt,
                 isOriginal = srcExt ~= "" and itemExt == srcExt,
-                insertionOrder = #accumulator[lid],  -- 0-based; used as stable sort tiebreaker
-            })
-            -- Both renditions for this photo are ready: upload and stack immediately.
-            if #accumulator[lid] == 2 then
-                processPublishOnePhotoGroup(immich, lid, accumulator[lid], albumCreationStrategy, albumId, albumAssetIds,
-                    failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
-                accumulator[lid] = nil
-            end
-        end
-    end
-    -- Flush any incomplete groups (one rendition failed to render or publish was canceled).
-    for lid, items in pairs(accumulator) do
-        if not progressScope:isCanceled() then
-            processPublishOnePhotoGroup(immich, lid, items, albumCreationStrategy, albumId, albumAssetIds,
+                insertionOrder = 0,
+            }
+            processPublishOnePhotoGroup(immich, lid, { item }, albumCreationStrategy, albumId, albumAssetIds,
                 failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+            done = done + 1
+            progressScope:setPortionComplete(done, nPhotos)
+            if done == 1 or done % 10 == 0 or done == nPhotos then
+                log:info('Publish progress: ' .. done .. '/' .. nPhotos
+                    .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
+            end
         end
     end
     return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto
 end
 
 --------------------------------------------------------------------------------
-local function processPublishSingleRenditionRenditions(immich, exportContext, progressScope, exportParams,
+local function processPublishSingleRenditionRenditions(immich, exportContext, progressScope, nPhotos, exportParams,
     albumCreationStrategy, albumId, albumAssetIds)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = false
     local exportedPrimaryByPhoto = {}
+    local done = 0
     for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         local success, pathOrMessage = rendition:waitForRender()
         if progressScope:isCanceled() then break end
@@ -197,21 +196,27 @@ local function processPublishSingleRenditionRenditions(immich, exportContext, pr
                 end
             end
             UploadHelpers.safeDeleteTempFile(pathOrMessage)
+            done = done + 1
+            progressScope:setPortionComplete(done, nPhotos)
+            if done == 1 or done % 10 == 0 or done == nPhotos then
+                log:info('Publish progress: ' .. done .. '/' .. nPhotos
+                    .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
+            end
         end
     end
     return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
 end
 
 --------------------------------------------------------------------------------
-local function runPublishExport(immich, exportContext, progressScope, exportParams,
+local function runPublishExport(immich, exportContext, progressScope, nPhotos, exportParams,
     albumCreationStrategy, albumId, albumAssetIds)
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     if exportParams.stackOriginalExport then
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishStackOriginalExportRenditions(
-            immich, exportContext, progressScope, albumCreationStrategy, albumId, albumAssetIds)
+            immich, exportContext, progressScope, nPhotos, albumCreationStrategy, albumId, albumAssetIds)
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
-            immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+            immich, exportContext, progressScope, nPhotos, exportParams, albumCreationStrategy, albumId, albumAssetIds)
     end
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
         UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
@@ -228,14 +233,27 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     local albumCreationStrategy, albumId, albumAssetIds = resolvePublishAlbum(immich, exportContext)
 
     local nPhotos = exportSession:countRenditions()
+    log:info('=== Publish START: ' .. nPhotos .. ' photos | url=' .. tostring(exportParams.url)
+        .. ' | stackOriginalExport=' .. tostring(exportParams.stackOriginalExport)
+        .. ' | stackLrStacks=' .. tostring(exportParams.stackLrStacks)
+        .. ' | albumCreationStrategy=' .. tostring(albumCreationStrategy) .. ' ===')
+
     local progressTitle = (prefs and prefs.url and prefs.url ~= "") and prefs.url or "Immich"
-    local progressScope = exportContext:configureProgress {
-        title = util.buildSimpleUploadProgressTitle(nPhotos, "Publishing", progressTitle)
+    -- Use LrProgressScope tied to functionContext rather than exportContext:configureProgress.
+    -- configureProgress creates a scope managed by LR's render pipeline, which closes the bar
+    -- when rendering completes — potentially long before all uploads are done. LrProgressScope
+    -- with functionContext stays alive until processRenderedPhotos returns, and is not advanced
+    -- by LR's render thread, eliminating both early-close and forward→0→return race conditions.
+    local progressScope = LrProgressScope {
+        title = util.buildSimpleUploadProgressTitle(nPhotos, "Publishing", progressTitle),
+        functionContext = functionContext,
     }
 
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = runPublishExport(
-        immich, exportContext, progressScope, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+        immich, exportContext, progressScope, nPhotos, exportParams, albumCreationStrategy, albumId, albumAssetIds)
 
+    log:info('=== Publish DONE: ' .. nPhotos .. ' photos | failures=' .. #failures
+        .. ' | warnings=' .. #stackWarnings .. ' ===')
     util.reportUploadFailuresAndWarnings(failures, stackWarnings)
 end
 

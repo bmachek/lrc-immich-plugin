@@ -39,64 +39,20 @@ end
 
 local function logRequestStart(api, method, apiPath)
     log:trace('ImmichAPI: Preparing ' .. method .. ' request ' .. api.url .. api.apiBasePath .. apiPath)
-    log:trace('ImmichAPI: ' .. util.cutApiKey(api.apiKey))
 end
 
 local function handleRequestFailure(method, apiPath, status, headers, response)
-    local detail = (headers and util.dumpTable(headers)) or "No headers"
-    ErrorHandler.handleError(
-        'ImmichAPI ' .. tostring(method) .. ' request failed. ' .. apiPath .. ' (status ' .. tostring(status or '?') .. ')',
-        detail
-    )
+    -- Log the failure; do not show a modal dialog. During batch exports many requests can fail
+    -- (e.g. one stack per photo). A modal dialog per failure would block the entire export and
+    -- force the user to dismiss hundreds of popups. Callers check the nil return value and
+    -- collect failures for the post-export summary shown by reportUploadFailuresAndWarnings.
+    log:error('ImmichAPI ' .. tostring(method) .. ' request failed: ' .. apiPath .. ' (status ' .. tostring(status or '?') .. ')')
+    log:error('Response headers: ' .. ((headers and util.dumpTable(headers)) or "none"))
     if response ~= nil then
         log:error('Response body: ' .. tostring(response))
     end
 end
 
-local function generateBoundary()
-    return "ImmichUpload" .. tostring(math.random(100000, 999999))
-end
-
-local function generateMultiPartBody(boundary, formData, filePath)
-    if not boundary or not formData or not filePath or type(filePath) ~= "string" then
-        log:error('generateMultiPartBody: invalid arguments (boundary, formData or filePath missing)')
-        return nil
-    end
-    local fileName = LrPathUtils.leafName(filePath)
-    local parts = {}
-    local boundaryLine = '--' .. boundary .. '\r\n'
-
-    for i = 1, #formData do
-        local part = formData[i]
-        local name = part and part.name
-        local value = part and part.value
-        if name then
-            parts[#parts + 1] = boundaryLine
-            parts[#parts + 1] = 'Content-Disposition: form-data; name="' .. name .. '"\r\n\r\n'
-            parts[#parts + 1] = tostring(value or '') .. "\r\n"
-        end
-    end
-
-    local fh = io.open(filePath, "rb")
-    if not fh then
-        log:error('generateMultiPartBody: unable to open file: ' .. tostring(filePath))
-        return nil
-    end
-    local fileContent = fh:read("*all")
-    fh:close()
-    if not fileContent then
-        log:error('generateMultiPartBody: failed to read file: ' .. filePath)
-        return nil
-    end
-
-    parts[#parts + 1] = boundaryLine
-    parts[#parts + 1] = 'Content-Disposition: form-data; name="assetData"; filename="' .. fileName .. '"\r\n'
-    parts[#parts + 1] = 'Content-Type: application/octet-stream\r\n\r\n'
-    parts[#parts + 1] = fileContent
-    parts[#parts + 1] = '\r\n--' .. boundary .. '--\r\n'
-
-    return table.concat(parts)
-end
 
 -- ---------------------------------------------------------------------------
 -- Configuration
@@ -266,14 +222,6 @@ function ImmichAPI:createHeadersForMultipart()
     }
 end
 
-function ImmichAPI:createHeadersForMultipartPut(boundary, length)
-    return {
-        { field = 'x-api-key',      value = safeApiKey(self) },
-        { field = 'Accept',         value = 'application/json' },
-        { field = 'Content-Type',   value = 'multipart/form-data; boundary="' .. boundary .. '"' },
-        { field = 'Content-Length', value = tostring(length) },
-    }
-end
 
 -- Returns sanitized URL (string) on success; false on empty; nil on invalid format.
 -- Does not show dialogs (for use in validate callbacks). Callers should show errors or return error messages.
@@ -418,6 +366,7 @@ function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId)
 
     local parsedResponse = self:doMultiPartPostRequest(apiPath, mimeChunks)
     if parsedResponse ~= nil then
+        log:info('uploadAsset: ' .. tostring(deviceAssetId) .. ' -> ' .. parsedResponse.id)
         return parsedResponse.id
     end
     return nil
@@ -448,7 +397,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
         end
         if self:copyAssetMetadata(immichId, newImmichId) then
             if self:deleteAsset(immichId) then
-                log:trace('copyAssetMetadata: Successfully replaced asset ' .. immichId .. ' with new asset ' .. newImmichId)
+                log:info('replaceAsset: ' .. immichId .. ' -> ' .. newImmichId)
                 return newImmichId
             else
                 ErrorHandler.handleError('Failed to delete old asset after replacement. Check logs.',
@@ -565,10 +514,10 @@ function ImmichAPI:createStack(assetIds)
     local postBody = { assetIds = assetIds }
 
     log:trace('Creating stack with assets: ' .. JSON:encode(assetIds))
-    
+
     local parsedResponse = self:doPostRequest(apiPath, postBody)
     if parsedResponse ~= nil then
-        log:trace('Stack created successfully with ID: ' .. parsedResponse.id)
+        log:info('Stack created: ' .. parsedResponse.id .. ' (' .. #assetIds .. ' assets)')
         return parsedResponse.id
     else
         log:error('Failed to create stack')
@@ -1088,35 +1037,3 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     return nil
 end
 
-function ImmichAPI:doMultiPartPutRequest(apiPath, filePath, formData)
-    if not ensureConnectivity(self) then return nil end
-
-    logRequestStart(self, 'multipart PUT', apiPath)
-    local url = self.url .. self.apiBasePath .. apiPath
-    local boundary = generateBoundary()
-    local body = generateMultiPartBody(boundary, formData, filePath)
-    if not body then
-        log:error('doMultiPartPutRequest: failed to build multipart body for ' .. tostring(filePath))
-        ErrorHandler.handleError('Could not read or build upload data. Check file path and permissions.', 'Upload failed')
-        return nil
-    end
-    local reqhdrs = self:createHeadersForMultipartPut(boundary, string.len(body))
-    log:trace('ImmichAPI multipart PUT headers:' .. util.dumpTable(reqhdrs))
-
-    local response, headers = LrHttp.post(url, body, reqhdrs, 'PUT', HTTP_TIMEOUT_UPLOAD)
-    if headers then
-        log:trace('ImmichAPI multipart PUT response headers ' .. util.dumpTable(headers))
-    end
-
-    if not headers then
-        log:error('ImmichAPI multipart PUT: no response headers (network error): ' .. apiPath)
-        ErrorHandler.handleError('No response from Immich server. Check URL and network.', 'Connection failed')
-        return nil
-    end
-    if SUCCESS_STATUS_POST[headers.status] then
-        log:trace('ImmichAPI multipart PUT request succeeded: ' .. tostring(response))
-        return safeDecodeJson(response, 'multipart PUT')
-    end
-    handleRequestFailure('multipart PUT', apiPath, headers.status, headers, response)
-    return nil
-end

@@ -184,6 +184,82 @@ The original+export stacking feature was implemented with DNG+JPG as the only us
 
 ---
 
+### 14. `#items == 1` fallback: same-extension pairs (JPG→JPG, TIF→TIF) not stacked (ExportTask.lua, PublishTask.lua)
+
+**Problem:** When `stackOriginalExport = true` and the source file and export share the same extension (e.g. JPG photos exported as JPEG), the `#items == 1` fallback in `processOnePhotoGroup` / `processPublishOnePhotoGroup` misidentified the single rendition as the original copy and skipped stacking entirely.
+
+Root cause: `LR_exportOriginalFile` is never set in `ExportServiceProvider.lua`, so Lightroom always delivers exactly **one** rendition per photo — the rendered export. The `isOriginal` flag (set as `itemExt == srcExt`) is `true` for same-extension pairs, which caused the code to upload as `_orig` and skip the disk-original fetch and stack creation.
+
+Symptoms observed: exporting 29 536 JPG photos with `stackOriginalExport = true` produced ~43 134 assets in Immich (a mix of unstacked singles and unstacked pairs from a prior partial export) instead of 58 872 stacked pairs. No error or warning was emitted because the warning guard required `originalFileMode == "original_plus_jpeg_if_edited"`, which is not the active value in the `stackOriginalExport` code path.
+
+The bug affected any same-extension pairing (JPG→JPG, TIF→TIF, PNG→PNG, etc.). Different-extension pairings of the same format (`.jpg` vs `.jpeg`, `.tif` vs `.tiff`) were already handled correctly because the normalized extensions differ, giving `isOriginal = false` and taking the stacking path.
+
+**Fix:** Both `processOnePhotoGroup` (ExportTask.lua) and `processPublishOnePhotoGroup` (PublishTask.lua) `#items == 1` branches now always treat the single arriving rendition as the rendered export — `isOrig` determination and branching removed. The `_export` suffix is always used; the disk original is always fetched and uploaded as `_orig`; the stack is always created. In publish mode the disk original is intentionally not uploaded (orphan prevention), and a stack warning is always emitted.
+
+---
+
+### 15. HTTP request failures showed a blocking modal dialog per failure (ImmichAPI.lua)
+
+**Problem:** `handleRequestFailure` called `ErrorHandler.handleError(...)` for every failed HTTP response, which presented a blocking `LrDialogs.presentModalDialog` popup. During a batch export with many photos, each failed stack creation (e.g. HTTP 400 from `/stacks`) triggered a new modal dialog the moment the previous one was dismissed — forcing the user to click through hundreds of identical popups. The return value of the dialog (OK vs Cancel) was also discarded, so Cancel had no effect and the next dialog appeared immediately.
+
+**Fix:** Replaced the `ErrorHandler.handleError` call in `handleRequestFailure` with plain `log:error` calls that record the same information (method, path, status, headers, response body) without showing any dialog. Callers already check the nil return value and add entries to `failures` / `stackWarnings`, which are reported once in the post-export summary via `reportUploadFailuresAndWarnings`.
+
+---
+
+### 16. StackManager.lua always enabled logging regardless of user preference (StackManager.lua)
+
+**Problem:** `StackManager.lua` created its own `local log = LrLogger('ImmichPlugin')` and called `log:enable("logfile")` unconditionally at module load time. This bypassed the global logging preference managed by `Init.lua` — the plugin wrote to `ImmichPlugin.log` on every run regardless of whether the user had enabled logging in the Plugin Manager. Every other file in the plugin uses the global `log` instance from `Init.lua`.
+
+**Fix:** Removed the local `log` declaration and the unconditional `log:enable("logfile")` call. `StackManager.lua` now uses the global `log` variable set by `Init.lua`, matching the pattern used by all other files.
+
+---
+
+### 16. Insufficient INFO-level logging for upload, stack, and flow operations (multiple files)
+
+**Problem:** The plugin had only 3 INFO-level log statements across the entire codebase. Key operations — upload success, stack creation, and the original+export accumulator control flow — produced no INFO output. Diagnosing issues (such as the JPG→JPG stacking bug) required enabling TRACE and sifting through hundreds of low-level entries, or adding temporary code.
+
+Specific gaps:
+
+- `uploadAsset` and `replaceAsset`: no log on success; could not confirm which `deviceAssetId` mapped to which Immich asset ID.
+- `createStack`: logged at TRACE on success; not visible without full TRACE output.
+- `processStackOriginalExportRenditions` accumulator: no log when a photo pair was flushed or an incomplete group was deferred to the single-rendition path.
+- `processOnePhotoGroup` / `processPublishOnePhotoGroup`: no log per upload or per stack attempt.
+- `processSingleRenditionRenditions` (`original_plus_jpeg_if_edited` path): no log for the original or export upload steps.
+
+**Fix:** Added INFO-level logging to the following:
+
+- **ImmichAPI.lua `uploadAsset`**: logs `uploadAsset: <deviceAssetId> -> <assetId>` on success.
+- **ImmichAPI.lua `replaceAsset`**: logs `replaceAsset: <oldId> -> <newId>` on success; changed existing TRACE to INFO.
+- **ImmichAPI.lua `createStack`**: changed TRACE success log to INFO (`Stack created: <id> (N assets)`).
+- **ExportTask.lua / PublishTask.lua accumulator**: logs INFO when a photo pair is flushed (`flushing pair for <filename>`) and when an incomplete single-rendition group is deferred (`flushing incomplete group for <filename>`).
+- **ExportTask.lua / PublishTask.lua `processOnePhotoGroup` / `processPublishOnePhotoGroup`**: logs INFO per upload in `#items >= 2` path; logs INFO announcing single-rendition treatment in `#items == 1` path.
+- **ExportTask.lua `processSingleRenditionRenditions`**: logs INFO when uploading the original and the edited export in the `original_plus_jpeg_if_edited` path.
+
+With logging enabled, a typical JPG→JPG export now produces clearly readable INFO entries showing the accumulator flush, each upload's `deviceAssetId → assetId` mapping, and the stack creation result.
+
+---
+
+### 17. Progress bar advanced prematurely, appeared to go backwards, and disappeared before all uploads completed (ExportTask.lua, PublishTask.lua)
+
+**Problem — premature completion (accumulator):** `processStackOriginalExportRenditions` and `processPublishStackOriginalExportRenditions` used an accumulator that flushed (uploaded) only when *two* renditions for the same photo had arrived (`#accumulator[lid] == 2`). Because `LR_exportOriginalFile` is never set, Lightroom always delivers exactly **one** rendition per photo, so the flush condition was never met during the main loop. All N renditions were rendered (filling the progress bar to 100%) before any upload began; then all uploads happened in a post-loop "flush incomplete groups" pass with the bar already full.
+
+**Problem — bar disappears mid-upload and forward→0→return motion:** `exportContext:configureProgress` creates a progress scope that Lightroom's render pipeline owns and manages. LR renders photos on a background thread; once all N photos are rendered (which happens much faster than uploading), LR closes the `configureProgress` scope automatically — even while the Lua thread is still executing upload HTTP calls. After that, any `setPortionComplete` call on the closed scope is a no-op, so the bar vanishes while uploads continue silently for minutes. The same render-thread ownership caused the forward→0→return jitter: `setPortionComplete(0, nPhotos)` would reset the bar that LR had already partially advanced during pre-initialization API calls, then LR's render thread would re-advance it concurrently with our upload updates.
+
+**Fix:**
+
+1. Removed the accumulator from both functions. Each rendition is now processed (uploaded and stacked) immediately as it arrives, interleaving renders and uploads exactly as `processSingleRenditionRenditions` does.
+2. Replaced `exportContext:configureProgress { title = ... }` with `LrProgressScope { title = ..., functionContext = functionContext }` in both `ExportTask.processRenderedPhotos` and `PublishTask.processRenderedPhotos`. `LrProgressScope` with `functionContext` is owned entirely by the plugin — its lifetime is tied to the function context, so it stays visible until `processRenderedPhotos` returns regardless of when LR finishes rendering. LR's render thread does not advance or close it, eliminating both the early-close and the jitter. `setPortionComplete(done, nPhotos)` after each upload is the sole source of progress updates, so the bar advances monotonically and reaches 100% only when the last upload completes.
+
+---
+
+### 18. Dead code: `generateBoundary`, `generateMultiPartBody`, `createHeadersForMultipartPut`, `doMultiPartPutRequest` (ImmichAPI.lua)
+
+**Problem:** These four functions were left over from an earlier implementation where `replaceAsset` issued a raw multipart PUT request by reading the entire file into memory (`fh:read("*all")`), building the request body as a Lua string, and calling `LrHttp.post` with `method = 'PUT'`. That path was replaced: `replaceAsset` now delegates to `uploadAsset`, which passes the file via `filePath` in the `postMultipart` content table so LR streams it from disk. The old functions had no remaining callers.
+
+**Fix:** Removed all four functions. No behavioral change.
+
+---
+
 ## Known limitations
 
 ### Upload timeout is configurable by editing ImmichAPI.lua
@@ -200,12 +276,12 @@ If any individual upload or stack creation fails, it is reported as a warning af
 
 | File | Changes |
 | ---- | ------- |
-| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected, removed redundant `processPhotoWithStack`, inline accumulator, missing export-upload warning, format-agnostic renames |
-| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (publish: no untracked original upload), removed unused `exportParams` from `processPublishStackOriginalExportRenditions`, inline accumulator, format-agnostic renames |
+| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; fetch disk original; stack), removed redundant `processPhotoWithStack`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), missing export-upload warning, format-agnostic renames |
+| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; orphan-safe warning), removed unused `exportParams` from `processPublishStackOriginalExportRenditions`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), format-agnostic renames |
 | `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
 | `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
 | `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
 | `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
-| `ImmichAPI.lua` | Timeout increases, `HTTP_TIMEOUT_UPLOAD` wired into `postMultipart`, `table.concat` multipart body, explicit POST timeout |
+| `ImmichAPI.lua` | Timeout increases, `HTTP_TIMEOUT_UPLOAD` wired into `postMultipart`, `table.concat` multipart body, explicit POST timeout, `handleRequestFailure` changed to log-only (no modal dialog), INFO logging for `uploadAsset`/`replaceAsset`/`createStack` success, removed dead `generateBoundary`/`generateMultiPartBody`/`createHeadersForMultipartPut`/`doMultiPartPutRequest` (no callers since `replaceAsset` was rewritten to delegate to `uploadAsset`) |
 | `StackManager.lua` | `hasEdits` cache short-circuit and comment fix, removed `getFileType` / `RAW_EXT` |
 | `UploadHelpers.lua` | `sortOriginalExportItems` with extension-based `isOriginal` flag and inverted `insertionOrder` tiebreaker (higher = rendered export = primary), removed `fileType` field, removed dead `collectRenditions`/`groupByPhoto`, updated comment |

@@ -11,10 +11,6 @@ This module provides functionality to:
 
 require "ImmichAPI"
 
--- Initialize logging
-local log = LrLogger('ImmichPlugin')
-log:enable("logfile")
-
 StackManager = {}
 
 
