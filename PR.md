@@ -40,7 +40,7 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 **Problem:** Device asset IDs for multi-rendition groups were generated as `lid_1`, `lid_2` based on loop position. If one rendition failed to render, subsequent files shifted positions and collided with previously uploaded asset IDs on retry, causing Immich's dedup check to match the wrong asset. Keying by file extension (`lid_dng`, `lid_jpg`) addressed position-dependency but introduced a new collision when both renditions share the same extension (e.g. JPEG source exported as JPEG) or `util.getExtension` returns `""` — both uploads receive the same `deviceAssetId` and Immich deduplicates the wrong asset.
 
-**Fix:** Established a role-based `deviceAssetId` scheme: `_export` for the rendered export (primary in Immich) and `_orig` for the disk original. Each item receives an `isOriginal` flag (true if the rendered file's extension matches the source file's extension) and an `insertionOrder` counter to support sorting. `sortOriginalExportItems` in UploadHelpers.lua sorts items so the export comes first. The `_export`/`_orig` naming is used in both the `#items == 1` path (the active path — see fix #14) and the `#items >= 2` path (kept as a defensive fallback but currently unreachable since LR delivers exactly one rendition per photo).
+**Fix:** Established a role-based `deviceAssetId` scheme: `_export` for the rendered export (primary in Immich) and `_orig` for the disk original. Each item carries an explicit `role` field (`"export"` or `"orig"`). `sortOriginalExportItems` in UploadHelpers.lua sorts items so the export comes first. The `_export`/`_orig` naming is used in both the `#items == 1` path (the active path — see fix #14) and the `#items >= 2` path (kept as a defensive fallback but currently unreachable since LR delivers exactly one rendition per photo).
 
 **Idempotency:** On re-export, `checkIfAssetExists` finds each asset by exact `deviceAssetId` and calls `replaceAsset` rather than uploading fresh, so repeated exports of the same photo produce exactly one original and one export in one stack.
 
@@ -106,10 +106,8 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 **Fix:** Both functions now have a unified `elseif #items == 1` branch that:
 
-- Reads `item.isOriginal` to determine the role of the single rendition.
-- Assigns `lid_orig` if the original copy arrived, `lid_export` if the rendered export arrived — consistent with `#items >= 2`.
-- If the export arrived (`isOrig == false`): in **export mode**, fetches the disk original via `getOriginalFilePath`, uploads it with `lid_orig`, and creates a stack. In **publish mode**, the disk original is intentionally NOT uploaded — an asset uploaded outside `rendition:recordPublishedPhotoId` cannot be tracked by Lightroom and would become an orphan when the photo is later removed from the publish collection (`deletePhotosFromPublishedCollection` only cleans up assets registered via `recordPublishedPhotoId`). A stack warning is emitted instead.
-- If the original arrived (`isOrig == true`): uploads with `lid_orig`; emits a warning if `original_plus_jpeg_if_edited` mode was active and the photo has edits (with the `LR_format == "ORIGINAL"` guard; export path only).
+- Assigns `lid_export` for the rendition and fetches the disk original separately — consistent with `#items >= 2`.
+- In **export mode**, fetches the disk original via `getOriginalFilePath`, uploads it with `lid_orig`, and creates a stack. In **publish mode**, the disk original is intentionally NOT uploaded — an asset uploaded outside `rendition:recordPublishedPhotoId` cannot be tracked by Lightroom and would become an orphan when the photo is later removed from the publish collection (`deletePhotosFromPublishedCollection` only cleans up assets registered via `recordPublishedPhotoId`). A stack warning is emitted instead.
 - Records only the primary in `exportedPrimaryByPhoto` and in the album.
 
 The dead `else` block is removed from both functions.
@@ -152,7 +150,7 @@ The original+export stacking feature was implemented with DNG+JPG as the only us
 
 **Before:** `sortDngJpgItems` sorted by file type (`jpeg=1`, `raw=2`, `other=3`). For pairings where the export is not a JPEG (e.g., DNG+TIF), the sort placed the original first, making it the Immich stack primary — the opposite of the intended behaviour.
 
-**After:** `sortOriginalExportItems` uses an `isOriginal` flag set on each item at accumulation time (`isOriginal = itemExt == srcExt`, where `srcExt` is the source file's extension). Items with `isOriginal == false` (the rendered export) sort first; ties fall back to `insertionOrder` (higher = rendered export = sorts first, so the export is always primary regardless of format).
+**After:** `sortOriginalExportItems` uses an explicit `role` field (`"export"` or `"orig"`) set on each item at construction time. Items with `role == "export"` sort first, so the export is always primary regardless of format or file extension (see also fix #20).
 
 ### File-type checks removed (ExportTask.lua, PublishTask.lua)
 
@@ -180,13 +178,13 @@ The original+export stacking feature was implemented with DNG+JPG as the only us
 
 **Problem:** When `stackOriginalExport = true` and the source file and export share the same extension (e.g. JPG photos exported as JPEG), the `#items == 1` fallback in `processOnePhotoGroup` / `processPublishOnePhotoGroup` misidentified the single rendition as the original copy and skipped stacking entirely.
 
-Root cause: `LR_exportOriginalFile` is never set in `ExportServiceProvider.lua`, so Lightroom always delivers exactly **one** rendition per photo — the rendered export. The `isOriginal` flag (set as `itemExt == srcExt`) is `true` for same-extension pairs, which caused the code to upload as `_orig` and skip the disk-original fetch and stack creation.
+Root cause: `LR_exportOriginalFile` is never set in `ExportServiceProvider.lua`, so Lightroom always delivers exactly **one** rendition per photo — the rendered export. The `isOriginal` flag (then set as `itemExt == srcExt`) was `true` for same-extension pairs, which caused the code to upload as `_orig` and skip the disk-original fetch and stack creation.
 
 Symptoms observed: exporting 29 536 JPG photos with `stackOriginalExport = true` produced ~43 134 assets in Immich (a mix of unstacked singles and unstacked pairs from a prior partial export) instead of 58 872 stacked pairs. No error or warning was emitted because the warning guard required `originalFileMode == "original_plus_jpeg_if_edited"`, which is not the active value in the `stackOriginalExport` code path.
 
 The bug affected any same-extension pairing (JPG→JPG, TIF→TIF, PNG→PNG, etc.). Different-extension pairings of the same format (`.jpg` vs `.jpeg`, `.tif` vs `.tiff`) were already handled correctly because the normalized extensions differ, giving `isOriginal = false` and taking the stacking path.
 
-**Fix:** Both `processOnePhotoGroup` (ExportTask.lua) and `processPublishOnePhotoGroup` (PublishTask.lua) `#items == 1` branches now always treat the single arriving rendition as the rendered export — `isOrig` determination and branching removed. The `_export` suffix is always used; the disk original is always fetched and uploaded as `_orig`; the stack is always created. In publish mode the disk original is intentionally not uploaded (orphan prevention), and a stack warning is always emitted.
+**Fix:** Both `processOnePhotoGroup` (ExportTask.lua) and `processPublishOnePhotoGroup` (PublishTask.lua) `#items == 1` branches now always treat the single arriving rendition as the rendered export. The `_export` suffix is always used; the disk original is always fetched and uploaded as `_orig`; the stack is always created. In publish mode the disk original is intentionally not uploaded (orphan prevention), and a stack warning is always emitted.
 
 ---
 
@@ -252,6 +250,30 @@ With logging enabled, a typical export now produces clearly readable INFO entrie
 
 ---
 
+### 20. `isOriginal`/`insertionOrder` item fields replaced with explicit `role` field (UploadHelpers.lua, ExportTask.lua, PublishTask.lua)
+
+**Problem:** Items built in `processStackOriginalExportRenditions` and `processPublishStackOriginalExportRenditions` carried `isOriginal = srcExt ~= "" and itemExt == srcExt` and `insertionOrder = 0` (hard-coded). `sortOriginalExportItems` used `isOriginal` as the primary sort key and `insertionOrder` as a tiebreaker for same-extension pairs. Because both items in a hypothetical two-item group would have `insertionOrder = 0`, ties were nondeterministic — the sort result depended on the Lua runtime's table.sort implementation. In practice the `#items >= 2` branch is unreachable (LR delivers exactly one rendition per photo), but the fields added dead complexity and made the code misleading.
+
+**Fix:** Replaced `isOriginal` and `insertionOrder` with `role = "export"` (set at construction time — LR always delivers the rendered export). `sortOriginalExportItems` now sorts by `a.role == "export"` vs `b.role == "export"`, which is always deterministic and unambiguous regardless of file extension. The `srcPath`/`srcExt`/`itemExt` extraction used only to compute `isOriginal` was removed.
+
+---
+
+### 21. Progress bar not advanced on failed renders in `stackOriginalExport` path (ExportTask.lua, PublishTask.lua)
+
+**Problem:** In `processStackOriginalExportRenditions` and `processPublishStackOriginalExportRenditions`, `done = done + 1` and `progressScope:setPortionComplete(done, nPhotos)` were inside the `if success then` block. If a rendition failed to render (`success == false`), the progress counter was not incremented, so `setPortionComplete` never reached `nPhotos` and the bar stalled below 100% even though the export loop had finished.
+
+**Fix:** Moved `done = done + 1`, `setPortionComplete`, and the progress log statement outside the `if success then` block so every rendition — successful or failed — advances the bar. Only the upload logic remains inside the success guard.
+
+---
+
+### 22. `LrProgressScope` not closed explicitly (ExportTask.lua, PublishTask.lua)
+
+**Problem:** `ExportTask.processRenderedPhotos` and `PublishTask.processRenderedPhotos` created a `LrProgressScope` but never called `progressScope:done()`. Cleanup relied on the `functionContext` finalizer. While this works in practice, it is non-deterministic: the scope remains visible until Lua's garbage collector or the context cleanup disposes it, which can leave a stale progress indicator briefly after the function returns.
+
+**Fix:** Added `progressScope:done()` immediately after `runExport` / `runPublishExport` returns, before the final log and `reportUploadFailuresAndWarnings` call, closing the scope deterministically at the earliest safe point.
+
+---
+
 ## Known limitations
 
 ### Upload timeout is configurable by editing ImmichAPI.lua
@@ -268,12 +290,12 @@ If any individual upload or stack creation fails, it is reported as a warning af
 
 | File | Changes |
 | ---- | ------- |
-| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; fetch disk original; stack), removed redundant `processPhotoWithStack`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), missing export-upload warning, format-agnostic renames |
-| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; orphan-safe warning), removed unused `exportParams` from `processPublishStackOriginalExportRenditions`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), format-agnostic renames |
+| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; fetch disk original; stack), removed redundant `processPhotoWithStack`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), missing export-upload warning, `role = "export"` replaces `isOriginal`/`insertionOrder`, progress advances on failed renders, `progressScope:done()` on completion, format-agnostic renames |
+| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; orphan-safe warning), removed unused `exportParams` from `processPublishStackOriginalExportRenditions`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), `role = "export"` replaces `isOriginal`/`insertionOrder`, progress advances on failed renders, `progressScope:done()` on completion, format-agnostic renames |
 | `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
 | `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
 | `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
 | `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
 | `ImmichAPI.lua` | Timeout increases, `HTTP_TIMEOUT_UPLOAD` wired into `postMultipart`, explicit POST timeout, `handleRequestFailure` changed to log-only (no modal dialog), INFO logging for `uploadAsset`/`replaceAsset`/`createStack` success, `replaceAsset` delegates to `uploadAsset` (LR streams file from disk via `filePath` in `postMultipart` — no in-memory file copy), removed dead `generateBoundary`/`generateMultiPartBody`/`createHeadersForMultipartPut`/`doMultiPartPutRequest` |
 | `StackManager.lua` | `hasEdits` cache short-circuit and comment fix, removed `getFileType` / `RAW_EXT` |
-| `UploadHelpers.lua` | `sortOriginalExportItems` with extension-based `isOriginal` flag and inverted `insertionOrder` tiebreaker (higher = rendered export = primary), removed `fileType` field, removed dead `collectRenditions`/`groupByPhoto`, updated comment |
+| `UploadHelpers.lua` | `sortOriginalExportItems` with explicit `role` field (replaces `isOriginal`/`insertionOrder`; deterministic for same-extension pairs), removed `fileType` field, removed dead `collectRenditions`/`groupByPhoto`, updated comment |
