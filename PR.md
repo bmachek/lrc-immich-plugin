@@ -26,12 +26,13 @@ This PR fixes the `original_plus_jpeg_if_edited` export mode (issue #91), correc
 
 ### 3. "Original / no reformat" produced two identical uploads (ExportTask.lua, ExportDialogSections.lua)
 
-**Problem:** When Lightroom's export format is set to "Original / no reformat", Lightroom copies the source file byte-for-byte without rendering an edited version. The plugin then uploaded both copies as if they were distinct, resulting in two identical files in Immich with no meaningful stack.
+**Problem:** When Lightroom's export format is set to "Original / no reformat", Lightroom copies the source file byte-for-byte without rendering an edited version. The plugin then uploaded both copies as if they were distinct, resulting in two identical files in Immich with no meaningful stack. This affected both the `original_plus_jpeg_if_edited` single-rendition path and the `stackOriginalExport` path.
 
 **Fix:**
 
 - Added a runtime guard in `processSingleRenditionRenditions` (`original_plus_jpeg_if_edited` path): if `LR_format == "ORIGINAL"`, skip the rendered export upload and emit a stack warning instead.
-- Added a live warning in the export dialog (orange text) when this incompatible combination is detected, discouraging the combination before export starts.
+- Added the same guard in `processOnePhotoGroup` (`stackOriginalExport` path, `#items == 1` branch): if `LR_format == "ORIGINAL"`, skip the disk-original upload and stack creation and emit a warning.
+- Added a live warning in the export dialog (orange text) when this incompatible combination is detected — fires whenever `LR_format == "ORIGINAL"` and either `original_plus_jpeg_if_edited` or `stackOriginalExport` is active. An observer on `stackOriginalExport` ensures the warning appears/clears reactively when the checkbox is toggled.
 - Detection uses `exportParams.LR_format` directly — no hardcoded format lists.
 
 ---
@@ -167,7 +168,7 @@ The original+export stacking feature was implemented with DNG+JPG as the only us
 
 ## UI improvements
 
-- **ExportDialogSections.lua:** Dropdown labels updated to be format-agnostic; "Original / no reformat" warning added (orange text).
+- **ExportDialogSections.lua:** Dropdown labels updated to be format-agnostic; "Original / no reformat" warning added (orange text) — fires when `LR_format == "ORIGINAL"` and either `original_plus_jpeg_if_edited` or `stackOriginalExport` is active; observer added for `stackOriginalExport` so the warning reacts when the checkbox is toggled.
 - **PublishDialogSections.lua:** Stack section label `"DNG+JPG:"` → `"Original + Export:"`, checkbox `"Stack in Immich (edited JPG as primary)"` → `"Stack in Immich (export as primary)"`.
 
 > **Note:** The `stackDngJpg` preference key has been renamed to `stackOriginalExport`. Users with existing export presets or publish collections that had the stacking checkbox enabled will need to re-enable it after updating.
@@ -290,9 +291,9 @@ If any individual upload or stack creation fails, it is reported as a warning af
 
 | File | Changes |
 | ---- | ------- |
-| `ExportTask.lua` | Stack order fix, album primary fix, LR_format guard (×2), role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; fetch disk original; stack), removed redundant `processPhotoWithStack`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), missing export-upload warning, `role = "export"` replaces `isOriginal`/`insertionOrder`, progress advances on failed renders, `progressScope:done()` on completion, format-agnostic renames |
-| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`) via sort+index, stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; orphan-safe warning), removed unused `exportParams` from `processPublishStackOriginalExportRenditions`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), `role = "export"` replaces `isOriginal`/`insertionOrder`, progress advances on failed renders, `progressScope:done()` on completion, format-agnostic renames |
-| `ExportDialogSections.lua` | Warning UI, updated dropdown labels, section label rename, `stackOriginalExport` bind |
+| `ExportTask.lua` | Stack order fix, album primary fix, LR_format=ORIGINAL guard in both `original_plus_jpeg_if_edited` and `stackOriginalExport` paths (skip identical upload; warn), role-based deviceAssetId (`_orig`/`_export`, `_rend<i>` for extras), stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; fetch disk original; stack), removed redundant `processPhotoWithStack`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), missing export-upload warning, `role = "export"` replaces `isOriginal`/`insertionOrder`, progress advances on failed renders, `progressScope:done()` on completion, format-agnostic renames |
+| `PublishTask.lua` | Role-based deviceAssetId (`_orig`/`_export`, `_rend<i>` for extras), stable accumulator key (`getPhotoDeviceId`), `#items == 1` branch unified and corrected (always treat as export; orphan-safe single-warning), removed unused `exportParams` from `processPublishStackOriginalExportRenditions`, per-rendition immediate processing (no accumulator; fixes progress bar), `LrProgressScope { functionContext }` replaces `configureProgress` (bar stays alive until all uploads done; no forward→0→return jitter), `role = "export"` replaces `isOriginal`/`insertionOrder`, progress advances on failed renders, `progressScope:done()` on completion, format-agnostic renames |
+| `ExportDialogSections.lua` | Warning UI fires for both `original_plus_jpeg_if_edited` and `stackOriginalExport` when `LR_format=ORIGINAL`; observer added for `stackOriginalExport`; updated dropdown labels; section label rename; `stackOriginalExport` bind |
 | `PublishDialogSections.lua` | Section label and checkbox text updated, `stackOriginalExport` bind |
 | `ExportServiceProvider.lua` | `stackOriginalExport` preference key |
 | `PublishServiceProvider.lua` | `stackOriginalExport` preference key |
