@@ -16,7 +16,7 @@ return {
 	exportPresetFields = {
 		{ key = 'url', default = '' },
 		{ key = "apiKey", default = '' },
-		{ key = 'stackDngJpg', default = false },
+		{ key = 'stackOriginalExport', default = false },
 		{ key = 'stackLrStacks', default = false },
 	},
 

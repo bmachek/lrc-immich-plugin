@@ -2,7 +2,7 @@
 UploadHelpers.lua - Shared upload logic for Export and Publish
 
 Provides:
-- Collecting and grouping renditions (DNG+JPG flow)
+- Sorting original+export rendition pairs for correct Immich stack ordering
 - Preserving Lightroom stacks in Immich
 - Safe temporary file deletion (ensures cleanup on error or cancel)
 ]]
@@ -27,50 +27,15 @@ function UploadHelpers.safeDeleteTempFile(path)
 end
 
 --------------------------------------------------------------------------------
--- Collect all renditions from exportContext into an array of
--- { path, photo, rendition, ext, fileType }. Stops if progressScope is canceled.
--- Returns collected array, or nil if canceled.
-function UploadHelpers.collectRenditions(exportContext, progressScope)
-    local collected = {}
-    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-        if progressScope and progressScope:isCanceled() then
-            return nil
-        end
-        local success, pathOrMessage = rendition:waitForRender()
-        if progressScope and progressScope:isCanceled() then
-            return nil
-        end
-        if success then
-            table.insert(collected, {
-                path = pathOrMessage,
-                photo = rendition.photo,
-                rendition = rendition,
-                ext = util.getExtension(pathOrMessage),
-                fileType = StackManager.getFileType(pathOrMessage),
-            })
-        end
-    end
-    return collected
-end
-
---------------------------------------------------------------------------------
--- Group collected items by photo localIdentifier. Returns map lid -> array of items.
-function UploadHelpers.groupByPhoto(collected)
-    local byPhoto = {}
-    for _, item in ipairs(collected) do
-        local lid = item.photo.localIdentifier
-        if not byPhoto[lid] then byPhoto[lid] = {} end
-        table.insert(byPhoto[lid], item)
-    end
-    return byPhoto
-end
-
---------------------------------------------------------------------------------
--- DNG+JPG sort order: jpeg first (primary), then raw, then other.
-function UploadHelpers.sortDngJpgItems(items)
+-- Original+export sort order: rendered export first (primary in Immich), original second.
+-- Items must carry an explicit role field: "export" or "orig".
+-- Using an explicit role avoids ambiguity for same-extension pairs (e.g. JPEG→JPEG)
+-- where extension-based detection cannot distinguish the rendered export from the original.
+function UploadHelpers.sortOriginalExportItems(items)
     table.sort(items, function(a, b)
-        local order = { jpeg = 1, raw = 2, other = 3 }
-        return (order[a.fileType] or 3) < (order[b.fileType] or 3)
+        local aIsExport = a.role == "export"
+        local bIsExport = b.role == "export"
+        return aIsExport and not bIsExport  -- exports before originals
     end)
 end
 

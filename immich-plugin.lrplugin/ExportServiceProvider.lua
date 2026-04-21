@@ -15,7 +15,7 @@ return {
 		{ key = 'album',     default = nil },
 		{ key = 'albumMode', default = 'none' },
 		{ key = 'originalFileMode', default = 'none' },
-		{ key = 'stackDngJpg', default = false },
+		{ key = 'stackOriginalExport', default = false },
 		{ key = 'stackLrStacks', default = false },
 	},
 

@@ -83,13 +83,13 @@ function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			f:column {
 				f:row {
 					f:static_text {
-						title = "DNG+JPG:",
+						title = "Original + Export:",
 						alignment = 'right',
 						width = LrView.share "label_width",
 					},
 					f:checkbox {
-						title = "Stack in Immich (edited JPG as primary)",
-						value = bind 'stackDngJpg',
+						title = "Stack in Immich (export as primary)",
+						value = bind 'stackOriginalExport',
 					},
 				},
 				f:row {

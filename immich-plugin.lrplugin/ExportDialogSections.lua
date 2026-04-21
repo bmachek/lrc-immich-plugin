@@ -17,6 +17,16 @@ local function _updateCantExportBecause(propertyTable)
 	end)
 end
 
+local function _updateWarnings(propertyTable)
+    local mode = propertyTable.originalFileMode
+    local format = string.upper(propertyTable.LR_format or "")
+    if format == "ORIGINAL" and (mode == 'original_plus_jpeg_if_edited' or propertyTable.stackOriginalExport) then
+        propertyTable.originalFormatWarning = "No reformat selected: switch to any rendered format (e.g. JPEG, TIFF, PNG) to produce a distinct export for stacking."
+    else
+        propertyTable.originalFormatWarning = ""
+    end
+end
+
 local function _updateEditedPhotosCount(propertyTable)
     local mode = propertyTable.originalFileMode
     if mode ~= 'edited' and mode ~= 'original_plus_jpeg_if_edited' then
@@ -44,8 +54,9 @@ end
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.startDialog(propertyTable)
-	-- Initialize edited photos count
+	-- Initialize edited photos count and format warning
 	propertyTable.editedPhotosCount = ""
+	propertyTable.originalFormatWarning = ""
 
 	LrTasks.startAsyncTask(function()
 		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
@@ -54,13 +65,25 @@ function ExportDialogSections.startDialog(propertyTable)
 	end)
 	-- propertyTable:addObserver('url', _updateCantExportBecause)
 	-- propertyTable:addObserver('apiKey', _updateCantExportBecause)
-	
+
 	-- Add observer for originalFileMode changes
 	propertyTable:addObserver('originalFileMode', function(key, value)
+		_updateWarnings(propertyTable)
 		_updateEditedPhotosCount(propertyTable)
 	end)
-	
-	-- Trigger initial count if mode uses edit detection
+
+	-- Add observer for LR_format changes (catches "Original / no reformat" selection)
+	propertyTable:addObserver('LR_format', function(key, value)
+		_updateWarnings(propertyTable)
+	end)
+
+	-- Add observer for stackOriginalExport changes (warn when ORIGINAL format + stacking enabled)
+	propertyTable:addObserver('stackOriginalExport', function(key, value)
+		_updateWarnings(propertyTable)
+	end)
+
+	-- Trigger initial state
+	_updateWarnings(propertyTable)
 	if propertyTable.originalFileMode == 'edited' or propertyTable.originalFileMode == 'original_plus_jpeg_if_edited' then
 		-- Small delay to ensure UI is ready
 		LrTasks.startAsyncTask(function()
@@ -111,8 +134,8 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 							{ title = "Don't upload original files", value = 'none' },
 							{ title = "Upload originals for edited photos only", value = 'edited' },
 							{ title = "Upload originals for all photos", value = 'all' },
-							{ title = "Always upload original only (no JPG)", value = 'original_only' },
-							{ title = "Always upload original, JPG only if edited", value = 'original_plus_jpeg_if_edited' },
+							{ title = "Always upload original only (no export)", value = 'original_only' },
+							{ title = "Always upload original + rendered export (if edited)", value = 'original_plus_jpeg_if_edited' },
 						},
 						value = bind 'originalFileMode'
 					},
@@ -133,13 +156,27 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 				},
 				f:row {
 					f:static_text {
-						title = "DNG+JPG export:",
+						title = "",
+						alignment = 'right',
+						width = LrView.share "label_width",
+					},
+					f:static_text {
+						title = bind 'originalFormatWarning',
+						alignment = 'left',
+						fill_horizontal = 1,
+						font = '<system/small>',
+						text_color = LrColor(0.8, 0.3, 0.0),
+					},
+				},
+				f:row {
+					f:static_text {
+						title = "Original + Export:",
 						alignment = 'right',
 						width = LrView.share "label_width",
 					},
 					f:checkbox {
-						title = "Stack in Immich (edited JPG as primary)",
-						value = bind 'stackDngJpg',
+						title = "Stack in Immich (export as primary)",
+						value = bind 'stackOriginalExport',
 					},
 				},
 				f:row {

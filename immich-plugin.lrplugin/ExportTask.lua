@@ -107,7 +107,7 @@ local function buildProgressTitle(nPhotos, originalFileMode, url)
         if originalFileMode == 'edited' then modeText = " (with originals for edited)"
         elseif originalFileMode == 'all' then modeText = " (with originals for all)"
         elseif originalFileMode == 'original_only' then modeText = " (original only)"
-        elseif originalFileMode == 'original_plus_jpeg_if_edited' then modeText = " (original + JPG if edited)"
+        elseif originalFileMode == 'original_plus_jpeg_if_edited' then modeText = " (original + export if edited)"
         end
     end
     local countStr = (nPhotos > 1) and (nPhotos .. " photos") or "one photo"
@@ -174,26 +174,22 @@ local function getEditedPhotosCacheIfNeeded(exportParams)
 end
 
 --------------------------------------------------------------------------------
--- Process one photo group (DNG+JPG flow). Mutates state tables; returns nothing.
+-- Process one photo group (original+export flow). Mutates state tables; returns nothing.
 local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, useAlbum, editedPhotosCache,
     failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
     if not items or not items[1] then return end
     local photo = items[1].photo
     local filename = photo:getFormattedMetadata("fileName")
     local dateCreated = photo:getFormattedMetadata("dateCreated")
-    local hasRaw, hasJpeg = false, false
-    for _, item in ipairs(items) do
-        if item.fileType == "raw" then hasRaw = true end
-        if item.fileType == "jpeg" then hasJpeg = true end
-    end
-    local shouldStackDngJpg = hasRaw and hasJpeg
-
-    if shouldStackDngJpg and #items >= 2 then
-        UploadHelpers.sortDngJpgItems(items)
+    if #items >= 2 then
+        UploadHelpers.sortOriginalExportItems(items)
         local assetIds = {}
         local primaryId = nil
         for i, item in ipairs(items) do
-            local deviceAssetId = lid .. "_" .. tostring(i)
+            -- After sort: items[1]=export (primary), items[2]=original.
+            -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
+            local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
+            local deviceAssetId = lid .. suffix
             local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
@@ -202,11 +198,12 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
                 atLeastSomeSuccess[1] = true
                 table.insert(assetIds, id)
                 if primaryId == nil then primaryId = id end
+                log:info('original+export [' .. filename .. ']: ' .. deviceAssetId .. ' -> ' .. id)
             end
         end
         if #assetIds >= 2 and primaryId then
             if not immich:createStack(assetIds) then
-                table.insert(stackWarnings, filename .. ": Failed to create DNG+JPG stack")
+                table.insert(stackWarnings, filename .. ": Failed to create original+export stack")
             end
         end
         if primaryId then
@@ -216,111 +213,102 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
                 local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
                 if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, primaryId) end
             end
-            if exportParams.originalFileMode and exportParams.originalFileMode ~= "none" then
-                local hasEdits = StackManager.hasEdits(photo, editedPhotosCache)
-                local shouldStack = (exportParams.originalFileMode == "all")
-                    or (exportParams.originalFileMode == "edited" and hasEdits)
-                    or (exportParams.originalFileMode == "original_plus_jpeg_if_edited" and hasEdits)
-                if shouldStack then
-                    local _, stackError = StackManager.processPhotoWithStack(immich, items[1].rendition, primaryId, exportParams)
-                    if stackError then table.insert(stackWarnings, filename .. ": " .. stackError) end
-                end
-            end
+            -- Note: processPhotoWithStack is intentionally NOT called here. Both renditions
+            -- (original copy + rendered export) have already been uploaded and stacked by
+            -- immich:createStack above. Calling processPhotoWithStack would re-upload the disk
+            -- original under a different deviceAssetId and create a duplicate stack.
         end
-    elseif #items == 1 and (exportParams.originalFileMode == "original_only" or exportParams.originalFileMode == "original_plus_jpeg_if_edited") then
-        local deviceAssetId = lid
-        local originalPath = StackManager.getOriginalFilePath(photo)
-        if not originalPath then
-            table.insert(failures, filename .. " (original not found)")
+    elseif #items == 1 then
+        -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
+        -- delivers the rendered export (never an original-copy rendition), so item.role = "export".
+        -- Always treat the single rendition as the export and fetch the disk original.
+        local item = items[1]
+        local deviceAssetId = lid .. "_export"
+        log:info('original+export [' .. filename .. ']: single rendition, uploading as export (' .. deviceAssetId .. ')')
+        local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+        UploadHelpers.safeDeleteTempFile(item.path)
+        if not id then
+            table.insert(failures, item.path)
         else
-            local existingId, existingDeviceId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
-            local id
-            if existingId == nil then
-                id = immich:uploadAsset(originalPath, deviceAssetId)
+            atLeastSomeSuccess[1] = true
+            local primaryId = id
+            if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
+                -- LR_format == "ORIGINAL" means Lightroom copied the source byte-for-byte; the
+                -- rendition IS the original. Uploading the disk original as _orig would create two
+                -- identical assets. Skip original upload and warn instead.
+                table.insert(stackWarnings, filename .. ": skipped original+export stack — 'Original / no reformat' produces an identical copy. Switch to any rendered format (e.g. JPEG, TIFF, PNG).")
             else
-                id = immich:replaceAsset(existingId, originalPath, existingDeviceId)
-            end
-            if not id then
-                table.insert(failures, originalPath)
-            else
-                atLeastSomeSuccess[1] = true
-                if exportParams.originalFileMode == "original_plus_jpeg_if_edited" and StackManager.hasEdits(photo, editedPhotosCache) then
-                    local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
-                    local existingJpegId, existingJpegDeviceId = immich:checkIfAssetExists(deviceAssetIdEdited, filename, dateCreated)
-                    local jpegId
-                    if existingJpegId then
-                        jpegId = immich:replaceAsset(existingJpegId, items[1].path, existingJpegDeviceId or deviceAssetIdEdited)
+                local originalPath = StackManager.getOriginalFilePath(photo)
+                if originalPath then
+                    local origId = StackManager.uploadOneAssetOrReplace(immich, originalPath, lid .. "_orig", filename, dateCreated)
+                    if origId then
+                        if not immich:createStack({ id, origId }) then
+                            table.insert(stackWarnings, filename .. ": failed to create original+export stack")
+                        end
                     else
-                        jpegId = immich:uploadAsset(items[1].path, deviceAssetIdEdited)
+                        table.insert(stackWarnings, filename .. ": failed to upload original file")
                     end
-                    if jpegId and not immich:createStack({ id, jpegId }) then
-                        table.insert(stackWarnings, filename .. ": Failed to create stack")
-                    end
-                end
-                exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-                if useAlbum then immich:addAssetToAlbum(albumId, id)
-                elseif exportParams.albumMode == "folder" then
-                    local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
-                    if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
+                else
+                    table.insert(stackWarnings, filename .. ": original file not accessible; uploaded export only")
                 end
             end
-        end
-        UploadHelpers.safeDeleteTempFile(items[1].path)
-    else
-        local firstPrimaryId = nil
-        for i, item in ipairs(items) do
-            local deviceAssetId = (#items == 1) and lid or (lid .. "_" .. tostring(i))
-            local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
-            UploadHelpers.safeDeleteTempFile(item.path)
-            if not id then
-                table.insert(failures, item.path)
-            else
-                atLeastSomeSuccess[1] = true
-                if firstPrimaryId == nil then firstPrimaryId = id end
-                if useAlbum then immich:addAssetToAlbum(albumId, id)
-                elseif exportParams.albumMode == "folder" then
-                    local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
-                    if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
-                end
-                if #items == 1 and exportParams.originalFileMode and exportParams.originalFileMode ~= "none" and exportParams.originalFileMode ~= "original_plus_jpeg_if_edited" then
-                    local hasEdits = StackManager.hasEdits(photo, editedPhotosCache)
-                    local shouldStack = (exportParams.originalFileMode == "all") or (exportParams.originalFileMode == "edited" and hasEdits)
-                    if shouldStack then
-                        local _, stackError = StackManager.processPhotoWithStack(immich, item.rendition, id, exportParams)
-                        if stackError then table.insert(stackWarnings, filename .. ": " .. stackError) end
-                    end
-                end
+            exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
+            if useAlbum then immich:addAssetToAlbum(albumId, primaryId)
+            elseif exportParams.albumMode == "folder" then
+                local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
+                if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, primaryId) end
             end
-        end
-        if firstPrimaryId then
-            exportedPrimaryByPhoto[lid] = { assetId = firstPrimaryId, photo = photo }
         end
     end
 end
 
 --------------------------------------------------------------------------------
--- DNG+JPG flow: collect, group by photo, process each group.
-local function processStackDngJpgRenditions(immich, exportContext, progressScope, exportParams, albumId, useAlbum, editedPhotosCache)
+-- Original+export flow: process each rendition immediately as it arrives, keeping
+-- renders and uploads interleaved so the Lightroom progress bar advances
+-- proportionally to real work done. LR_exportOriginalFile is never set, so LR
+-- always delivers exactly one rendition per photo; the disk original is fetched
+-- inside processOnePhotoGroup.
+local function processStackOriginalExportRenditions(immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
     local exportedPrimaryByPhoto = {}
-    local collected = UploadHelpers.collectRenditions(exportContext, progressScope)
-    if not collected then return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto end
-    local byPhoto = UploadHelpers.groupByPhoto(collected)
-    for lid, items in pairs(byPhoto) do
+    local done = 0
+    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         if progressScope:isCanceled() then break end
-        processOnePhotoGroup(immich, lid, items, exportParams, albumId, useAlbum, editedPhotosCache,
-            failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+        local success, pathOrMessage = rendition:waitForRender()
+        if progressScope:isCanceled() then break end
+        if success then
+            -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
+            local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
+            -- role = "export": LR_exportOriginalFile is never set, so LR always delivers the
+            -- rendered export (never an original-copy rendition), regardless of file extension.
+            local item = {
+                path = pathOrMessage,
+                photo = rendition.photo,
+                rendition = rendition,
+                role = "export",
+            }
+            processOnePhotoGroup(immich, lid, { item }, exportParams, albumId, useAlbum, editedPhotosCache,
+                failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+        end
+        -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
+        done = done + 1
+        progressScope:setPortionComplete(done, nPhotos)
+        if done == 1 or done % 10 == 0 or done == nPhotos then
+            log:info('Export progress: ' .. done .. '/' .. nPhotos
+                .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
+        end
     end
     return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto
 end
 
 --------------------------------------------------------------------------------
 -- Single-rendition flow: one loop over renditions.
-local function processSingleRenditionRenditions(immich, exportContext, progressScope, exportParams, albumId, useAlbum, editedPhotosCache)
+local function processSingleRenditionRenditions(immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = false
     local exportedPrimaryByPhoto = {}
+    local done = 0
     for _, rendition in exportContext:renditions { stopIfCanceled = true } do
         local success, pathOrMessage = rendition:waitForRender()
         if progressScope:isCanceled() then break end
@@ -336,35 +324,43 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                 else
                     local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                         photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
+                    log:info('single-rendition [' .. photo:getFormattedMetadata("fileName") .. ']: uploading original (' .. tostring(deviceAssetId) .. ')')
                     local id = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
                         or immich:replaceAsset(existingId, originalPath, existingDeviceId or deviceAssetId)
                     if not id then
-                        table.insert(failures, photo:getFormattedMetadata("fileName"))
+                        table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. originalPath)
                     else
                         atLeastSomeSuccess = true
+                        local primaryId = id
                         if originalFileMode == 'original_plus_jpeg_if_edited' and StackManager.hasEdits(photo, editedPhotosCache) then
-                            local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
-                            local fileName, dateCreated = photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated")
-                            local existingJpegId, existingJpegDeviceId = immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
-                            local jpegId
-                            if existingJpegId then
-                                jpegId = immich:replaceAsset(existingJpegId, pathOrMessage, existingJpegDeviceId or deviceAssetIdEdited)
+                            if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
+                                table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": skipped rendered export — 'Original / no reformat' does not produce an edited version. Switch to any rendered format (e.g. JPEG, TIFF, PNG).")
                             else
-                                jpegId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited)
-                            end
-                            if jpegId then
-                                if not immich:createStack({ id, jpegId }) then
-                                    table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": failed to create stack")
+                                local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
+                                local fileName, dateCreated = photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated")
+                                log:info('single-rendition [' .. fileName .. ']: uploading edited export (' .. deviceAssetIdEdited .. ')')
+                                local existingExportId, existingExportDeviceId = immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
+                                local exportId
+                                if existingExportId then
+                                    exportId = immich:replaceAsset(existingExportId, pathOrMessage, existingExportDeviceId or deviceAssetIdEdited)
+                                else
+                                    exportId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited)
                                 end
-                            else
-                                table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": failed to upload JPG")
+                                if exportId then
+                                    primaryId = exportId
+                                    if not immich:createStack({ exportId, id }) then
+                                        table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": failed to create stack")
+                                    end
+                                else
+                                    table.insert(stackWarnings, photo:getFormattedMetadata("fileName") .. ": failed to upload rendered export")
+                                end
                             end
                         end
-                        exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-                        if useAlbum then immich:addAssetToAlbum(albumId, id)
+                        exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
+                        if useAlbum then immich:addAssetToAlbum(albumId, primaryId)
                         elseif exportParams.albumMode == 'folder' then
                             local folderAlbumId = immich:createOrGetAlbumFolderBased(photo:getFormattedMetadata("folderName"))
-                            if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, id) end
+                            if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, primaryId) end
                         end
                     end
                 end
@@ -397,20 +393,27 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                 UploadHelpers.safeDeleteTempFile(pathOrMessage)
             end
         end
+        -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
+        done = done + 1
+        progressScope:setPortionComplete(done, nPhotos)
+        if done == 1 or done % 10 == 0 or done == nPhotos then
+            log:info('Export progress: ' .. done .. '/' .. nPhotos
+                .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
+        end
     end
     return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
 end
 
 --------------------------------------------------------------------------------
 -- Run the appropriate export path and apply LR stacks; return result tables.
-local function runExport(immich, exportContext, progressScope, exportParams, albumId, useAlbum, editedPhotosCache)
+local function runExport(immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
-    if exportParams.stackDngJpg then
-        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processStackDngJpgRenditions(
-            immich, exportContext, progressScope, exportParams, albumId, useAlbum, editedPhotosCache)
+    if exportParams.stackOriginalExport then
+        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processStackOriginalExportRenditions(
+            immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processSingleRenditionRenditions(
-            immich, exportContext, progressScope, exportParams, albumId, useAlbum, editedPhotosCache)
+            immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
     end
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
         UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
@@ -420,7 +423,7 @@ end
 
 --------------------------------------------------------------------------------
 local function finalizeExport(immich, exportParams, albumId, useAlbum, atLeastSomeSuccess, failures, stackWarnings)
-    -- Use explicit true check so we behave correctly whether we receive a boolean or (if ever) the DNG+JPG table reference.
+    -- Use explicit true check so we behave correctly whether we receive a boolean or a table reference.
     local anySuccess = atLeastSomeSuccess == true or (type(atLeastSomeSuccess) == "table" and atLeastSomeSuccess[1] == true)
     if not anySuccess and exportParams.albumMode == 'new' and albumId then
         log:trace('Deleting newly created album, as no upload succeeded, and album would remain as orphan.')
@@ -436,8 +439,20 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     if not exportSession or not exportParams then return nil end
 
     local nPhotos = exportSession:countRenditions()
-    local progressScope = exportContext:configureProgress {
-        title = buildProgressTitle(nPhotos, exportParams.originalFileMode, exportParams.url or "")
+    log:info('=== Export START: ' .. nPhotos .. ' photos | url=' .. tostring(exportParams.url)
+        .. ' | originalFileMode=' .. tostring(exportParams.originalFileMode)
+        .. ' | stackOriginalExport=' .. tostring(exportParams.stackOriginalExport)
+        .. ' | stackLrStacks=' .. tostring(exportParams.stackLrStacks)
+        .. ' | albumMode=' .. tostring(exportParams.albumMode) .. ' ===')
+
+    -- Use LrProgressScope tied to functionContext rather than exportContext:configureProgress.
+    -- configureProgress creates a scope managed by LR's render pipeline, which closes the bar
+    -- when rendering completes — potentially long before all uploads are done. LrProgressScope
+    -- with functionContext stays alive until processRenderedPhotos returns, and is not advanced
+    -- by LR's render thread, eliminating both early-close and forward→0→return race conditions.
+    local progressScope = LrProgressScope {
+        title = buildProgressTitle(nPhotos, exportParams.originalFileMode, exportParams.url or ""),
+        functionContext = functionContext,
     }
 
     local canceled, albumId, useAlbum = resolveAlbumForExport(immich, exportParams)
@@ -446,7 +461,10 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     local editedPhotosCache = getEditedPhotosCacheIfNeeded(exportParams)
 
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = runExport(
-        immich, exportContext, progressScope, exportParams, albumId, useAlbum, editedPhotosCache)
+        immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
+    progressScope:done()
 
+    log:info('=== Export DONE: ' .. nPhotos .. ' photos | failures=' .. #failures
+        .. ' | warnings=' .. #stackWarnings .. ' ===')
     finalizeExport(immich, exportParams, albumId, useAlbum, atLeastSomeSuccess, failures, stackWarnings)
 end
