@@ -213,7 +213,13 @@ end
 local function runPublishExport(immich, exportContext, progressScope, nPhotos, exportParams,
     albumCreationStrategy, albumId, albumAssetIds)
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
-    if exportParams.stackOriginalExport then
+    local useStacking = exportParams.stackOriginalExport
+    local mode = exportParams.originalFileMode
+    if mode == 'edited' or mode == 'all' or mode == 'original_plus_jpeg_if_edited' or mode == 'original_only' then
+        useStacking = true
+    end
+
+    if useStacking then
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishStackOriginalExportRenditions(
             immich, exportContext, progressScope, nPhotos, albumCreationStrategy, albumId, albumAssetIds)
     else

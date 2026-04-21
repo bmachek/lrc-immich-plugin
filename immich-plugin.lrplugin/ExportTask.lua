@@ -17,63 +17,82 @@ local function showAlbumOptionsDialog(immich, exportParams)
 
         local dialogContent = f:column {
             bind_to_object = exportParams,
-            f:row {
-                spacing = f:label_spacing(),
-                f:static_text {
-                    title = 'Mode: ',
-                    alignment = "right",
-                    width = LrView.share "label_width",
-                },
-                f:popup_menu {
-                    width_in_chars = 20,
-                    alignment = 'left',
-                    items = {
-                        { title = 'Do not use an album', value = 'none' },
-                        { title = 'Existing album',      value = 'existing' },
-                        { title = 'Create new album',    value = 'new' },
-                        { title = 'Create/use folder name as album',    value = 'folder' },
-                    },
-                    value = LrView.bind('albumMode'),
-                    immediate = true,
-                },
-            },
-            f:row {
-                spacing = f:label_spacing(),
+            spacing = f:control_spacing(),
+            
+            f:group_box {
+                title = "Album Configuration",
+                fill_horizontal = 1,
+
                 f:column {
-                    place = "overlapping",
+                    spacing = f:control_spacing(),
+                    fill_horizontal = 1,
+                    margin_top = 5,
+                    margin_bottom = 5,
+
                     f:static_text {
-                        title = 'Choose album: ',
-                        alignment = "right",
-                        width = LrView.share "label_width",
-                        visible = LrBinding.keyEquals("albumMode", "existing"),
-                    },
-                    f:static_text {
-                        title = 'Album name: ',
-                        alignment = "right",
-                        width = LrView.share "label_width",
-                        visible = LrBinding.keyEquals("albumMode", "new"),
-                    },
-                },
-                f:column {
-                    place = "overlapping",
-                    f:popup_menu {
-                        truncation = 'middle',
-                        width_in_chars = 20,
+                        title = "Select how you would like photos to be grouped into Immich albums upon export.",
+                        alignment = "left",
+                        font = "<system/small>",
                         fill_horizontal = 1,
-                        value = LrView.bind('album'),
-                        items = LrView.bind('albums'),
-                        visible = LrBinding.keyEquals("albumMode", "existing"),
-                        align = "left",
-                        immediate = true,
                     },
-                    f:edit_field {
-                        truncation = 'middle',
-                        width_in_chars = 20,
-                        fill_horizontal = 1,
-                        value = LrView.bind('newAlbumName'),
-                        visible = LrBinding.keyEquals("albumMode", "new"),
-                        align = "left",
-                        immediate = true,
+
+                    f:separator { fill_horizontal = 1 },
+
+                    f:row {
+                        spacing = f:label_spacing(),
+                        f:static_text {
+                            title = 'Album mode:',
+                            alignment = "right",
+                            width = LrView.share "label_width",
+                        },
+                        f:popup_menu {
+                            fill_horizontal = 1,
+                            items = {
+                                { title = 'Do not use an album', value = 'none' },
+                                { title = 'Existing album',      value = 'existing' },
+                                { title = 'Create new album',    value = 'new' },
+                                { title = 'Create/use folder name as album', value = 'folder' },
+                            },
+                            value = LrView.bind('albumMode'),
+                            immediate = true,
+                        },
+                    },
+                    f:row {
+                        spacing = f:label_spacing(),
+                        f:column {
+                            place = "overlapping",
+                            f:static_text {
+                                title = 'Choose album:',
+                                alignment = "right",
+                                width = LrView.share "label_width",
+                                visible = LrBinding.keyEquals("albumMode", "existing"),
+                            },
+                            f:static_text {
+                                title = 'Album name:',
+                                alignment = "right",
+                                width = LrView.share "label_width",
+                                visible = LrBinding.keyEquals("albumMode", "new"),
+                            },
+                        },
+                        f:column {
+                            place = "overlapping",
+                            fill_horizontal = 1,
+                            f:popup_menu {
+                                truncation = 'middle',
+                                fill_horizontal = 1,
+                                value = LrView.bind('album'),
+                                items = LrView.bind('albums'),
+                                visible = LrBinding.keyEquals("albumMode", "existing"),
+                                immediate = true,
+                            },
+                            f:edit_field {
+                                truncation = 'middle',
+                                fill_horizontal = 1,
+                                value = LrView.bind('newAlbumName'),
+                                visible = LrBinding.keyEquals("albumMode", "new"),
+                                immediate = true,
+                            },
+                        },
                     },
                 },
             },
