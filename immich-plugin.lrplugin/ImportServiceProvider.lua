@@ -49,6 +49,10 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
                 else
                     LrDialogs.message("Error", TITLES.ERROR_SAVE_FILE, "critical")
                 end
+                
+                -- Explicitly free the huge asset string from memory
+                assetData = nil
+                collectgarbage("collect")
             else
                 LrDialogs.message("Error", TITLES.ERROR_DOWNLOAD .. asset.id, "critical")
             end
@@ -67,6 +71,10 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
                         else
                             LrDialogs.message("Error", TITLES.ERROR_SAVE_FILE, "critical")
                         end
+                        
+                        -- Explicitly free the huge video string from memory
+                        livePhotoVideoData = nil
+                        collectgarbage("collect")
                     else
                         LrDialogs.message("Error", TITLES.ERROR_DOWNLOAD .. livePhotoVideoId, "critical")
                     end
@@ -83,10 +91,10 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
     end
 
     -- Execute tasks in batches to avoid overwhelming the system.
-    -- Batch size is configurable; default to 5 if preference not set or invalid.
+    -- Batch size is configurable; default to 2 if preference not set or invalid.
     local batchSize = tonumber(prefs.importBatchSize)
     if not batchSize or batchSize < 1 then
-        batchSize = 5
+        batchSize = 2
     end
     while #taskQueue > 0 do
         local batch = {}
@@ -157,7 +165,7 @@ local function showConfigurationDialog()
         propertyTable.url = ""
         propertyTable.apiKey = ""
         propertyTable.importPath = ""
-        propertyTable.importBatchSize = prefs.importBatchSize or 5
+        propertyTable.importBatchSize = prefs.importBatchSize or 2
 
         if prefs.url ~= nil then
             propertyTable.url = prefs.url
@@ -318,7 +326,7 @@ local function showConfigurationDialog()
                 prefs.url = propertyTable.url
                 prefs.apiKey = propertyTable.apiKey
                 prefs.importPath = propertyTable.importPath
-                prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 5
+                prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 2
                 log:info("Configuration saved successfully")
             else
                 log:error("Connection test failed for URL: " .. propertyTable.url)
