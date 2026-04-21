@@ -1,5 +1,8 @@
-local _tl_compat; if (tonumber((_VERSION or ''):match('[%d.]*$')) or 0) < 5.3 then local p, m = pcall(require, 'compat53.module'); if p then _tl_compat = m end end; local math = _tl_compat and _tl_compat.math or math; local string = _tl_compat and _tl_compat.string or string; local table = _tl_compat and _tl_compat.table or table
-local inspect = {Options = {}, }
+local _tl_compat; if (tonumber((_VERSION or ''):match('[%d.]*$')) or 0) < 5.3 then
+   local p, m = LrTasks.pcall(require, 'compat53.module'); if p then _tl_compat = m end
+end; local math = _tl_compat and _tl_compat.math or math; local string = _tl_compat and _tl_compat.string or string; local table =
+_tl_compat and _tl_compat.table or table
+local inspect = { Options = {}, }
 
 
 
@@ -76,8 +79,14 @@ end
 
 
 local shortControlCharEscapes = {
-   ["\a"] = "\\a", ["\b"] = "\\b", ["\f"] = "\\f", ["\n"] = "\\n",
-   ["\r"] = "\\r", ["\t"] = "\\t", ["\v"] = "\\v", ["\127"] = "\\127",
+   ["\a"] = "\\a",
+   ["\b"] = "\\b",
+   ["\f"] = "\\f",
+   ["\n"] = "\\n",
+   ["\r"] = "\\r",
+   ["\t"] = "\\t",
+   ["\v"] = "\\v",
+   ["\127"] = "\\127",
 }
 local longControlCharEscapes = { ["\127"] = "\127" }
 for i = 0, 31 do
@@ -90,8 +99,8 @@ end
 
 local function escape(str)
    return (gsub(gsub(gsub(str, "\\", "\\\\"),
-   "(%c)%f[0-9]", longControlCharEscapes),
-   "%c", shortControlCharEscapes))
+         "(%c)%f[0-9]", longControlCharEscapes),
+      "%c", shortControlCharEscapes))
 end
 
 local luaKeywords = {
@@ -121,21 +130,26 @@ local luaKeywords = {
 
 local function isIdentifier(str)
    return type(str) == "string" and
-   not not str:match("^[_%a][_%a%d]*$") and
-   not luaKeywords[str]
+       not not str:match("^[_%a][_%a%d]*$") and
+       not luaKeywords[str]
 end
 
 local flr = math.floor
 local function isSequenceKey(k, sequenceLength)
    return type(k) == "number" and
-   flr(k) == k and
-   1 <= (k) and
-   k <= sequenceLength
+       flr(k) == k and
+       1 <= (k) and
+       k <= sequenceLength
 end
 
 local defaultTypeOrders = {
-   ['number'] = 1, ['boolean'] = 2, ['string'] = 3, ['table'] = 4,
-   ['function'] = 5, ['userdata'] = 6, ['thread'] = 7,
+   ['number'] = 1,
+   ['boolean'] = 2,
+   ['string'] = 3,
+   ['table'] = 4,
+   ['function'] = 5,
+   ['userdata'] = 6,
+   ['thread'] = 7,
 }
 
 local function sortKeys(a, b)
@@ -154,7 +168,6 @@ local function sortKeys(a, b)
 end
 
 local function getKeys(t)
-
    local seqLen = 1
    while _rawget(t, seqLen) ~= nil do
       seqLen = seqLen + 1
@@ -200,9 +213,9 @@ end
 
 
 local function processRecursive(process,
-   item,
-   path,
-   visited)
+                                item,
+                                path,
+                                visited)
    if item == nil then return nil end
    if visited[item] then return visited[item] end
 
@@ -268,7 +281,7 @@ function Inspector:putValue(v)
    if tv == 'string' then
       puts(buf, smartQuote(escape(v)))
    elseif tv == 'number' or tv == 'boolean' or tv == 'nil' or
-      tv == 'cdata' or tv == 'ctype' then
+       tv == 'cdata' or tv == 'ctype' then
       puts(buf, tostring(v))
    elseif tv == 'table' and not self.ids[v] then
       local t = v
@@ -323,14 +336,10 @@ function Inspector:putValue(v)
 
          puts(buf, '}')
       end
-
    else
       puts(buf, fmt('<%s %d>', tv, self:getId(v)))
    end
 end
-
-
-
 
 function inspect.inspect(root, options)
    options = options or {}

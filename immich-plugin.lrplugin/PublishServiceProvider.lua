@@ -16,6 +16,7 @@ return {
 	exportPresetFields = {
 		{ key = 'url', default = '' },
 		{ key = "apiKey", default = '' },
+		{ key = 'originalFileMode', default = 'none' },
 		{ key = 'stackOriginalExport', default = false },
 		{ key = 'stackLrStacks', default = false },
 	},

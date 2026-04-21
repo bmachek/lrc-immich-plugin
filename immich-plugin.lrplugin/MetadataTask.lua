@@ -37,7 +37,7 @@ function MetadataTask.getImmichAssetId(photo)
     if not photo then
         return nil
     end
-    
+
     local assetId = photo:getPropertyForPlugin(_PLUGIN, keyAssetId)
     if assetId and assetId ~= "" then
         log:trace("getImmichAssetId: Found assetId " .. assetId .. " for photo " .. tostring(photo.localIdentifier))

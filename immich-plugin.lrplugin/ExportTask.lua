@@ -17,63 +17,82 @@ local function showAlbumOptionsDialog(immich, exportParams)
 
         local dialogContent = f:column {
             bind_to_object = exportParams,
-            f:row {
-                spacing = f:label_spacing(),
-                f:static_text {
-                    title = 'Mode: ',
-                    alignment = "right",
-                    width = LrView.share "label_width",
-                },
-                f:popup_menu {
-                    width_in_chars = 20,
-                    alignment = 'left',
-                    items = {
-                        { title = 'Do not use an album', value = 'none' },
-                        { title = 'Existing album',      value = 'existing' },
-                        { title = 'Create new album',    value = 'new' },
-                        { title = 'Create/use folder name as album',    value = 'folder' },
-                    },
-                    value = LrView.bind('albumMode'),
-                    immediate = true,
-                },
-            },
-            f:row {
-                spacing = f:label_spacing(),
+            spacing = f:control_spacing(),
+            
+            f:group_box {
+                title = "Album Configuration",
+                fill_horizontal = 1,
+
                 f:column {
-                    place = "overlapping",
+                    spacing = f:control_spacing(),
+                    fill_horizontal = 1,
+                    margin_top = 5,
+                    margin_bottom = 5,
+
                     f:static_text {
-                        title = 'Choose album: ',
-                        alignment = "right",
-                        width = LrView.share "label_width",
-                        visible = LrBinding.keyEquals("albumMode", "existing"),
-                    },
-                    f:static_text {
-                        title = 'Album name: ',
-                        alignment = "right",
-                        width = LrView.share "label_width",
-                        visible = LrBinding.keyEquals("albumMode", "new"),
-                    },
-                },
-                f:column {
-                    place = "overlapping",
-                    f:popup_menu {
-                        truncation = 'middle',
-                        width_in_chars = 20,
+                        title = "Select how you would like photos to be grouped into Immich albums upon export.",
+                        alignment = "left",
+                        font = "<system/small>",
                         fill_horizontal = 1,
-                        value = LrView.bind('album'),
-                        items = LrView.bind('albums'),
-                        visible = LrBinding.keyEquals("albumMode", "existing"),
-                        align = "left",
-                        immediate = true,
                     },
-                    f:edit_field {
-                        truncation = 'middle',
-                        width_in_chars = 20,
-                        fill_horizontal = 1,
-                        value = LrView.bind('newAlbumName'),
-                        visible = LrBinding.keyEquals("albumMode", "new"),
-                        align = "left",
-                        immediate = true,
+
+                    f:separator { fill_horizontal = 1 },
+
+                    f:row {
+                        spacing = f:label_spacing(),
+                        f:static_text {
+                            title = 'Album mode:',
+                            alignment = "right",
+                            width = LrView.share "label_width",
+                        },
+                        f:popup_menu {
+                            fill_horizontal = 1,
+                            items = {
+                                { title = 'Do not use an album', value = 'none' },
+                                { title = 'Existing album',      value = 'existing' },
+                                { title = 'Create new album',    value = 'new' },
+                                { title = 'Create/use folder name as album', value = 'folder' },
+                            },
+                            value = LrView.bind('albumMode'),
+                            immediate = true,
+                        },
+                    },
+                    f:row {
+                        spacing = f:label_spacing(),
+                        f:column {
+                            place = "overlapping",
+                            f:static_text {
+                                title = 'Choose album:',
+                                alignment = "right",
+                                width = LrView.share "label_width",
+                                visible = LrBinding.keyEquals("albumMode", "existing"),
+                            },
+                            f:static_text {
+                                title = 'Album name:',
+                                alignment = "right",
+                                width = LrView.share "label_width",
+                                visible = LrBinding.keyEquals("albumMode", "new"),
+                            },
+                        },
+                        f:column {
+                            place = "overlapping",
+                            fill_horizontal = 1,
+                            f:popup_menu {
+                                truncation = 'middle',
+                                fill_horizontal = 1,
+                                value = LrView.bind('album'),
+                                items = LrView.bind('albums'),
+                                visible = LrBinding.keyEquals("albumMode", "existing"),
+                                immediate = true,
+                            },
+                            f:edit_field {
+                                truncation = 'middle',
+                                fill_horizontal = 1,
+                                value = LrView.bind('newAlbumName'),
+                                visible = LrBinding.keyEquals("albumMode", "new"),
+                                immediate = true,
+                            },
+                        },
                     },
                 },
             },
@@ -190,10 +209,10 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
             -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
             local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
             local deviceAssetId = lid .. suffix
-            local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            local id, errReason = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
-                table.insert(failures, item.path)
+                table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
             else
                 atLeastSomeSuccess[1] = true
                 table.insert(assetIds, id)
@@ -225,10 +244,10 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
         local item = items[1]
         local deviceAssetId = lid .. "_export"
         log:info('original+export [' .. filename .. ']: single rendition, uploading as export (' .. deviceAssetId .. ')')
-        local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+        local id, errReason = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
-            table.insert(failures, item.path)
+            table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
         else
             atLeastSomeSuccess[1] = true
             local primaryId = id
@@ -325,10 +344,10 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                     local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                         photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
                     log:info('single-rendition [' .. photo:getFormattedMetadata("fileName") .. ']: uploading original (' .. tostring(deviceAssetId) .. ')')
-                    local id = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
+                    local id, errReason = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
                         or immich:replaceAsset(existingId, originalPath, existingDeviceId or deviceAssetId)
                     if not id then
-                        table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. originalPath)
+                        table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. (errReason or "Upload failed"))
                     else
                         atLeastSomeSuccess = true
                         local primaryId = id
@@ -368,10 +387,10 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
             else
                 local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                     photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
-                local id = (existingId == nil) and immich:uploadAsset(pathOrMessage, deviceAssetId)
+                local id, errReason = (existingId == nil) and immich:uploadAsset(pathOrMessage, deviceAssetId)
                     or immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
                 if not id then
-                    table.insert(failures, pathOrMessage)
+                    table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. (errReason or "Upload failed"))
                 else
                     atLeastSomeSuccess = true
                     exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }

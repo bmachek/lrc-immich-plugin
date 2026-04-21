@@ -22,7 +22,7 @@ function util.dumpTable(t)
     if t == nil then
         return "nil"
     end
-    local ok, s = pcall(function() return inspect(t) end)
+    local ok, s = LrTasks.pcall(function() return inspect(t) end)
     if not ok or s == nil then
         return tostring(t)
     end
@@ -67,7 +67,8 @@ end
 function util.getLogfilePath()
     local filename = "ImmichPlugin.log"
     local macPath14 = LrPathUtils.getStandardFilePath('home') .. "/Library/Logs/Adobe/Lightroom/LrClassicLogs/"
-    local winPath14 = LrPathUtils.getStandardFilePath('home') .. "\\AppData\\Local\\Adobe\\Lightroom\\Logs\\LrClassicLogs\\"
+    local winPath14 = LrPathUtils.getStandardFilePath('home') ..
+    "\\AppData\\Local\\Adobe\\Lightroom\\Logs\\LrClassicLogs\\"
     local macPathOld = LrPathUtils.getStandardFilePath('documents') .. "/LrClassicLogs/"
     local winPathOld = LrPathUtils.getStandardFilePath('documents') .. "\\LrClassicLogs\\"
 
@@ -95,20 +96,20 @@ function util.getPhotoDeviceId(photo)
     if not photo then
         return nil
     end
-    
+
     -- Try to get UUID first (preferred, stable identifier)
     local uuid = photo:getRawMetadata("uuid")
     if uuid and uuid ~= "" then
         return tostring(uuid)
     end
-    
+
     -- Fallback to localIdentifier for backward compatibility
     -- This handles cases where UUID might not be available
     if photo.localIdentifier then
         log:trace("Photo UUID not available, using localIdentifier: " .. tostring(photo.localIdentifier))
         return tostring(photo.localIdentifier)
     end
-    
+
     log:warn("Neither UUID nor localIdentifier available for photo")
     return nil
 end
@@ -118,14 +119,16 @@ end
 -- Returns: exportSession, exportParams, immich or nil.
 function util.validateExportContextAndConnect(exportContext, contextLabel)
     if not exportContext or not exportContext.exportSession or not exportContext.propertyTable then
-        ErrorHandler.handleError('Export context is missing. Please try again.', (contextLabel or "Export") .. "Task: invalid export context")
+        ErrorHandler.handleError('Export context is missing. Please try again.',
+            (contextLabel or "Export") .. "Task: invalid export context")
         return nil
     end
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
     local settingsText = (contextLabel == "Publish") and "plugin settings" or "export settings"
     if util.nilOrEmpty(exportParams.url) or util.nilOrEmpty(exportParams.apiKey) then
-        ErrorHandler.handleError('Configure Immich URL and API key in the ' .. settingsText .. '.', (contextLabel or "Export") .. "Task: URL or API key not set")
+        ErrorHandler.handleError('Configure Immich URL and API key in the ' .. settingsText .. '.',
+            (contextLabel or "Export") .. "Task: URL or API key not set")
         return nil
     end
     local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
@@ -146,11 +149,29 @@ end
 -- Shared: show failure and stack-warning dialogs after upload.
 function util.reportUploadFailuresAndWarnings(failures, stackWarnings)
     if failures and #failures > 0 then
-        local message = (#failures == 1) and "1 file failed to upload correctly." or (tostring(#failures) .. " files failed to upload correctly.")
-        LrDialogs.message(message, table.concat(failures, "\n"))
+        local message = (#failures == 1) and "1 file failed to upload correctly." or
+        (tostring(#failures) .. " files failed to upload correctly.")
+        local formattedFailures = {}
+        for i = 1, math.min(#failures, 20) do
+            table.insert(formattedFailures, "• " .. failures[i])
+        end
+        if #failures > 20 then
+            table.insert(formattedFailures, "... and " .. tostring(#failures - 20) .. " more failures.")
+            table.insert(formattedFailures, "(Check ImmichPlugin.log for full details)")
+        end
+        LrDialogs.message(message, table.concat(formattedFailures, "\n"), "critical")
     end
     if stackWarnings and #stackWarnings > 0 then
-        local message = (#stackWarnings == 1) and "1 photo had stacking issues (uploaded without stack):" or (tostring(#stackWarnings) .. " photos had stacking issues (uploaded without stacks):")
-        LrDialogs.message(message, table.concat(stackWarnings, "\n"))
+        local message = (#stackWarnings == 1) and "1 photo had stacking issues (uploaded without stack):" or
+        (tostring(#stackWarnings) .. " photos had stacking issues (uploaded without stacks):")
+        local formattedWarnings = {}
+        for i = 1, math.min(#stackWarnings, 20) do
+            table.insert(formattedWarnings, "• " .. stackWarnings[i])
+        end
+        if #stackWarnings > 20 then
+            table.insert(formattedWarnings, "... and " .. tostring(#stackWarnings - 20) .. " more warnings.")
+            table.insert(formattedWarnings, "(Check ImmichPlugin.log for full details)")
+        end
+        LrDialogs.message(message, table.concat(formattedWarnings, "\n"), "warning")
     end
 end

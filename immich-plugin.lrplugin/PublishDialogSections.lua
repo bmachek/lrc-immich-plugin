@@ -1,4 +1,5 @@
 require "ImmichAPI"
+require "SharedDialogSections"
 
 PublishDialogSections = {}
 
@@ -19,8 +20,7 @@ function PublishDialogSections.startDialog(propertyTable)
 		propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
 		--_updateCantExportBecause(propertyTable)
 	end)
-	-- propertyTable:addObserver('url', _updateCantExportBecause)
-	-- propertyTable:addObserver('apiKey', _updateCantExportBecause)
+	SharedDialogSections.setupOriginalFileObservers(propertyTable)
 end
 
 function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
@@ -28,83 +28,8 @@ function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 	local share = LrView.share
 
 	local result = {
-
-		{
-			title = "Immich Server connection",
-			bind_to_object = propertyTable,
-
-			f:row {
-				f:static_text {
-					title = "URL:",
-					alignment = 'right',
-					width = share 'labelWidth'
-				},
-				f:edit_field {
-					value = bind 'url',
-					truncation = 'middle',
-					immediate = false,
-					fill_horizontal = 1,
-					validate = function(_, url)
-						return ImmichAPI.validateUrlForDialog(url, propertyTable.url, propertyTable.apiKey)
-					end,
-				},
-				f:push_button {
-					title = "Test connection",
-					action = function()
-						LrTasks.startAsyncTask(function()
-							local success, message, api = ImmichAPI.testConnection(
-								propertyTable.url, propertyTable.apiKey, propertyTable.immich)
-							if api then
-								propertyTable.immich = api
-							end
-							LrDialogs.message(message)
-						end)
-					end,
-				},
-			},
-
-			f:row {
-				f:static_text {
-					title = "API Key:",
-					alignment = "right",
-					width = share "labelWidth",
-				},
-				f:password_field {
-					value = bind "apiKey",
-					truncation = "middle",
-					immediate = false,
-					fill_horizontal = 1,
-				},
-			},
-		},
-		{
-			title = "Stacks",
-			bind_to_object = propertyTable,
-			f:column {
-				f:row {
-					f:static_text {
-						title = "Original + Export:",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
-					f:checkbox {
-						title = "Stack in Immich (export as primary)",
-						value = bind 'stackOriginalExport',
-					},
-				},
-				f:row {
-					f:static_text {
-						title = "Lightroom stacks:",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
-					f:checkbox {
-						title = "Preserve Lightroom stacks in Immich",
-						value = bind 'stackLrStacks',
-					},
-				},
-			},
-		},
+		SharedDialogSections.getOriginalFilesSection(f, propertyTable),
+		SharedDialogSections.getServerConnectionSection(f, propertyTable),
 	}
 
 	return result

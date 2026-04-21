@@ -16,7 +16,7 @@ UploadHelpers = {}
 -- do not remain on early cancel or error.
 function UploadHelpers.safeDeleteTempFile(path)
     if not path or type(path) ~= "string" then return end
-    local ok, err = pcall(function()
+    local ok, err = LrTasks.pcall(function()
         if LrFileUtils.exists(path) then
             LrFileUtils.delete(path)
         end
@@ -35,7 +35,7 @@ function UploadHelpers.sortOriginalExportItems(items)
     table.sort(items, function(a, b)
         local aIsExport = a.role == "export"
         local bIsExport = b.role == "export"
-        return aIsExport and not bIsExport  -- exports before originals
+        return aIsExport and not bIsExport -- exports before originals
     end)
 end
 

@@ -26,13 +26,10 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
                 },
             },
             f:row {
+                spacing = f:control_spacing(),
                 f:checkbox {
-                    value = bind 'logging',
-                },
-                f:static_text {
                     title = "Enable debug logging",
-                    alignment = 'right',
-                    width = share 'labelWidth'
+                    value = bind 'logging',
                 },
                 f:push_button {
                     title = "Show logfile",

@@ -25,16 +25,31 @@ return {
         local contents = f:column {
             bind_to_object = prefs,
             spacing = f:control_spacing(),
-            f:row {
-                f:static_text {
-                    title = "Immich Album:",
-                    alignment = 'right',
-                    width = LrView.share 'label_width',
-                },
-                f:popup_menu {
-                    items = albums,
-                    value = LrView.bind('selectedAlbum'),
-                    width = 250,
+            margin = 15,
+            f:group_box {
+                title = "Select Album for Import",
+                fill_horizontal = 1,
+                f:column {
+                    spacing = f:control_spacing(),
+                    margin = 5,
+                    f:static_text {
+                        title = "Choose an Immich album to import photos into Lightroom. Only new photos will be downloaded.",
+                        alignment = "left",
+                        font = "<system/small>"
+                    },
+                    f:row {
+                        margin_top = 10,
+                        f:static_text {
+                            title = "Immich Album:",
+                            alignment = 'right',
+                            width = LrView.share 'label_width',
+                        },
+                        f:popup_menu {
+                            items = albums,
+                            value = LrView.bind('selectedAlbum'),
+                            width = 250,
+                        },
+                    },
                 },
             },
         }
