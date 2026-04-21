@@ -18,7 +18,7 @@ function MetadataTask.setImmichAssetId(photo, assetId)
 
     local valueToSet = (assetId ~= nil and assetId ~= "") and tostring(assetId) or ""
     local success = false
-    local ok, err = LrTasks.LrTasks.pcall(function()
+    local ok, err = LrTasks.pcall(function()
         -- Timeout required so the call waits for catalog lock instead of failing immediately
         -- (e.g. when called from async task right after export/publish).
         catalog:withPrivateWriteAccessDo(function()
