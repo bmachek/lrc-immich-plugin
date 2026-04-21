@@ -10,6 +10,7 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
 
 	return {
 		title = "Keep Original Files in Immich",
+		bind_to_object = propertyTable,
 		f:column {
 			spacing = f:control_spacing(),
 			f:row {
@@ -24,7 +25,7 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
 				f:static_text {
 					title = "Original file behavior:",
 					alignment = 'right',
-					width = share "label_width",
+					width = share "labelWidth",
 				},
 				f:popup_menu {
 					alignment = 'left',
@@ -41,7 +42,7 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
 				},
 			},
 			f:row {
-				f:static_text { title = "", alignment = 'right', width = share "label_width" },
+				f:static_text { title = "", alignment = 'right', width = share "labelWidth" },
 				f:static_text {
 					title = bind 'editedPhotosCount',
 					alignment = 'left', fill_horizontal = 1,
@@ -49,7 +50,7 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
 				},
 			},
 			f:row {
-				f:static_text { title = "", alignment = 'right', width = share "label_width" },
+				f:static_text { title = "", alignment = 'right', width = share "labelWidth" },
 				f:static_text {
 					title = bind 'originalFormatWarning',
 					alignment = 'left', fill_horizontal = 1,
@@ -57,7 +58,7 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
 				},
 			},
 			f:row {
-				f:static_text { title = "Stack Options:", alignment = 'right', width = share "label_width" },
+				f:static_text { title = "Stack Options:", alignment = 'right', width = share "labelWidth" },
 				f:column {
 					spacing = f:control_spacing(),
 					f:checkbox {

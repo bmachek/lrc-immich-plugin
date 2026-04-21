@@ -52,6 +52,7 @@ function ExportDialogSections.sectionsForTopOfDialog(_, propertyTable)
 
 		{
 			title = "Immich Album Options",
+			bind_to_object = propertyTable,
 			f:column {
 				f:row {
 					f:column {
