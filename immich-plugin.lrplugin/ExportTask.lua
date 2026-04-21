@@ -190,10 +190,10 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
             -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
             local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
             local deviceAssetId = lid .. suffix
-            local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            local id, errReason = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
-                table.insert(failures, item.path)
+                table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
             else
                 atLeastSomeSuccess[1] = true
                 table.insert(assetIds, id)
@@ -225,10 +225,10 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
         local item = items[1]
         local deviceAssetId = lid .. "_export"
         log:info('original+export [' .. filename .. ']: single rendition, uploading as export (' .. deviceAssetId .. ')')
-        local id = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+        local id, errReason = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
-            table.insert(failures, item.path)
+            table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
         else
             atLeastSomeSuccess[1] = true
             local primaryId = id
@@ -325,10 +325,10 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                     local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                         photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
                     log:info('single-rendition [' .. photo:getFormattedMetadata("fileName") .. ']: uploading original (' .. tostring(deviceAssetId) .. ')')
-                    local id = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
+                    local id, errReason = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
                         or immich:replaceAsset(existingId, originalPath, existingDeviceId or deviceAssetId)
                     if not id then
-                        table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. originalPath)
+                        table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. (errReason or "Upload failed"))
                     else
                         atLeastSomeSuccess = true
                         local primaryId = id
@@ -368,10 +368,10 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
             else
                 local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                     photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
-                local id = (existingId == nil) and immich:uploadAsset(pathOrMessage, deviceAssetId)
+                local id, errReason = (existingId == nil) and immich:uploadAsset(pathOrMessage, deviceAssetId)
                     or immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
                 if not id then
-                    table.insert(failures, pathOrMessage)
+                    table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. (errReason or "Upload failed"))
                 else
                     atLeastSomeSuccess = true
                     exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }

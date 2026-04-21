@@ -21,7 +21,7 @@ ImmichAPI.__index = ImmichAPI
 -- ---------------------------------------------------------------------------
 
 local function safeDecodeJson(response, context)
-    local ok, decoded = pcall(function() return JSON:decode(response or "{}") end)
+    local ok, decoded = LrTasks.pcall(function() return JSON:decode(response or "{}") end)
     if not ok or decoded == nil then
         log:error('ImmichAPI ' .. context .. ': JSON decode failed: ' .. tostring(decoded))
         return nil
@@ -46,11 +46,22 @@ local function handleRequestFailure(method, apiPath, status, headers, response)
     -- (e.g. one stack per photo). A modal dialog per failure would block the entire export and
     -- force the user to dismiss hundreds of popups. Callers check the nil return value and
     -- collect failures for the post-export summary shown by reportUploadFailuresAndWarnings.
-    log:error('ImmichAPI ' .. tostring(method) .. ' request failed: ' .. apiPath .. ' (status ' .. tostring(status or '?') .. ')')
+    log:error('ImmichAPI ' ..
+    tostring(method) .. ' request failed: ' .. apiPath .. ' (status ' .. tostring(status or '?') .. ')')
     log:error('Response headers: ' .. ((headers and util.dumpTable(headers)) or "none"))
+    local parsedErrorString = "HTTP " .. tostring(status or "Error")
     if response ~= nil then
         log:error('Response body: ' .. tostring(response))
+        local decoded = safeDecodeJson(response, 'handleRequestFailure')
+        if type(decoded) == 'table' and decoded.message then
+            if type(decoded.message) == 'table' then
+                parsedErrorString = parsedErrorString .. " - " .. table.concat(decoded.message, ", ")
+            else
+                parsedErrorString = parsedErrorString .. " - " .. tostring(decoded.message)
+            end
+        end
     end
+    return parsedErrorString
 end
 
 
@@ -101,7 +112,8 @@ function ImmichAPI:downloadAsset(assetId)
 
     if not headers then
         log:error("downloadAsset: no response headers (network or server error) for asset " .. tostring(assetId))
-        ErrorHandler.handleError('Could not download asset. Check connection and Immich URL.', 'downloadAsset: no response from server')
+        ErrorHandler.handleError('Could not download asset. Check connection and Immich URL.',
+            'downloadAsset: no response from server')
         return nil
     end
     if headers.status == 200 then
@@ -171,8 +183,6 @@ function ImmichAPI:getOriginalFileName(assetId)
     end
 end
 
-
-
 function ImmichAPI:getAlbumAssets(albumId)
     if util.nilOrEmpty(albumId) then
         ErrorHandler.handleError('No album ID provided. Check logs.', 'getAlbumAssets: albumId empty')
@@ -222,7 +232,6 @@ function ImmichAPI:createHeadersForMultipart()
     }
 end
 
-
 -- Returns sanitized URL (string) on success; false on empty; nil on invalid format.
 -- Does not show dialogs (for use in validate callbacks). Callers should show errors or return error messages.
 function ImmichAPI:sanityCheckAndFixURL(url)
@@ -260,10 +269,15 @@ function ImmichAPI:checkConnectivity()
     else
         log:error('checkConnectivity: test failed.')
         log:error('Response headers: ' .. util.dumpTable(headers))
+        local errReason = "HTTP " .. tostring(headers.status)
         if response ~= nil then
             log:error('Response body: ' .. response)
+            local decoded = safeDecodeJson(response, 'checkConnectivity')
+            if type(decoded) == 'table' and decoded.message then
+                errReason = errReason .. " - " .. tostring(decoded.message)
+            end
         end
-        return false
+        return false, errReason
     end
 end
 
@@ -272,54 +286,55 @@ end
 -- ---------------------------------------------------------------------------
 
 local function _trimString(s)
-	if type(s) ~= "string" then return "" end
-	return s:match("^%s*(.-)%s*$") or ""
+    if type(s) ~= "string" then return "" end
+    return s:match("^%s*(.-)%s*$") or ""
 end
 
 -- Validates URL for Lr edit_field validate callback. Does not rely on an existing API instance.
 -- url: value from the field; baseUrl, baseApiKey: current propertyTable values (for temp instance).
 -- Returns: valid (bool), newValue (string), errorMessage (string).
 function ImmichAPI.validateUrlForDialog(url, baseUrl, baseApiKey)
-	local raw = (type(url) == "string") and url or ""
-	local trimmed = _trimString(raw)
-	if trimmed == "" then
-		return false, url, "URL must not be empty. Example: https://demo.immich.app"
-	end
-	local api = ImmichAPI:new(baseUrl or "", baseApiKey or "")
-	local result = api:sanityCheckAndFixURL(trimmed)
-	if result == false then
-		return false, url, "URL must not be empty. Example: https://demo.immich.app"
-	end
-	if result == nil then
-		return false, url, "Invalid URL format. Example: https://demo.immich.app"
-	end
-	if result == trimmed then
-		return true, trimmed, ""
-	end
-	if LrDialogs and LrDialogs.message then
-		LrDialogs.message("URL was autocorrected to: " .. result)
-	end
-	return true, result, ""
+    local raw = (type(url) == "string") and url or ""
+    local trimmed = _trimString(raw)
+    if trimmed == "" then
+        return false, url, "URL must not be empty. Example: https://demo.immich.app"
+    end
+    local api = ImmichAPI:new(baseUrl or "", baseApiKey or "")
+    local result = api:sanityCheckAndFixURL(trimmed)
+    if result == false then
+        return false, url, "URL must not be empty. Example: https://demo.immich.app"
+    end
+    if result == nil then
+        return false, url, "Invalid URL format. Example: https://demo.immich.app"
+    end
+    if result == trimmed then
+        return true, trimmed, ""
+    end
+    if LrDialogs and LrDialogs.message then
+        LrDialogs.message("URL was autocorrected to: " .. result)
+    end
+    return true, result, ""
 end
 
 -- Runs a connection test. Trims url and apiKey; uses existingApi if provided and reconfigures it.
 -- Returns: success (bool), message (string), apiInstance (for propertyTable.immich).
 function ImmichAPI.testConnection(url, apiKey, existingApi)
-	local u = _trimString(type(url) == "string" and url or "")
-	local key = (type(apiKey) == "string") and apiKey or ""
-	if u == "" or key == "" then
-		return false, "Please enter URL and API key first.", nil
-	end
-	local api = existingApi
-	if api and type(api.reconfigure) == "function" then
-		api:reconfigure(u, key)
-	else
-		api = ImmichAPI:new(u, key)
-	end
-	if api:checkConnectivity() then
-		return true, "Connection test successful", api
-	end
-	return false, "Connection test failed. Check URL, API key, and network.", api
+    local u = _trimString(type(url) == "string" and url or "")
+    local key = (type(apiKey) == "string") and apiKey or ""
+    if u == "" or key == "" then
+        return false, "Please enter URL and API key first.", nil
+    end
+    local api = existingApi
+    if api and type(api.reconfigure) == "function" then
+        api:reconfigure(u, key)
+    else
+        api = ImmichAPI:new(u, key)
+    end
+    local ok, errReason = api:checkConnectivity()
+    if ok then
+        return true, "Connection test successful", api
+    end
+    return false, "Connection test failed: " .. tostring(errReason or "Check URL, API key, and network."), api
 end
 
 -- Thanks to Min Idzelis
@@ -356,7 +371,7 @@ function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId)
     local fileName = LrPathUtils.leafName(filePath)
 
     local mimeChunks = {
-        { name = 'assetData',      filePath = filePath,        fileName = fileName, contentType = 'application/octet-stream' },
+        { name = 'assetData',      filePath = filePath,            fileName = fileName, contentType = 'application/octet-stream' },
         { name = 'deviceAssetId',  value = tostring(deviceAssetId) },
         { name = 'deviceId',       value = self.deviceIdString },
         { name = 'fileCreatedAt',  value = submitDate },
@@ -364,12 +379,12 @@ function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId)
         { name = 'isFavorite',     value = 'false' }
     }
 
-    local parsedResponse = self:doMultiPartPostRequest(apiPath, mimeChunks)
+    local parsedResponse, errReason = self:doMultiPartPostRequest(apiPath, mimeChunks)
     if parsedResponse ~= nil then
         log:info('uploadAsset: ' .. tostring(deviceAssetId) .. ' -> ' .. parsedResponse.id)
         return parsedResponse.id
     end
-    return nil
+    return nil, errReason
 end
 
 function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
@@ -388,7 +403,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
         return nil
     end
 
-    local newImmichId = self:uploadAsset(pathOrMessage, deviceAssetId)
+    local newImmichId, errReason = self:uploadAsset(pathOrMessage, deviceAssetId)
     if newImmichId ~= nil then
         -- Immich may return the existing asset ID (e.g. duplicate detection); skip replace steps
         if newImmichId == immichId then
@@ -405,13 +420,14 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
                 return newImmichId
             end
         else
-            ErrorHandler.handleError('Failed to copy metadata to new asset after replacement. Check logs. New asset will be deleted.',
+            ErrorHandler.handleError(
+                'Failed to copy metadata to new asset after replacement. Check logs. New asset will be deleted.',
                 'replaceAsset: Failed to copy metadata from old asset ' .. immichId .. ' to new asset ' .. newImmichId)
             self:deleteAsset(newImmichId)
-            return nil
+            return nil, "Metadata copy failed"
         end
     end
-    return nil
+    return nil, errReason
 end
 
 function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
@@ -435,7 +451,6 @@ function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
     return false
 end
 
-
 function ImmichAPI:deleteAsset(immichId)
     if util.nilOrEmpty(immichId) then
         ErrorHandler.handleError('Immich asset ID missing. Check logs.', 'deleteAsset: immichId empty')
@@ -452,7 +467,6 @@ function ImmichAPI:deleteAsset(immichId)
     end
     return false
 end
-
 
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
     if util.nilOrEmpty(albumId) then
@@ -506,7 +520,8 @@ end
 
 function ImmichAPI:createStack(assetIds)
     if not assetIds or #assetIds < 2 then
-        ErrorHandler.handleError('Need at least 2 assets to create a stack. Check logs.', 'createStack: need at least 2 assets')
+        ErrorHandler.handleError('Need at least 2 assets to create a stack. Check logs.',
+            'createStack: need at least 2 assets')
         return nil
     end
 
@@ -563,7 +578,6 @@ function ImmichAPI:getAlbumNameById(albumId)
     end
 end
 
-
 function ImmichAPI:createOrGetAlbumFolderBased(albumName)
     if util.nilOrEmpty(albumName) then
         ErrorHandler.handleError('No album name given. Check logs.', 'createAlbum: albumName empty')
@@ -581,7 +595,7 @@ function ImmichAPI:createOrGetAlbumFolderBased(albumName)
     local apiPath = '/albums'
     local postBody = { albumName = albumName, description = 'Based on Lightroom folder: ' .. albumName }
 
-    local parsedResponse = self:doPostRequest( apiPath, postBody)
+    local parsedResponse = self:doPostRequest(apiPath, postBody)
     if parsedResponse ~= nil then
         return parsedResponse.id
     end
@@ -597,7 +611,8 @@ function ImmichAPI:deleteAlbum(albumId)
 
     local parsedResponse = self:doCustomRequest('DELETE', path, {})
     if parsedResponse == nil then
-        ErrorHandler.handleError("Error deleting album, please consult logs.", "Unable to delete album (" .. albumId .. ").")
+        ErrorHandler.handleError("Error deleting album, please consult logs.",
+            "Unable to delete album (" .. albumId .. ").")
         return false
     else
         return true
@@ -620,7 +635,8 @@ function ImmichAPI:renameAlbum(albumId, newName)
 
     local parsedResponse = self:doCustomRequest('PATCH', path, postBody)
     if parsedResponse == nil then
-        ErrorHandler.handleError("Error renaming album, please consult logs.", "Unable to rename album (" .. tostring(albumId) .. ").")
+        ErrorHandler.handleError("Error renaming album, please consult logs.",
+            "Unable to rename album (" .. tostring(albumId) .. ").")
         return false
     else
         return true
@@ -635,7 +651,8 @@ function ImmichAPI:getAlbums()
         for i = 1, #parsedResponse do
             local row = parsedResponse[i]
             if row and row.id and row.albumName then
-                local createdAt = (row.createdAt and type(row.createdAt) == "string") and string.sub(row.createdAt, 1, 19) or ""
+                local createdAt = (row.createdAt and type(row.createdAt) == "string") and
+                string.sub(row.createdAt, 1, 19) or ""
                 table.insert(albums,
                     { title = row.albumName .. ' (' .. createdAt .. ')', value = row.id })
             end
@@ -663,8 +680,6 @@ function ImmichAPI:getAlbumsWODate()
     end
 end
 
-
-
 function ImmichAPI:getAlbumsByNameFolderBased(albumName)
     if util.nilOrEmpty(albumName) then
         return nil
@@ -676,8 +691,9 @@ function ImmichAPI:getAlbumsByNameFolderBased(albumName)
         for i = 1, #parsedResponse do
             local row = parsedResponse[i]
             if row and row.id and row.albumName and row.albumName == albumName and
-               (row.description or "") == ('Based on Lightroom folder: ' .. albumName) then
-                local createdAt = (row.createdAt and type(row.createdAt) == "string") and string.sub(row.createdAt, 1, 19) or ""
+                (row.description or "") == ('Based on Lightroom folder: ' .. albumName) then
+                local createdAt = (row.createdAt and type(row.createdAt) == "string") and
+                string.sub(row.createdAt, 1, 19) or ""
                 table.insert(albums, { title = row.albumName .. ' (' .. createdAt .. ')', value = row.id })
             end
         end
@@ -718,14 +734,14 @@ function ImmichAPI:bulkCheckAssets(deviceAssetIds)
         deviceAssetIds = deviceAssetIds,
         deviceId = self.deviceIdString
     }
-    
-    local response = self:doPostRequest( '/assets/existing', postBody)
-    
+
+    local response = self:doPostRequest('/assets/existing', postBody)
+
     if not response or not response.existingIds then
         log:trace('bulkCheckAssets: No response or invalid response')
         return {}
     end
-    
+
     -- Build a map for quick lookup
     -- The endpoint returns asset IDs, we need to get their deviceAssetIds to map back
     local existingMap = {}
@@ -739,8 +755,9 @@ function ImmichAPI:bulkCheckAssets(deviceAssetIds)
             }
         end
     end
-    
-    log:trace('bulkCheckAssets: Found ' .. #response.existingIds .. ' existing assets out of ' .. #deviceAssetIds .. ' checked')
+
+    log:trace('bulkCheckAssets: Found ' ..
+    #response.existingIds .. ' existing assets out of ' .. #deviceAssetIds .. ' checked')
     return existingMap
 end
 
@@ -749,7 +766,7 @@ end
 -- Backward compatible: also searches by localIdentifier so existing installations (uploaded with localIdentifier) are found
 function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, dateCreated)
     require "MetadataTask"
-    
+
     -- Step 1: Check metadata extension first (fastest, most reliable)
     local storedAssetId = MetadataTask.getImmichAssetId(photo)
     if storedAssetId and storedAssetId ~= "" then
@@ -760,11 +777,12 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
             return storedAssetId, assetInfo.deviceAssetId or deviceAssetId
         else
             -- Asset was deleted in Immich, clear metadata
-            log:trace('checkIfAssetExistsEnhanced: Stored assetId ' .. storedAssetId .. ' no longer exists, clearing metadata')
+            log:trace('checkIfAssetExistsEnhanced: Stored assetId ' ..
+            storedAssetId .. ' no longer exists, clearing metadata')
             MetadataTask.setImmichAssetId(photo, nil)
         end
     end
-    
+
     local function searchByDeviceAssetId(deviceId)
         if not deviceId or deviceId == "" then return nil, nil end
         local postBody = { deviceAssetId = tostring(deviceId), deviceId = self.deviceIdString, isTrashed = false }
@@ -774,7 +792,7 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
         end
         return nil, nil
     end
-    
+
     -- Step 2: Check by current deviceAssetId (UUID or localIdentifier)
     local id = tostring(deviceAssetId)
     local foundId, foundDeviceId = searchByDeviceAssetId(id)
@@ -783,7 +801,7 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
         MetadataTask.setImmichAssetId(photo, foundId)
         return foundId, foundDeviceId
     end
-    
+
     -- Step 2b: Existing installations: assets were uploaded with localIdentifier as deviceAssetId.
     -- If we're now using UUID (different from localIdentifier), also search by localIdentifier.
     local localId = (photo and photo.localIdentifier) and tostring(photo.localIdentifier) or nil
@@ -796,7 +814,7 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
             return foundId, foundDeviceId
         end
     end
-    
+
     -- Step 3: Fallback to filename + dateCreated search (for backward compatibility)
     if dateCreated ~= nil and dateCreated ~= "" then
         log:trace('checkIfAssetExistsEnhanced: deviceAssetId not found, trying filename + date')
@@ -806,12 +824,13 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
         if response and response.assets and response.assets.count >= 1 then
             local foundId = response.assets.items[1].id
             local foundDeviceId = response.assets.items[1].deviceAssetId
-            log:trace('checkIfAssetExistsEnhanced: Found existing asset with filename ' .. filename .. ' and creationDate ' .. dateCreated)
+            log:trace('checkIfAssetExistsEnhanced: Found existing asset with filename ' ..
+            filename .. ' and creationDate ' .. dateCreated)
             MetadataTask.setImmichAssetId(photo, foundId)
             return foundId, foundDeviceId
         end
     end
-    
+
     return nil
 end
 
@@ -838,10 +857,12 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
         response = self:doPostRequest('/search/metadata', postBody)
 
         if not response or not response.assets then
-            log:trace('No asset with originalFilename ' .. tostring(filename) .. ' and creationDate ' .. tostring(dateCreated) .. ' found')
+            log:trace('No asset with originalFilename ' ..
+            tostring(filename) .. ' and creationDate ' .. tostring(dateCreated) .. ' found')
             return nil
         elseif (response.assets.count or 0) >= 1 and response.assets.items and response.assets.items[1] then
-            log:trace('Found existing asset with filename ' .. tostring(filename) .. ' and creationDate ' .. tostring(dateCreated))
+            log:trace('Found existing asset with filename ' ..
+            tostring(filename) .. ' and creationDate ' .. tostring(dateCreated))
             return response.assets.items[1].id, response.assets.items[1].deviceAssetId
         end
     end
@@ -902,7 +923,7 @@ function ImmichAPI:getAlbumInfo(albumId)
         return nil
     end
     log:trace("ImmichAPI: getAlbumInfo for: " .. tostring(albumId))
-    local albumInfo = self:doGetRequest( '/albums/' .. albumId)
+    local albumInfo = self:doGetRequest('/albums/' .. albumId)
     return albumInfo
 end
 
@@ -912,7 +933,7 @@ function ImmichAPI:getAlbumAssetIds(albumId)
         return {}
     end
     log:trace("ImmichAPI: getAlbumAssetIds for: " .. tostring(albumId))
-    local albumInfo = self:doGetRequest( '/albums/' .. albumId)
+    local albumInfo = self:doGetRequest('/albums/' .. albumId)
     local assetIds = {}
 
     if albumInfo and albumInfo.assets then
@@ -937,7 +958,8 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
     if postBody ~= nil then
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
-    local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody), self:createHeaders(), 'POST', HTTP_TIMEOUT_DEFAULT)
+    local response, headers = LrHttp.post(self.url .. self.apiBasePath .. apiPath, JSON:encode(postBody),
+        self:createHeaders(), 'POST', HTTP_TIMEOUT_DEFAULT)
 
     if not headers then
         log:error('ImmichAPI POST: no response headers (network error): ' .. apiPath)
@@ -948,8 +970,8 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
         log:trace('ImmichAPI POST request succeeded: ' .. tostring(response))
         return safeDecodeJson(response, 'POST')
     end
-    handleRequestFailure('POST', apiPath, headers.status, headers, response)
-    return nil
+    local errReason = handleRequestFailure('POST', apiPath, headers.status, headers, response)
+    return nil, errReason
 end
 
 function ImmichAPI:doCustomRequest(method, apiPath, postBody)
@@ -960,7 +982,8 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
         log:trace('ImmichAPI: Postbody ' .. JSON:encode(postBody))
     end
     local url = self.url .. self.apiBasePath .. apiPath
-    local response, headers = LrHttp.post(url, JSON:encode(postBody or {}), self:createHeaders(), method, HTTP_TIMEOUT_DEFAULT)
+    local response, headers = LrHttp.post(url, JSON:encode(postBody or {}), self:createHeaders(), method,
+        HTTP_TIMEOUT_DEFAULT)
 
     if not headers then
         log:error('ImmichAPI ' .. tostring(method) .. ': no response headers (network error): ' .. apiPath)
@@ -972,8 +995,8 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
         if util.nilOrEmpty(response) then return {} end
         return safeDecodeJson(response, method) or {}
     end
-    handleRequestFailure(method, apiPath, headers.status, headers, response)
-    return nil
+    local errReason = handleRequestFailure(method, apiPath, headers.status, headers, response)
+    return nil, errReason
 end
 
 function ImmichAPI:doGetRequest(apiPath)
@@ -991,8 +1014,8 @@ function ImmichAPI:doGetRequest(apiPath)
         log:trace('ImmichAPI GET request succeeded')
         return safeDecodeJson(response, 'GET')
     end
-    handleRequestFailure('GET', apiPath, headers.status, headers, response)
-    return nil
+    local errReason = handleRequestFailure('GET', apiPath, headers.status, headers, response)
+    return nil, errReason
 end
 
 -- GET that treats 400/404 as "not found" and returns nil without error (e.g. album deleted on server).
@@ -1015,15 +1038,16 @@ function ImmichAPI:doGetRequestAllow404(apiPath)
         log:trace('ImmichAPI GET: resource not found (' .. tostring(headers.status) .. '): ' .. apiPath)
         return nil
     end
-    handleRequestFailure('GET', apiPath, headers.status, headers, response)
-    return nil
+    local errReason = handleRequestFailure('GET', apiPath, headers.status, headers, response)
+    return nil, errReason
 end
 
 function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     if not ensureConnectivity(self) then return nil end
 
     logRequestStart(self, 'multipart POST', apiPath)
-    local response, headers = LrHttp.postMultipart(self.url .. self.apiBasePath .. apiPath, mimeChunks, self:createHeadersForMultipart(), HTTP_TIMEOUT_UPLOAD)
+    local response, headers = LrHttp.postMultipart(self.url .. self.apiBasePath .. apiPath, mimeChunks,
+        self:createHeadersForMultipart(), HTTP_TIMEOUT_UPLOAD)
 
     if not headers then
         log:error('ImmichAPI multipart POST: no response headers (network error): ' .. apiPath)
@@ -1033,7 +1057,6 @@ function ImmichAPI:doMultiPartPostRequest(apiPath, mimeChunks)
     if SUCCESS_STATUS_POST[headers.status] then
         return safeDecodeJson(response, 'multipart POST')
     end
-    handleRequestFailure('multipart POST', apiPath, headers.status, headers, response)
-    return nil
+    local errReason = handleRequestFailure('multipart POST', apiPath, headers.status, headers, response)
+    return nil, errReason
 end
-

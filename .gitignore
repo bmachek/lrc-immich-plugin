@@ -1,2 +1,4 @@
 .DS_Store
 .claude
+.venv/
+lua_env/

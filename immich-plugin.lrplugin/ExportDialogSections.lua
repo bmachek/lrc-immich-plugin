@@ -105,18 +105,12 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 		{
 			title = "Keep Original Files in Immich",
 			f:column {
+				spacing = f:control_spacing(),
 				f:row {
+					margin_bottom = 5,
 					f:static_text {
-						title = "Upload original files alongside edited exports to create stacks in Immich.",
+						title = "Upload original files alongside edited exports to create stacks in Immich.\nTip: Uploading originals increases file size but preserves RAW data.",
 						alignment = 'left',
-						font = '<system/small>',
-					},
-				},
-				f:row {
-					f:static_text {
-						title = "Tip: Uploading originals increases file size but preserves RAW data for future edits.",
-						alignment = 'left',
-						text_color = LrColor( 0.6, 0.6, 0.6 ),
 						font = '<system/small>',
 					},
 				},
@@ -124,7 +118,7 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					f:static_text {
 						title = "Original file behavior:",
 						alignment = 'right',
-						width = LrView.share "label_width",
+						width = share "label_width",
 					},
 					f:popup_menu {
 						alignment = 'left',
@@ -141,53 +135,33 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 					},
 				},
 				f:row {
-					f:static_text {
-						title = "",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
+					f:static_text { title = "", alignment = 'right', width = share "label_width" },
 					f:static_text {
 						title = bind 'editedPhotosCount',
-						alignment = 'left',
-						fill_horizontal = 1,
-						font = '<system/small>',
-						text_color = LrColor(0.2, 0.6, 0.2),
+						alignment = 'left', fill_horizontal = 1,
+						font = '<system/small>', text_color = LrColor(0.2, 0.6, 0.2),
 					},
 				},
 				f:row {
-					f:static_text {
-						title = "",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
+					f:static_text { title = "", alignment = 'right', width = share "label_width" },
 					f:static_text {
 						title = bind 'originalFormatWarning',
-						alignment = 'left',
-						fill_horizontal = 1,
-						font = '<system/small>',
-						text_color = LrColor(0.8, 0.3, 0.0),
+						alignment = 'left', fill_horizontal = 1,
+						font = '<system/small>', text_color = LrColor(0.8, 0.3, 0.0),
 					},
 				},
 				f:row {
-					f:static_text {
-						title = "Original + Export:",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
-					f:checkbox {
-						title = "Stack in Immich (export as primary)",
-						value = bind 'stackOriginalExport',
-					},
-				},
-				f:row {
-					f:static_text {
-						title = "Lightroom stacks:",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
-					f:checkbox {
-						title = "Preserve Lightroom stacks in Immich",
-						value = bind 'stackLrStacks',
+					f:static_text { title = "Stack Options:", alignment = 'right', width = share "label_width" },
+					f:column {
+						spacing = f:control_spacing(),
+						f:checkbox {
+							title = "Stack Original + Export in Immich",
+							value = bind 'stackOriginalExport',
+						},
+						f:checkbox {
+							title = "Preserve Lightroom stacks in Immich",
+							value = bind 'stackLrStacks',
+						},
 					},
 				},
 			},

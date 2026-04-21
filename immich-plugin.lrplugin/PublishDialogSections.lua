@@ -78,25 +78,15 @@ function PublishDialogSections.sectionsForTopOfDialog(f, propertyTable)
 			},
 		},
 		{
-			title = "Stacks",
+			title = "Stack Options",
 			bind_to_object = propertyTable,
-			f:column {
-				f:row {
-					f:static_text {
-						title = "Original + Export:",
-						alignment = 'right',
-						width = LrView.share "label_width",
-					},
+			f:row {
+				f:static_text { title = "Immich Stacks:", alignment = "right", width = share "labelWidth" },
+				f:column {
+					spacing = f:control_spacing(),
 					f:checkbox {
-						title = "Stack in Immich (export as primary)",
+						title = "Stack Original + Export in Immich",
 						value = bind 'stackOriginalExport',
-					},
-				},
-				f:row {
-					f:static_text {
-						title = "Lightroom stacks:",
-						alignment = 'right',
-						width = LrView.share "label_width",
 					},
 					f:checkbox {
 						title = "Preserve Lightroom stacks in Immich",
