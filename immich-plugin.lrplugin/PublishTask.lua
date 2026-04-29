@@ -1,6 +1,7 @@
 require "ImmichAPI"
 require "StackManager"
 require "UploadHelpers"
+require "MetadataTask"
 
 PublishTask = {}
 
@@ -80,6 +81,7 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
             end
         end
         if primaryId then
+            MetadataTask.setImmichAssetId(photo, primaryId)
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
                 photo:getFormattedMetadata("folderName"))
@@ -102,6 +104,7 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         else
             atLeastSomeSuccess[1] = true
             local primaryId = id
+            MetadataTask.setImmichAssetId(photo, primaryId)
             item.rendition:recordPublishedPhotoId(id)
             item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
             -- Warn once per publish run (not once per photo) to keep the post-publish dialog concise.
@@ -170,19 +173,22 @@ local function processPublishSingleRenditionRenditions(immich, exportContext, pr
         if success then
             local photo = rendition.photo
             local deviceAssetId = util.getPhotoDeviceId(photo)
-            local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
+            local existingId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                 photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
             local id, errReason
             if existingId == nil then
                 id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId)
             else
-                id, errReason = immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
+                -- Always use the current UUID deviceAssetId (not the legacy localIdentifier from the old
+                -- asset) so the new asset can be found by UUID on the next run, breaking the replace cycle.
+                id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId)
             end
 
             if not id then
                 table.insert(failures, photo:getFormattedMetadata("fileName") .. " (" .. (errReason or "Upload failed") .. ")")
             else
                 atLeastSomeSuccess = true
+                MetadataTask.setImmichAssetId(photo, id)
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
                 exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
