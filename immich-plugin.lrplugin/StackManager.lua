@@ -17,11 +17,12 @@ StackManager = {}
 --------------------------------------------------------------------------------
 -- Upload one asset or replace existing; returns Immich asset id or nil
 function StackManager.uploadOneAssetOrReplace(immich, path, deviceAssetId, filename, dateCreated)
-    local existingId, existingDeviceId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
+    local existingId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
     if existingId == nil then
         return immich:uploadAsset(path, deviceAssetId)
     else
-        return immich:replaceAsset(existingId, path, existingDeviceId or deviceAssetId)
+        -- Always use the passed deviceAssetId for the new upload to keep it stable.
+        return immich:replaceAsset(existingId, path, deviceAssetId)
     end
 end
 

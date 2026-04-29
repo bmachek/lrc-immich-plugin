@@ -1,6 +1,7 @@
 require "ImmichAPI"
 require "StackManager"
 require "UploadHelpers"
+require "MetadataTask"
 
 --============================================================================--
 
@@ -226,6 +227,7 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
             end
         end
         if primaryId then
+            MetadataTask.setImmichAssetId(photo, primaryId)
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             if useAlbum then immich:addAssetToAlbum(albumId, primaryId)
             elseif exportParams.albumMode == "folder" then
@@ -251,6 +253,7 @@ local function processOnePhotoGroup(immich, lid, items, exportParams, albumId, u
         else
             atLeastSomeSuccess[1] = true
             local primaryId = id
+            MetadataTask.setImmichAssetId(photo, primaryId)
             if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
                 -- LR_format == "ORIGINAL" means Lightroom copied the source byte-for-byte; the
                 -- rendition IS the original. Uploading the disk original as _orig would create two
@@ -341,15 +344,17 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                 if not originalPath then
                     table.insert(failures, photo:getFormattedMetadata("fileName") .. " (original not found)")
                 else
-                    local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
+                    local existingId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                         photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
                     log:info('single-rendition [' .. photo:getFormattedMetadata("fileName") .. ']: uploading original (' .. tostring(deviceAssetId) .. ')')
                     local id, errReason = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
-                        or immich:replaceAsset(existingId, originalPath, existingDeviceId or deviceAssetId)
+                        -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
+                        or immich:replaceAsset(existingId, originalPath, deviceAssetId)
                     if not id then
                         table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. (errReason or "Upload failed"))
                     else
                         atLeastSomeSuccess = true
+                        MetadataTask.setImmichAssetId(photo, id)
                         local primaryId = id
                         if originalFileMode == 'original_plus_jpeg_if_edited' and StackManager.hasEdits(photo, editedPhotosCache) then
                             if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
@@ -358,10 +363,10 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                                 local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
                                 local fileName, dateCreated = photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated")
                                 log:info('single-rendition [' .. fileName .. ']: uploading edited export (' .. deviceAssetIdEdited .. ')')
-                                local existingExportId, existingExportDeviceId = immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
+                                local existingExportId = immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
                                 local exportId
                                 if existingExportId then
-                                    exportId = immich:replaceAsset(existingExportId, pathOrMessage, existingExportDeviceId or deviceAssetIdEdited)
+                                    exportId = immich:replaceAsset(existingExportId, pathOrMessage, deviceAssetIdEdited)
                                 else
                                     exportId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited)
                                 end
@@ -385,14 +390,16 @@ local function processSingleRenditionRenditions(immich, exportContext, progressS
                 end
                 UploadHelpers.safeDeleteTempFile(pathOrMessage)
             else
-                local existingId, existingDeviceId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
+                local existingId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
                     photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
                 local id, errReason = (existingId == nil) and immich:uploadAsset(pathOrMessage, deviceAssetId)
-                    or immich:replaceAsset(existingId, pathOrMessage, existingDeviceId or deviceAssetId)
+                    -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
+                    or immich:replaceAsset(existingId, pathOrMessage, deviceAssetId)
                 if not id then
                     table.insert(failures, photo:getFormattedMetadata("fileName") .. " - " .. (errReason or "Upload failed"))
                 else
                     atLeastSomeSuccess = true
+                    MetadataTask.setImmichAssetId(photo, id)
                     exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
                     if originalFileMode and originalFileMode ~= 'none' then
                         local shouldStack = (originalFileMode == 'all') or (originalFileMode == 'edited' and StackManager.hasEdits(photo, editedPhotosCache))
