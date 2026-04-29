@@ -2,82 +2,64 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this is
+## What This Is
 
-A Lightroom Classic plugin (Lua) that syncs photos between Lightroom and an Immich server via the Immich REST API. It provides Export, Publish Service, and Import from Immich workflows.
+A Lightroom Classic plugin (Lua) that synchronizes photos with an Immich server. It provides three workflows: **Export** (upload selected photos), **Publish** (maintain synced collections), and **Import** (download albums from Immich into Lightroom).
 
-## No traditional build step
+## Development & Build
 
-There is no compile step. The plugin is the `immich-plugin.lrplugin/` directory loaded directly by Lightroom. To test changes, reload the plugin in Lightroom's Plugin Manager or restart Lightroom.
+There is no build step — the plugin runs directly from `immich-plugin.lrplugin/` inside Lightroom Classic. Install it via Lightroom's Plugin Manager pointing at that directory.
 
-**Releases** are created manually via GitHub Actions (`.github/workflows/release.yml`): the workflow zips `immich-plugin.lrplugin/` and publishes a GitHub Release.
+**Releasing** is done via GitHub Actions (`workflow_dispatch` on `.github/workflows/release.yml`), which zips the plugin folder and creates a GitHub release.
 
-## Local Lua environment
+**Testing** is manual: load the plugin in Lightroom Classic and exercise the Export/Publish/Import workflows. Logs are written to Lightroom's log directory; toggle via `_G.prefs.logging` in plugin preferences.
 
-`lua_env/` contains a local Lua 5.1 (LuaJIT) installation built with `hererocks` (`.venv/`). It is gitignored and not used at runtime — Lightroom provides its own Lua interpreter. It can be used for local syntax checks:
+## Architecture
 
-```bash
-source lua_env/bin/activate
-lua immich-plugin.lrplugin/util.lua   # quick syntax check (no LR APIs available)
-```
+### Entry Points
 
-## Plugin architecture
+- **`Info.lua`** — Plugin manifest; declares export providers, menu items, metadata provider, SDK version.
+- **`Init.lua`** — Runs at load; imports Lightroom SDK globals into `_G` (`LrHttp`, `LrTasks`, `LrDialogs`, etc.) and initializes preferences.
 
-All plugin source lives in `immich-plugin.lrplugin/`. Entry points are declared in `Info.lua`:
+### Core Workflow Modules
 
-| Entry point | File |
-|---|---|
-| Plugin init | `Init.lua` |
-| Export service | `ExportServiceProvider.lua` → `ExportDialogSections.lua` + `ExportTask.lua` |
-| Publish service | `PublishServiceProvider.lua` → `PublishDialogSections.lua` + `PublishTask.lua` |
-| Import menu items | `ImportDialog.lua` + `ImportConfiguration.lua` → `ImportServiceProvider.lua` |
-| Custom metadata | `MetadataProvider.lua` + `MetadataTask.lua` |
-| Plugin info/prefs | `PluginInfo.lua` + `PluginInfoDialogSections.lua` |
+- **`ImmichAPI.lua`** — REST API client. Instantiated with `ImmichAPI:new(url, apiKey)`. All HTTP calls go through here using `LrHttp`. 300s timeout for uploads, 30s otherwise. Uses `x-api-key` header.
+- **`ExportTask.lua`** — Export workflow: album resolution → render → upload → metadata write.
+- **`PublishTask.lua`** — Publish workflow: incremental sync, collection management, deletion.
+- **`ImportServiceProvider.lua`** / **`ImportDialog.lua`** — Import workflow: album selection → batched download.
+- **`StackManager.lua`** — Detects edited photos (`hasAdjustments` + `cropped`), uploads originals alongside exports, creates Immich stacks.
+- **`UploadHelpers.lua`** — Shared upload utilities: temp file cleanup (`safeDeleteTempFile`), original/export sorting.
 
-### Global setup (`Init.lua`)
+### UI Modules
 
-`Init.lua` is the only file that calls `import 'Lr*'` for all Lightroom SDK namespaces. Every other file accesses these as globals: `LrHttp`, `LrTasks`, `LrDialogs`, `LrView`, `LrApplication`, etc. It also sets up `_G.log`, `_G.prefs`, `_G.JSON`, and `_G.inspect`.
+- **`SharedDialogSections.lua`** — Reusable dialog sections (server connection, original file options, edit detection). Bind to `propertyTable` and set up observers.
+- **`ExportDialogSections.lua`** / **`PublishDialogSections.lua`** — Extend SharedDialogSections for their respective workflows.
 
-### Core modules
+### Supporting Modules
 
-- **`ImmichAPI.lua`** — Lua class (OO via metatable) wrapping the Immich REST API. Instantiated as `ImmichAPI:new(url, apiKey)`. HTTP calls go through `doGetRequest`, `doPostRequest`, `doCustomRequest`, `doMultiPartPostRequest`. All methods check connectivity before sending. Errors are silent (returns `nil, errReason`) during batch operations to avoid modal dialogs per photo.
+- **`MetadataTask.lua`** / **`MetadataProvider.lua`** — Store/expose Immich asset IDs on photos via plugin metadata (`photo:setPropertyForPlugin`).
+- **`util.lua`** — Table helpers, API key sanitization, edit detection, file extension checks, log path detection.
+- **`ErrorHandler.lua`** — Centralized error dialogs.
+- **`JSON.lua`** / **`inspect.lua`** — External libs for JSON encode/decode and debug printing.
 
-- **`StackManager.lua`** — Handles the "upload original alongside export" stacking feature. Detects edited photos via Lightroom catalog queries (`hasAdjustments`, `cropped`). Builds a cache of edited photo IDs before export for efficiency.
+### Lightroom SDK Patterns Used Throughout
 
-- **`UploadHelpers.lua`** — Shared upload utilities: temp file cleanup, sort order for original+export pairs, and applying Lightroom stack metadata to Immich stacks.
+- **Async tasks**: All API calls and heavy operations run in `LrTasks.startAsyncTask()`.
+- **Property tables**: Dialog state is two-way bound via `LrBinding` to a `propertyTable`.
+- **Progress scopes**: `LrProgressScope` for cancelable multi-step operations.
+- **Error handling**: `LrTasks.pcall()` (not bare `pcall`) is used everywhere to stay compatible with Lightroom's coroutine-based task system.
+- **Preferences**: Global settings (`url`, `apiKey`, `logging`, `importPath`, `importBatchSize`) stored in `LrPrefs.prefsForPlugin()`.
 
-- **`SharedDialogSections.lua`** — UI sections reused by both Export and Publish dialogs: server connection fields (URL + API key + test button) and the original-file/stacking options panel with live observers.
+### Key Data Flow
 
-- **`MetadataTask.lua`** — Reads/writes the `immichAssetId` custom metadata field on Lightroom photos (backed by `MetadataProvider.lua`). Used to skip the Immich existence search on repeat exports.
+1. Dialog opens → `SharedDialogSections` initializes `ImmichAPI`, binds UI to `propertyTable`.
+2. User starts export/publish → `ExportTask`/`PublishTask` iterates renditions.
+3. Per photo: `StackManager` detects edits → `UploadHelpers` sorts originals/exports → `ImmichAPI` uploads and creates stacks → `MetadataTask` writes asset IDs back to the photo.
 
-- **`util.lua`** — Stateless helpers: `util.nilOrEmpty`, `util.getPhotoDeviceId` (UUID → localIdentifier fallback), `util.validateExportContextAndConnect`, `util.reportUploadFailuresAndWarnings`, etc.
+### Album Modes
 
-- **`ErrorHandler.lua`** — Presents a two-row modal (summary + detail) and always logs via `log:error`.
+Export supports modes: `none`, `existing`, `new`, `folder` (dynamic per-folder album), `onexport`. Publish uses Lightroom collection IDs mapped to Immich album IDs.
 
-- **`JSON.lua`** / **`inspect.lua`** — Third-party libraries (Jeffrey Friedl / Enrique García Cota), not to be modified.
+### Photo Identity
 
-### Export vs Publish distinction
-
-Export (`ExportTask.lua`) and Publish (`PublishTask.lua`) share the same upload logic but differ in lifecycle:
-
-- **Export**: one-shot. Album resolved at export time; orphan albums deleted if all uploads fail.
-- **Publish**: Lightroom manages published photo IDs via `rendition:recordPublishedPhotoId`. In publish mode, disk originals are **not** uploaded for the `stackOriginalExport` path when only one rendition arrives — they would become untracked orphans because Lightroom only cleans up assets registered with `recordPublishedPhotoId`.
-
-### Duplicate detection
-
-`ImmichAPI:checkIfAssetExistsEnhanced` runs a three-step search: (1) LR metadata field, (2) Immich `/search/metadata` by `deviceAssetId` (UUID), (3) fallback by filename + creation date. The `deviceAssetId` stored in Immich is the photo's UUID (stable across catalog re-imports), with `_export`, `_orig`, `_edited` suffixes for stacked variants.
-
-### Lightroom SDK conventions
-
-- All blocking operations must run inside `LrTasks.startAsyncTask` or be called from a task context. Use `LrTasks.pcall` (not bare `pcall`) for error-safe calls inside async tasks.
-- UI observers use `propertyTable:addObserver('key', fn)`.
-- Catalog writes require `catalog:withWriteAccessDo` or `catalog:withPrivateWriteAccessDo`.
-- Progress reporting uses `LrProgressScope` tied to `functionContext` (not `exportContext:configureProgress`) so the bar stays alive until all uploads finish.
-
-## Logging
-
-Enable via Plugin Manager → Immich → "Enable logging". Log file location:
-- **LR14+**: `~/Library/Logs/Adobe/Lightroom/LrClassicLogs/ImmichPlugin.log` (macOS)
-- **LR<14**: `~/Documents/LrClassicLogs/ImmichPlugin.log` (macOS)
-
-Use `log:trace(...)`, `log:info(...)`, `log:warn(...)`, `log:error(...)` — all gate on the `prefs.logging` flag.
+Photos are identified by UUID (stable across reimports) with fallback to `localIdentifier` for backward compatibility with older metadata.
