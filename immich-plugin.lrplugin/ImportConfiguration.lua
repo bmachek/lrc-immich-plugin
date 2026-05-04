@@ -1,5 +1,4 @@
-local ImportServiceProvider = require "ImportServiceProvider"
+local ImportServiceProvider = require("ImportServiceProvider")
 local showConfigurationDialog = ImportServiceProvider.showConfigurationDialog
 
 showConfigurationDialog()
-

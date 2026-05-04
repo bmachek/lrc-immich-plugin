@@ -1,4 +1,4 @@
-local ImportServiceProvider = require "ImportServiceProvider"
+local ImportServiceProvider = require("ImportServiceProvider")
 local getImmichAlbums = ImportServiceProvider.getImmichAlbums
 local loadAlbumPhotos = ImportServiceProvider.loadAlbumPhotos
 local getAlbumTitleById = ImportServiceProvider.getAlbumTitleById
@@ -19,52 +19,52 @@ return {
 
         -- Set default selected album
         prefs.selectedAlbum = albums[1] and albums[1].value or nil
-        
+
         -- Create the dialog UI
         local f = LrView.osFactory()
-        local contents = f:column {
+        local contents = f:column({
             bind_to_object = prefs,
             spacing = f:control_spacing(),
             margin = 15,
-            f:group_box {
+            f:group_box({
                 title = "Select Album for Import",
                 fill_horizontal = 1,
-                f:column {
+                f:column({
                     spacing = f:control_spacing(),
                     margin = 5,
-                    f:static_text {
+                    f:static_text({
                         title = "Choose an Immich album to import photos into Lightroom. Only new photos will be downloaded.",
                         alignment = "left",
-                        font = "<system/small>"
-                    },
-                    f:row {
+                        font = "<system/small>",
+                    }),
+                    f:row({
                         margin_top = 10,
-                        f:static_text {
+                        f:static_text({
                             title = "Immich Album:",
-                            alignment = 'right',
-                            width = LrView.share 'label_width',
-                        },
-                        f:popup_menu {
+                            alignment = "right",
+                            width = LrView.share("label_width"),
+                        }),
+                        f:popup_menu({
                             items = albums,
-                            value = LrView.bind('selectedAlbum'),
+                            value = LrView.bind("selectedAlbum"),
                             width = 250,
-                        },
-                    },
-                },
-            },
-        }
+                        }),
+                    }),
+                }),
+            }),
+        })
 
         -- Show the dialog
-        local result = LrDialogs.presentModalDialog {
+        local result = LrDialogs.presentModalDialog({
             title = "Immich Import Album",
             contents = contents,
             actionVerb = "Import",
-        }
+        })
 
-    -- Handle dialog result
-    if result == "ok" and prefs.selectedAlbum then
+        -- Handle dialog result
+        if result == "ok" and prefs.selectedAlbum then
             local albumTitle = getAlbumTitleById(albums, prefs.selectedAlbum)
             loadAlbumPhotos(prefs.selectedAlbum, albumTitle)
         end
-    end)
+    end),
 }

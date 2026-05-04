@@ -1,7 +1,7 @@
-require "ImmichAPI"
-require "StackManager"
-require "UploadHelpers"
-require "MetadataTask"
+require("ImmichAPI")
+require("StackManager")
+require("UploadHelpers")
+require("MetadataTask")
 
 PublishTask = {}
 
@@ -11,7 +11,7 @@ PublishTask = {}
 local function resolvePublishAlbum(immich, exportContext)
     local publishedCollection = exportContext.publishedCollection
     local collectionSettings = publishedCollection:getCollectionInfoSummary().collectionSettings
-    local albumCreationStrategy = collectionSettings.albumCreationStrategy or 'collection'
+    local albumCreationStrategy = collectionSettings.albumCreationStrategy or "collection"
     local albumId = publishedCollection and publishedCollection:getRemoteId()
     local albumName = publishedCollection and publishedCollection:getName()
     local albumAssetIds = nil
@@ -19,7 +19,7 @@ local function resolvePublishAlbum(immich, exportContext)
 
     log:trace("Album creation strategy used: " .. albumCreationStrategy)
 
-    if albumCreationStrategy == 'collection' or albumCreationStrategy == 'existing' then
+    if albumCreationStrategy == "collection" or albumCreationStrategy == "existing" then
         if albumId and immich:checkIfAlbumExists(albumId) then
             albumAssetIds = immich:getAlbumAssetIds(albumId)
             exportSession:recordRemoteCollectionId(albumId)
@@ -37,9 +37,11 @@ end
 --------------------------------------------------------------------------------
 -- Add asset to album (publish logic: folder vs collection/existing).
 local function addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, assetId, folderName)
-    if albumCreationStrategy == 'folder' then
+    if albumCreationStrategy == "folder" then
         local folderAlbumId = immich:createOrGetAlbumFolderBased(folderName)
-        if folderAlbumId then immich:addAssetToAlbum(folderAlbumId, assetId) end
+        if folderAlbumId then
+            immich:addAssetToAlbum(folderAlbumId, assetId)
+        end
     elseif albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, assetId)) then
         immich:addAssetToAlbum(albumId, assetId)
     end
@@ -47,9 +49,21 @@ end
 
 --------------------------------------------------------------------------------
 -- Process one photo group in original+export publish flow. Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
-local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStrategy, albumId, albumAssetIds,
-    failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
-    if not items or not items[1] then return end
+local function processPublishOnePhotoGroup(
+    immich,
+    lid,
+    items,
+    albumCreationStrategy,
+    albumId,
+    albumAssetIds,
+    failures,
+    stackWarnings,
+    atLeastSomeSuccess,
+    exportedPrimaryByPhoto
+)
+    if not items or not items[1] then
+        return
+    end
     local photo = items[1].photo
     local filename = photo:getFormattedMetadata("fileName")
     local dateCreated = photo:getFormattedMetadata("dateCreated")
@@ -62,17 +76,20 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
             -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
             local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
             local deviceAssetId = lid .. suffix
-            local id, errReason = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            local id, errReason =
+                StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
                 table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
             else
                 atLeastSomeSuccess[1] = true
                 table.insert(assetIds, id)
-                if primaryId == nil then primaryId = id end
+                if primaryId == nil then
+                    primaryId = id
+                end
                 item.rendition:recordPublishedPhotoId(id)
                 item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-                log:info('original+export [' .. filename .. ']: ' .. deviceAssetId .. ' -> ' .. id)
+                log:info("original+export [" .. filename .. "]: " .. deviceAssetId .. " -> " .. id)
             end
         end
         if #assetIds >= 2 and primaryId then
@@ -83,8 +100,14 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         if primaryId then
             MetadataTask.setImmichAssetId(photo, primaryId)
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
-            addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
-                photo:getFormattedMetadata("folderName"))
+            addAssetToPublishAlbum(
+                immich,
+                albumCreationStrategy,
+                albumId,
+                albumAssetIds,
+                primaryId,
+                photo:getFormattedMetadata("folderName")
+            )
         end
     elseif #items == 1 then
         -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
@@ -96,8 +119,11 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
         -- registered via recordPublishedPhotoId). Warn instead.
         local item = items[1]
         local deviceAssetId = lid .. "_export"
-        log:info('original+export [' .. filename .. ']: single rendition, uploading as export (' .. deviceAssetId .. ')')
-        local id, errReason = StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+        log:info(
+            "original+export [" .. filename .. "]: single rendition, uploading as export (" .. deviceAssetId .. ")"
+        )
+        local id, errReason =
+            StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
             table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -109,12 +135,21 @@ local function processPublishOnePhotoGroup(immich, lid, items, albumCreationStra
             item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
             -- Warn once per publish run (not once per photo) to keep the post-publish dialog concise.
             if not stackWarnings._originalNotUploadedWarned then
-                table.insert(stackWarnings, "Originals not uploaded in publish mode to avoid untracked orphans in Immich (applies to all photos in this run)")
+                table.insert(
+                    stackWarnings,
+                    "Originals not uploaded in publish mode to avoid untracked orphans in Immich (applies to all photos in this run)"
+                )
                 stackWarnings._originalNotUploadedWarned = true
             end
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
-            addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, albumAssetIds, primaryId,
-                photo:getFormattedMetadata("folderName"))
+            addAssetToPublishAlbum(
+                immich,
+                albumCreationStrategy,
+                albumId,
+                albumAssetIds,
+                primaryId,
+                photo:getFormattedMetadata("folderName")
+            )
         end
     end
 end
@@ -125,16 +160,27 @@ end
 -- proportionally to real work done. LR_exportOriginalFile is never set, so LR
 -- always delivers exactly one rendition per photo; the disk original is fetched
 -- inside processPublishOnePhotoGroup (or skipped for orphan safety in publish mode).
-local function processPublishStackOriginalExportRenditions(immich, exportContext, progressScope, nPhotos,
-    albumCreationStrategy, albumId, albumAssetIds)
+local function processPublishStackOriginalExportRenditions(
+    immich,
+    exportContext,
+    progressScope,
+    nPhotos,
+    albumCreationStrategy,
+    albumId,
+    albumAssetIds
+)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
     local exportedPrimaryByPhoto = {}
     local done = 0
-    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
-        if progressScope:isCanceled() then break end
+    for _, rendition in exportContext:renditions({ stopIfCanceled = true }) do
+        if progressScope:isCanceled() then
+            break
+        end
         local success, pathOrMessage = rendition:waitForRender()
-        if progressScope:isCanceled() then break end
+        if progressScope:isCanceled() then
+            break
+        end
         if success then
             -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
             local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
@@ -146,35 +192,58 @@ local function processPublishStackOriginalExportRenditions(immich, exportContext
                 rendition = rendition,
                 role = "export",
             }
-            processPublishOnePhotoGroup(immich, lid, { item }, albumCreationStrategy, albumId, albumAssetIds,
-                failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto)
+            processPublishOnePhotoGroup(
+                immich,
+                lid,
+                { item },
+                albumCreationStrategy,
+                albumId,
+                albumAssetIds,
+                failures,
+                stackWarnings,
+                atLeastSomeSuccess,
+                exportedPrimaryByPhoto
+            )
         end
         -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
         done = done + 1
         progressScope:setPortionComplete(done, nPhotos)
         if done == 1 or done % 10 == 0 or done == nPhotos then
-            log:info('Publish progress: ' .. done .. '/' .. nPhotos
-                .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
+            log:info("Publish progress: " .. done .. "/" .. nPhotos .. " (" .. math.floor(done * 100 / nPhotos) .. "%)")
         end
     end
     return failures, stackWarnings, atLeastSomeSuccess[1], exportedPrimaryByPhoto
 end
 
 --------------------------------------------------------------------------------
-local function processPublishSingleRenditionRenditions(immich, exportContext, progressScope, nPhotos, exportParams,
-    albumCreationStrategy, albumId, albumAssetIds)
+local function processPublishSingleRenditionRenditions(
+    immich,
+    exportContext,
+    progressScope,
+    nPhotos,
+    exportParams,
+    albumCreationStrategy,
+    albumId,
+    albumAssetIds
+)
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = false
     local exportedPrimaryByPhoto = {}
     local done = 0
-    for _, rendition in exportContext:renditions { stopIfCanceled = true } do
+    for _, rendition in exportContext:renditions({ stopIfCanceled = true }) do
         local success, pathOrMessage = rendition:waitForRender()
-        if progressScope:isCanceled() then break end
+        if progressScope:isCanceled() then
+            break
+        end
         if success then
             local photo = rendition.photo
             local deviceAssetId = util.getPhotoDeviceId(photo)
-            local existingId = immich:checkIfAssetExistsEnhanced(photo, deviceAssetId,
-                photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated"))
+            local existingId = immich:checkIfAssetExistsEnhanced(
+                photo,
+                deviceAssetId,
+                photo:getFormattedMetadata("fileName"),
+                photo:getFormattedMetadata("dateCreated")
+            )
             local id, errReason
             if existingId == nil then
                 id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId)
@@ -185,17 +254,22 @@ local function processPublishSingleRenditionRenditions(immich, exportContext, pr
             end
 
             if not id then
-                table.insert(failures, photo:getFormattedMetadata("fileName") .. " (" .. (errReason or "Upload failed") .. ")")
+                table.insert(
+                    failures,
+                    photo:getFormattedMetadata("fileName") .. " (" .. (errReason or "Upload failed") .. ")"
+                )
             else
                 atLeastSomeSuccess = true
                 MetadataTask.setImmichAssetId(photo, id)
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
                 exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
-                if albumCreationStrategy == 'folder' then
+                if albumCreationStrategy == "folder" then
                     local folderName = rendition.photo:getFormattedMetadata("folderName")
                     local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
-                    if folderBasedAlbumId then immich:addAssetToAlbum(folderBasedAlbumId, id) end
+                    if folderBasedAlbumId then
+                        immich:addAssetToAlbum(folderBasedAlbumId, id)
+                    end
                 else
                     if albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, id)) then
                         immich:addAssetToAlbum(albumId, id)
@@ -208,29 +282,52 @@ local function processPublishSingleRenditionRenditions(immich, exportContext, pr
         done = done + 1
         progressScope:setPortionComplete(done, nPhotos)
         if done == 1 or done % 10 == 0 or done == nPhotos then
-            log:info('Publish progress: ' .. done .. '/' .. nPhotos
-                .. ' (' .. math.floor(done * 100 / nPhotos) .. '%)')
+            log:info("Publish progress: " .. done .. "/" .. nPhotos .. " (" .. math.floor(done * 100 / nPhotos) .. "%)")
         end
     end
     return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
 end
 
 --------------------------------------------------------------------------------
-local function runPublishExport(immich, exportContext, progressScope, nPhotos, exportParams,
-    albumCreationStrategy, albumId, albumAssetIds)
+local function runPublishExport(
+    immich,
+    exportContext,
+    progressScope,
+    nPhotos,
+    exportParams,
+    albumCreationStrategy,
+    albumId,
+    albumAssetIds
+)
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     local useStacking = exportParams.stackOriginalExport
     local mode = exportParams.originalFileMode
-    if mode == 'edited' or mode == 'all' or mode == 'original_plus_jpeg_if_edited' or mode == 'original_only' then
+    if mode == "edited" or mode == "all" or mode == "original_plus_jpeg_if_edited" or mode == "original_only" then
         useStacking = true
     end
 
     if useStacking then
-        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishStackOriginalExportRenditions(
-            immich, exportContext, progressScope, nPhotos, albumCreationStrategy, albumId, albumAssetIds)
+        failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto =
+            processPublishStackOriginalExportRenditions(
+                immich,
+                exportContext,
+                progressScope,
+                nPhotos,
+                albumCreationStrategy,
+                albumId,
+                albumAssetIds
+            )
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
-            immich, exportContext, progressScope, nPhotos, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+            immich,
+            exportContext,
+            progressScope,
+            nPhotos,
+            exportParams,
+            albumCreationStrategy,
+            albumId,
+            albumAssetIds
+        )
     end
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
         UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
@@ -242,15 +339,26 @@ end
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
     local exportSession, exportParams, immich = util.validateExportContextAndConnect(exportContext, "Publish")
-    if not exportSession then return nil end
+    if not exportSession then
+        return nil
+    end
 
     local albumCreationStrategy, albumId, albumAssetIds = resolvePublishAlbum(immich, exportContext)
 
     local nPhotos = exportSession:countRenditions()
-    log:info('=== Publish START: ' .. nPhotos .. ' photos | url=' .. tostring(exportParams.url)
-        .. ' | stackOriginalExport=' .. tostring(exportParams.stackOriginalExport)
-        .. ' | stackLrStacks=' .. tostring(exportParams.stackLrStacks)
-        .. ' | albumCreationStrategy=' .. tostring(albumCreationStrategy) .. ' ===')
+    log:info(
+        "=== Publish START: "
+            .. nPhotos
+            .. " photos | url="
+            .. tostring(exportParams.url)
+            .. " | stackOriginalExport="
+            .. tostring(exportParams.stackOriginalExport)
+            .. " | stackLrStacks="
+            .. tostring(exportParams.stackLrStacks)
+            .. " | albumCreationStrategy="
+            .. tostring(albumCreationStrategy)
+            .. " ==="
+    )
 
     local progressTitle = (prefs and prefs.url and prefs.url ~= "") and prefs.url or "Immich"
     -- Use LrProgressScope tied to functionContext rather than exportContext:configureProgress.
@@ -258,28 +366,44 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     -- when rendering completes — potentially long before all uploads are done. LrProgressScope
     -- with functionContext stays alive until processRenderedPhotos returns, and is not advanced
     -- by LR's render thread, eliminating both early-close and forward→0→return race conditions.
-    local progressScope = LrProgressScope {
+    local progressScope = LrProgressScope({
         title = util.buildSimpleUploadProgressTitle(nPhotos, "Publishing", progressTitle),
         functionContext = functionContext,
-    }
+    })
 
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = runPublishExport(
-        immich, exportContext, progressScope, nPhotos, exportParams, albumCreationStrategy, albumId, albumAssetIds)
+        immich,
+        exportContext,
+        progressScope,
+        nPhotos,
+        exportParams,
+        albumCreationStrategy,
+        albumId,
+        albumAssetIds
+    )
     progressScope:done()
 
-    log:info('=== Publish DONE: ' .. nPhotos .. ' photos | failures=' .. #failures
-        .. ' | warnings=' .. #stackWarnings .. ' ===')
+    log:info(
+        "=== Publish DONE: "
+            .. nPhotos
+            .. " photos | failures="
+            .. #failures
+            .. " | warnings="
+            .. #stackWarnings
+            .. " ==="
+    )
     util.reportUploadFailuresAndWarnings(failures, stackWarnings)
 end
 
-function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, commentText)
-end
+function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, commentText) end
 
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
-            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        ErrorHandler.handleError(
+            "Immich connection not working. Check URL and API key in plugin settings.",
+            "Immich connection not working, probably due to wrong url and/or apiKey. Export stopped."
+        )
         return nil
     end
 
@@ -291,67 +415,83 @@ function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOf
         for j, publishedCollection in ipairs(publishedCollections) do
             -- Check if the published collection is an Immich collection and still exists on the server.
             if string.sub(publishedCollection:getService():getPluginId(), 1, -3) == _PLUGIN.id then
-                log:trace('publishedCollection : ' .. publishedCollection:getName() .. " is an Immich collection.")
+                log:trace("publishedCollection : " .. publishedCollection:getName() .. " is an Immich collection.")
                 if immich:checkIfAlbumExists(publishedCollection:getRemoteId()) then
                     log:trace("... and it exists on the server.")
                     -- Get activities for the photo in the published collection.
-                    local activities = immich:getActivities(publishedCollection:getRemoteId(),
-                        photoInfo.publishedPhoto:getRemoteId())
+                    local activities =
+                        immich:getActivities(publishedCollection:getRemoteId(), photoInfo.publishedPhoto:getRemoteId())
                     if activities and type(activities) == "table" then
                         for k, activity in ipairs(activities) do
                             if activity and activity.createdAt then
                                 local comment = {}
 
-                                local year, month, day, hour, minute = string.sub(activity.createdAt, 1, 15):match(
-                                "(%d+)%-(%d+)%-(%d+)%a(%d+)%:(%d+)")
+                                local year, month, day, hour, minute =
+                                    string.sub(activity.createdAt, 1, 15):match("(%d+)%-(%d+)%-(%d+)%a(%d+)%:(%d+)")
 
                                 if year and month and day and hour and minute then
                                     -- Convert from date string to EPOC to COCOA
-                                    comment.dateCreated = os.time { year = year, month = month, day = day, hour = hour, min = minute } - 978307200
+                                    comment.dateCreated = os.time({
+                                        year = year,
+                                        month = month,
+                                        day = day,
+                                        hour = hour,
+                                        min = minute,
+                                    }) - 978307200
                                 end
                                 comment.commentId = activity.id
                                 comment.username = (activity.user and activity.user.email) or ""
                                 comment.realname = (activity.user and activity.user.name) or ""
 
-                                if activity.type == 'comment' then
-                                    comment.commentText = activity.comment or ''
+                                if activity.type == "comment" then
+                                    comment.commentText = activity.comment or ""
                                     table.insert(comments, comment)
-                                elseif activity.type == 'like' then
-                                    comment.commentText = 'Like'
+                                elseif activity.type == "like" then
+                                    comment.commentText = "Like"
                                     table.insert(comments, comment)
                                 end
                             end
-                         end
+                        end
                     end
                 end
             end
         end
 
         -- Call Lightroom's callback function to register comments.
-        commentCallback { publishedPhoto = photoInfo, comments = comments }
+        commentCallback({ publishedPhoto = photoInfo, comments = comments })
     end
 end
 
-function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayOfPhotoIds, deletedCallback, localCollectionId)
+function PublishTask.deletePhotosFromPublishedCollection(
+    publishSettings,
+    arrayOfPhotoIds,
+    deletedCallback,
+    localCollectionId
+)
     if util.nilOrEmpty(publishSettings.url) or util.nilOrEmpty(publishSettings.apiKey) then
-        ErrorHandler.handleError('Configure Immich in plugin settings.', 'deletePhotosFromPublishedCollection: URL or API key not set')
+        ErrorHandler.handleError(
+            "Configure Immich in plugin settings.",
+            "deletePhotosFromPublishedCollection: URL or API key not set"
+        )
         return nil
     end
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
-            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        ErrorHandler.handleError(
+            "Immich connection not working. Check URL and API key in plugin settings.",
+            "Immich connection not working, probably due to wrong url and/or apiKey. Export stopped."
+        )
         return nil
     end
 
     local delete = LrDialogs.promptForActionWithDoNotShow({
-        actionPrefKey = 'immichDeletePhotosTrashBehavior',
-        message = 'Delete photos',
-        info = 'Should removed photos be trashed in Immich?',
+        actionPrefKey = "immichDeletePhotosTrashBehavior",
+        message = "Delete photos",
+        info = "Should removed photos be trashed in Immich?",
         verbBtns = {
-            { verb = 'no', label = 'No' },
-            { verb = 'only_if_not_in_album', label = 'If not included in any album' },
-            { verb = 'always', label = 'Yes (dangerous!)' },
+            { verb = "no", label = "No" },
+            { verb = "only_if_not_in_album", label = "If not included in any album" },
+            { verb = "always", label = "Yes (dangerous!)" },
         },
     })
     if delete == nil then
@@ -360,12 +500,18 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
 
     local catalog = LrApplication.activeCatalog()
     if not catalog then
-        ErrorHandler.handleError('Lightroom catalog not available.', 'deletePhotosFromPublishedCollection: cannot access catalog')
+        ErrorHandler.handleError(
+            "Lightroom catalog not available.",
+            "deletePhotosFromPublishedCollection: cannot access catalog"
+        )
         return nil
     end
     local publishedCollection = catalog:getPublishedCollectionByLocalIdentifier(localCollectionId)
     if not publishedCollection then
-        ErrorHandler.handleError('Collection not found.', 'deletePhotosFromPublishedCollection: published collection not found')
+        ErrorHandler.handleError(
+            "Collection not found.",
+            "deletePhotosFromPublishedCollection: published collection not found"
+        )
         return nil
     end
     local publishedPhotos = publishedCollection:getPublishedPhotos()
@@ -381,12 +527,13 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
             log:trace("Photo is in folder: " .. folderName)
 
             local albumId = nil
-            local albumCreationStrategy = publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
+            local albumCreationStrategy =
+                publishedCollection:getCollectionInfoSummary().collectionSettings.albumCreationStrategy
             if albumCreationStrategy == nil then
-                albumCreationStrategy = 'collection' -- Default strategy for old collections.
+                albumCreationStrategy = "collection" -- Default strategy for old collections.
             end
 
-            if albumCreationStrategy == 'folder' then
+            if albumCreationStrategy == "folder" then
                 local albums = immich:getAlbumsByNameFolderBased(folderName)
                 log:trace("Album found for folder based strategy: " .. util.dumpTable(albums))
                 if albums ~= nil and #albums == 1 then
@@ -406,16 +553,19 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
             end
 
             local deletionSuccess = true
-            if delete == 'always' then
+            if delete == "always" then
                 deletionSuccess = immich:deleteAsset(photoRemoteId)
-            elseif delete == 'only_if_not_in_album' then
+            elseif delete == "only_if_not_in_album" then
                 if not immich:checkIfAssetIsInAnAlbum(photoRemoteId) then
                     deletionSuccess = immich:deleteAsset(photoRemoteId)
                 end
             end
             -- delete == 'no': only remove from album, do not trash
             if not deletionSuccess then
-                ErrorHandler.handleError('Failed to delete asset (check logs)', 'Failed to delete asset ' .. photoRemoteId .. ' from Immich')
+                ErrorHandler.handleError(
+                    "Failed to delete asset (check logs)",
+                    "Failed to delete asset " .. photoRemoteId .. " from Immich"
+                )
             end
 
             if removeFromAlbumSuccess and deletionSuccess then
@@ -425,31 +575,39 @@ function PublishTask.deletePhotosFromPublishedCollection(publishSettings, arrayO
         end
     end
 
-
-
     if #notExistingAlbums > 0 then
-        LrDialogs.message('Some albums not found', 'The following albums were not found on the Immich server, but the photos were removed from the collection: \n' ..
-            table.concat(notExistingAlbums, "\n"), 'info')
+        LrDialogs.message(
+            "Some albums not found",
+            "The following albums were not found on the Immich server, but the photos were removed from the collection: \n"
+                .. table.concat(notExistingAlbums, "\n"),
+            "info"
+        )
     end
 end
 
 function PublishTask.deletePublishedCollection(publishSettings, info)
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
-            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        ErrorHandler.handleError(
+            "Immich connection not working. Check URL and API key in plugin settings.",
+            "Immich connection not working, probably due to wrong url and/or apiKey. Export stopped."
+        )
         return nil
     end
 
     -- remoteId is nil, if the collection isn't yet published.
-    if info.remoteId ~= nil and info.remoteId ~= '' then
+    if info.remoteId ~= nil and info.remoteId ~= "" then
         if not immich:checkIfAlbumExists(info.remoteId) then
-            log:trace('deletePublishedCollection: album does not exist on server, skip delete: ' .. tostring(info.remoteId))
+            log:trace(
+                "deletePublishedCollection: album does not exist on server, skip delete: " .. tostring(info.remoteId)
+            )
         else
             local ok = immich:deleteAlbum(info.remoteId)
             if not ok then
-                ErrorHandler.handleError('Could not delete album on Immich. Check logs.',
-                    'deletePublishedCollection: failed to delete album ' .. tostring(info.remoteId))
+                ErrorHandler.handleError(
+                    "Could not delete album on Immich. Check logs.",
+                    "deletePublishedCollection: failed to delete album " .. tostring(info.remoteId)
+                )
             end
         end
     end
@@ -458,17 +616,21 @@ end
 function PublishTask.renamePublishedCollection(publishSettings, info)
     local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
     if not immich:checkConnectivity() then
-        ErrorHandler.handleError('Immich connection not working. Check URL and API key in plugin settings.',
-            'Immich connection not working, probably due to wrong url and/or apiKey. Export stopped.')
+        ErrorHandler.handleError(
+            "Immich connection not working. Check URL and API key in plugin settings.",
+            "Immich connection not working, probably due to wrong url and/or apiKey. Export stopped."
+        )
         return nil
     end
 
     -- remoteId is nil, if the collection isn't yet published.
-    if info.remoteId ~= nil and info.remoteId ~= '' and info.name and info.name ~= '' then
+    if info.remoteId ~= nil and info.remoteId ~= "" and info.name and info.name ~= "" then
         local ok = immich:renameAlbum(info.remoteId, info.name)
         if not ok then
-            ErrorHandler.handleError('Could not rename album on Immich. Check logs.',
-                'renamePublishedCollection: failed to rename album ' .. tostring(info.remoteId))
+            ErrorHandler.handleError(
+                "Could not rename album on Immich. Check logs.",
+                "renamePublishedCollection: failed to rename album " .. tostring(info.remoteId)
+            )
         end
     end
 end
@@ -478,12 +640,12 @@ function PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog(publishSet
 end
 
 function PublishTask.validatePublishedCollectionName(name)
-    return true, '' -- TODO
+    return true, "" -- TODO
 end
 
 function PublishTask.getCollectionBehaviorInfo(publishSettings)
     return {
-        defaultCollectionName = 'default',
+        defaultCollectionName = "default",
         defaultCollectionCanBeDeleted = true,
         canAddCollection = true,
         -- Allow unlimited depth of collection sets, as requested by user.
@@ -491,13 +653,12 @@ function PublishTask.getCollectionBehaviorInfo(publishSettings)
     }
 end
 
-
 function PublishTask.viewForCollectionSettings(f, publishSettings, info)
     if info.publishedCollection ~= nil then
-        return f:row {} -- No settings for existing published collections.
+        return f:row({}) -- No settings for existing published collections.
     end
 
-    info.pluginContext.albumCreationStrategy = 'collection'
+    info.pluginContext.albumCreationStrategy = "collection"
     info.pluginContext.selectedAlbum = 0
     info.pluginContext.immichAlbums = { { title = "Please select", value = 0 } }
 
@@ -514,37 +675,37 @@ function PublishTask.viewForCollectionSettings(f, publishSettings, info)
     local share = LrView.share
     local bind = LrView.bind
 
-    local result = f:group_box {
+    local result = f:group_box({
         bind_to_object = info.pluginContext,
         title = "Immich Album Settings",
         fill_horizontal = 1,
-        f:column {
-            spacing = share 'inter_control_spacing',
-            f:radio_button {
+        f:column({
+            spacing = share("inter_control_spacing"),
+            f:radio_button({
                 title = "Create new album from collection name",
-                checked_value = 'collection',
-                value = bind 'albumCreationStrategy',
-            },
-            f:radio_button {
+                checked_value = "collection",
+                value = bind("albumCreationStrategy"),
+            }),
+            f:radio_button({
                 title = "Create albums based on folder names",
-                checked_value = 'folder',
-                value = bind 'albumCreationStrategy',
-            },
-            f:row {
-                f:radio_button {
+                checked_value = "folder",
+                value = bind("albumCreationStrategy"),
+            }),
+            f:row({
+                f:radio_button({
                     title = "Use existing album",
-                    checked_value = 'existing',
-                    value = bind 'albumCreationStrategy',
-                },
-                f:popup_menu {
-                    items = bind 'immichAlbums',
-                    value = bind 'selectedAlbum', -- Preselect "Please select"
-                    width = share "field_width",
-                    enabled = bind('albumCreationStrategy', { 'existing' }),
-                },
-            },
-        }
-    }
+                    checked_value = "existing",
+                    value = bind("albumCreationStrategy"),
+                }),
+                f:popup_menu({
+                    items = bind("immichAlbums"),
+                    value = bind("selectedAlbum"), -- Preselect "Please select"
+                    width = share("field_width"),
+                    enabled = bind("albumCreationStrategy", { "existing" }),
+                }),
+            }),
+        }),
+    })
 
     return result
 end
@@ -554,11 +715,11 @@ function PublishTask.endDialogForCollectionSettings(publishSettings, info)
     local props = info.pluginContext
     if info.why == "ok" then
         if props.albumCreationStrategy ~= nil then
-            if props.albumCreationStrategy == 'existing' and props.selectedAlbum ~= 0 then
+            if props.albumCreationStrategy == "existing" and props.selectedAlbum ~= 0 then
                 log:trace("User selected to bind collection to existing album with id " .. props.selectedAlbum)
-                info.collectionSettings.albumCreationStrategy = 'existing'
+                info.collectionSettings.albumCreationStrategy = "existing"
                 info.collectionSettings.remoteId = props.selectedAlbum
-            elseif props.albumCreationStrategy == 'existing' and props.selectedAlbum == 0 then
+            elseif props.albumCreationStrategy == "existing" and props.selectedAlbum == 0 then
                 ErrorHandler.handleError("No album selected", "No album selected")
             else
                 log:trace("Setting album creation strategy to: " .. props.albumCreationStrategy)
@@ -566,7 +727,7 @@ function PublishTask.endDialogForCollectionSettings(publishSettings, info)
             end
         elseif info.collectionSettings.albumCreationStrategy == nil then
             log:trace("No album creation strategy set, defaulting to 'collection'")
-            info.collectionSettings.albumCreationStrategy = 'collection' -- Default strategy for old collections.
+            info.collectionSettings.albumCreationStrategy = "collection" -- Default strategy for old collections.
         else
             log:trace("Keeping existing album creation strategy: " .. info.collectionSettings.albumCreationStrategy)
         end
@@ -579,7 +740,7 @@ function PublishTask.updateCollectionSettings(publishSettings, info)
         return
     end
     local props = info.collectionSettings
-    if props.albumCreationStrategy == 'existing' and props.remoteId then
+    if props.albumCreationStrategy == "existing" and props.remoteId then
         local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
         if not immich:checkConnectivity() then
             log:warn("updateCollectionSettings: Immich connection not available")

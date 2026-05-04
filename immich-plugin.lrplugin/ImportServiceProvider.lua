@@ -1,4 +1,4 @@
-require "ImmichAPI"
+require("ImmichAPI")
 
 -- Constants
 local TITLES = {
@@ -22,10 +22,10 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
         return
     end
 
-    local progressScope = LrProgressScope {
+    local progressScope = LrProgressScope({
         title = TITLES.DOWNLOAD_PROGRESS,
         caption = "Starting...",
-    }
+    })
 
     local completedTasks = 0
     local totalTasks = #albumAssets
@@ -49,7 +49,7 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
                 else
                     LrDialogs.message("Error", TITLES.ERROR_SAVE_FILE, "critical")
                 end
-                
+
                 -- Explicitly free the huge asset string from memory
                 assetData = nil
                 collectgarbage("collect")
@@ -71,7 +71,7 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
                         else
                             LrDialogs.message("Error", TITLES.ERROR_SAVE_FILE, "critical")
                         end
-                        
+
                         -- Explicitly free the huge video string from memory
                         livePhotoVideoData = nil
                         collectgarbage("collect")
@@ -86,7 +86,14 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
 
             -- Update progress in real-time
             progressScope:setPortionComplete(completedTasks, totalTasks)
-            progressScope:setCaption(string.format("Downloading %s (%d of %d)", asset.originalFileName or "asset", completedTasks, totalTasks))
+            progressScope:setCaption(
+                string.format(
+                    "Downloading %s (%d of %d)",
+                    asset.originalFileName or "asset",
+                    completedTasks,
+                    totalTasks
+                )
+            )
         end)
     end
 
@@ -133,7 +140,7 @@ local function loadAlbumPhotos(albumId, albumTitle)
     LrTasks.startAsyncTask(function()
         local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
         local catalog = LrApplication.activeCatalog()
-    
+
         -- Create parent directory first. Fix for #66
         local importDirectory = prefs.importPath
         if not LrFileUtils.exists(importDirectory) then
@@ -144,13 +151,12 @@ local function loadAlbumPhotos(albumId, albumTitle)
         if not LrFileUtils.exists(myPath) then
             LrFileUtils.createDirectory(myPath)
         end
-    
+
         -- Download album assets
         downloadAlbumAssets(immichAPI, albumId, myPath)
-    
+
         -- Import assets into Lightroom
         catalog:triggerImportUI(myPath)
-
     end)
 end
 
@@ -179,163 +185,168 @@ local function showConfigurationDialog()
             propertyTable.importPath = prefs.importPath
         end
 
-    local contents = f:column {
-        bind_to_object = propertyTable,
-        spacing = f:control_spacing(),
-        f:row {
-            f:static_text {
-                title = "URL:",
-                alignment = 'right',
-                width = share 'labelWidth'
-            },
-            f:edit_field {
-                value = bind 'url',
-                truncation = 'middle',
-                immediate = false,
-                fill_horizontal = 1,
-                width_in_chars = 28,
-                validate = function (v, url)
-                    local sanitizedURL = ImmichAPI:sanityCheckAndFixURL(url)
-                    if sanitizedURL == false then
-                        return false, url, "URL must not be empty. Example: https://demo.immich.app"
-                    end
-                    if sanitizedURL == nil then
-                        return false, url, 'Entered URL not valid.\nShould look like https://demo.immich.app'
-                    end
-                    if sanitizedURL == url or (type(url) == "string" and sanitizedURL == url:match("^%s*(.-)%s*$")) then
-                        return true, sanitizedURL, ''
-                    end
-                    LrDialogs.message('Entered URL was autocorrected to ' .. sanitizedURL)
-                    return true, sanitizedURL, ''
-                end,
-            },
-            f:push_button {
-                title = 'Test connection',
-                action = function(button)
-                    LrTasks.startAsyncTask(function()
-                        local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
-                        if immich:checkConnectivity() then
-                            LrDialogs.message('Connection test successful')
-                        else
-                            LrDialogs.message('Connection test NOT successful')
+        local contents = f:column({
+            bind_to_object = propertyTable,
+            spacing = f:control_spacing(),
+            f:row({
+                f:static_text({
+                    title = "URL:",
+                    alignment = "right",
+                    width = share("labelWidth"),
+                }),
+                f:edit_field({
+                    value = bind("url"),
+                    truncation = "middle",
+                    immediate = false,
+                    fill_horizontal = 1,
+                    width_in_chars = 28,
+                    validate = function(v, url)
+                        local sanitizedURL = ImmichAPI:sanityCheckAndFixURL(url)
+                        if sanitizedURL == false then
+                            return false, url, "URL must not be empty. Example: https://demo.immich.app"
                         end
-                    end)
-                end,
-            },
-        },
-
-        f:row {
-            f:static_text {
-                title = "API Key:",
-                alignment = 'right',
-                width = share 'labelWidth',
-                visible = bind 'hasNoError',
-            },
-            f:password_field {
-                value = bind 'apiKey',
-                truncation = 'middle',
-                immediate = true,
-                fill_horizontal = 1,
-                width_in_chars = 28,
-            },
-        },
-
-        f:row {
-            f:static_text {
-                title = "Import Path:",
-                alignment = 'right',
-                width = share 'labelWidth',
-            },
-            f:edit_field {
-                value = bind 'importPath',
-                truncation = 'middle',
-                immediate = false,
-                fill_horizontal = 1,
-                width_in_chars = 28,
-                validate = function (v, path)
-                    if path and path ~= "" then
-                        if LrFileUtils.exists(path) then
-                            return true, path, ''
-                        else
-                            return false, path, 'Selected path does not exist'
+                        if sanitizedURL == nil then
+                            return false, url, "Entered URL not valid.\nShould look like https://demo.immich.app"
                         end
-                    end
-                    return true, path, ''
-                end,
-            },
-            f:push_button {
-                title = 'Browse...',
-                action = function(button)
-                    local directory = LrDialogs.runOpenPanel({
-                        title = "Choose Import Directory",
-                        prompt = "Select",
-                        canChooseFiles = false,
-                        canChooseDirectories = true,
-                        canCreateDirectories = true,
-                        allowsMultipleSelection = false,
-                    })
-                    if directory and directory[1] then
-                        log:info("User selected import path: " .. directory[1])
-                        propertyTable.importPath = directory[1]
-                    else
-                        log:info("User cancelled folder selection")
-                    end
-                end,
-            },
-        },
+                        if
+                            sanitizedURL == url or (type(url) == "string" and sanitizedURL == url:match("^%s*(.-)%s*$"))
+                        then
+                            return true, sanitizedURL, ""
+                        end
+                        LrDialogs.message("Entered URL was autocorrected to " .. sanitizedURL)
+                        return true, sanitizedURL, ""
+                    end,
+                }),
+                f:push_button({
+                    title = "Test connection",
+                    action = function(button)
+                        LrTasks.startAsyncTask(function()
+                            local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+                            if immich:checkConnectivity() then
+                                LrDialogs.message("Connection test successful")
+                            else
+                                LrDialogs.message("Connection test NOT successful")
+                            end
+                        end)
+                    end,
+                }),
+            }),
 
-        f:row {
-            f:static_text {
-                title = "Import Batch Size:",
-                alignment = 'right',
-                width = share 'labelWidth',
-            },
-            f:edit_field {
-                value = bind 'importBatchSize',
-                width_in_chars = 5,
-                immediate = false,
-                validate = function(_, value)
-                    local n = tonumber(value)
-                    if not n or n < 1 then
-                        return false, value, "Batch size must be a positive integer (>= 1)."
-                    end
-                    return true, tostring(math.floor(n + 0.5)), ""
-                end,
-            },
-        },
-    }
+            f:row({
+                f:static_text({
+                    title = "API Key:",
+                    alignment = "right",
+                    width = share("labelWidth"),
+                    visible = bind("hasNoError"),
+                }),
+                f:password_field({
+                    value = bind("apiKey"),
+                    truncation = "middle",
+                    immediate = true,
+                    fill_horizontal = 1,
+                    width_in_chars = 28,
+                }),
+            }),
 
-    -- Show the dialog
-    local result = LrDialogs.presentModalDialog {
-        title = "Immich import configuration",
-        contents = contents,
-        actionVerb = "Save",
-        resizable_width = true,
-    }
+            f:row({
+                f:static_text({
+                    title = "Import Path:",
+                    alignment = "right",
+                    width = share("labelWidth"),
+                }),
+                f:edit_field({
+                    value = bind("importPath"),
+                    truncation = "middle",
+                    immediate = false,
+                    fill_horizontal = 1,
+                    width_in_chars = 28,
+                    validate = function(v, path)
+                        if path and path ~= "" then
+                            if LrFileUtils.exists(path) then
+                                return true, path, ""
+                            else
+                                return false, path, "Selected path does not exist"
+                            end
+                        end
+                        return true, path, ""
+                    end,
+                }),
+                f:push_button({
+                    title = "Browse...",
+                    action = function(button)
+                        local directory = LrDialogs.runOpenPanel({
+                            title = "Choose Import Directory",
+                            prompt = "Select",
+                            canChooseFiles = false,
+                            canChooseDirectories = true,
+                            canCreateDirectories = true,
+                            allowsMultipleSelection = false,
+                        })
+                        if directory and directory[1] then
+                            log:info("User selected import path: " .. directory[1])
+                            propertyTable.importPath = directory[1]
+                        else
+                            log:info("User cancelled folder selection")
+                        end
+                    end,
+                }),
+            }),
 
-    -- Handle dialog result
-    if result == "ok" then
-        log:info("User clicked Save on configuration dialog")
-        LrTasks.startAsyncTask(function()
-            log:info("Testing connection to: " .. propertyTable.url)
-            local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
-            if immich:checkConnectivity() then
-                log:info("Connection successful, saving configuration:")
-                log:info("  URL: " .. propertyTable.url)
-                log:info("  Import Path: " .. propertyTable.importPath)
-                prefs.url = propertyTable.url
-                prefs.apiKey = propertyTable.apiKey
-                prefs.importPath = propertyTable.importPath
-                prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 2
-                log:info("Configuration saved successfully")
-            else
-                log:error("Connection test failed for URL: " .. propertyTable.url)
-                ErrorHandler.handleError("Invalid import configuration. Settings haven't been saved.", "Invalid import configuration, settings not saved to preferences.")
-            end
-        end)
-    else
-        log:info("User cancelled configuration dialog")
-    end
+            f:row({
+                f:static_text({
+                    title = "Import Batch Size:",
+                    alignment = "right",
+                    width = share("labelWidth"),
+                }),
+                f:edit_field({
+                    value = bind("importBatchSize"),
+                    width_in_chars = 5,
+                    immediate = false,
+                    validate = function(_, value)
+                        local n = tonumber(value)
+                        if not n or n < 1 then
+                            return false, value, "Batch size must be a positive integer (>= 1)."
+                        end
+                        return true, tostring(math.floor(n + 0.5)), ""
+                    end,
+                }),
+            }),
+        })
+
+        -- Show the dialog
+        local result = LrDialogs.presentModalDialog({
+            title = "Immich import configuration",
+            contents = contents,
+            actionVerb = "Save",
+            resizable_width = true,
+        })
+
+        -- Handle dialog result
+        if result == "ok" then
+            log:info("User clicked Save on configuration dialog")
+            LrTasks.startAsyncTask(function()
+                log:info("Testing connection to: " .. propertyTable.url)
+                local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+                if immich:checkConnectivity() then
+                    log:info("Connection successful, saving configuration:")
+                    log:info("  URL: " .. propertyTable.url)
+                    log:info("  Import Path: " .. propertyTable.importPath)
+                    prefs.url = propertyTable.url
+                    prefs.apiKey = propertyTable.apiKey
+                    prefs.importPath = propertyTable.importPath
+                    prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 2
+                    log:info("Configuration saved successfully")
+                else
+                    log:error("Connection test failed for URL: " .. propertyTable.url)
+                    ErrorHandler.handleError(
+                        "Invalid import configuration. Settings haven't been saved.",
+                        "Invalid import configuration, settings not saved to preferences."
+                    )
+                end
+            end)
+        else
+            log:info("User cancelled configuration dialog")
+        end
     end)
 end
 

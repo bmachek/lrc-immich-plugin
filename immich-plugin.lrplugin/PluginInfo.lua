@@ -1,4 +1,4 @@
-require "PluginInfoDialogSections"
+require("PluginInfoDialogSections")
 
 return {
     startDialog = PluginInfoDialogSections.startDialog,

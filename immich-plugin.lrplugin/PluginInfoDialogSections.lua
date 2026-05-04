@@ -1,7 +1,6 @@
-require "ImmichAPI"
+require("ImmichAPI")
 
 PluginInfoDialogSections = {}
-
 
 function PluginInfoDialogSections.startDialog(propertyTable)
     if prefs.logging == nil then
@@ -20,39 +19,39 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
             bind_to_object = propertyTable,
 
             title = "Immich Plugin Logging",
-            f:row {
-                f:static_text {
+            f:row({
+                f:static_text({
                     title = util.getLogfilePath(),
-                },
-            },
-            f:row {
+                }),
+            }),
+            f:row({
                 spacing = f:control_spacing(),
-                f:checkbox {
+                f:checkbox({
                     title = "Enable debug logging",
-                    value = bind 'logging',
-                },
-                f:push_button {
+                    value = bind("logging"),
+                }),
+                f:push_button({
                     title = "Show logfile",
-                    action = function (button)
+                    action = function(button)
                         LrShell.revealInShell(util.getLogfilePath())
                     end,
-                },
-            },
+                }),
+            }),
         },
         {
             bind_to_object = propertyTable,
 
             title = "Immich Plugin Dialogs",
-            f:row {
+            f:row({
                 spacing = f:control_spacing(),
-                f:push_button {
+                f:push_button({
                     title = "Reset delete behavior prompt",
-                    action = function ()
-                        LrDialogs.resetDoNotShowFlag('immichDeletePhotosTrashBehavior')
-                        LrDialogs.message('The delete behavior prompt will be shown again on the next publish.')
+                    action = function()
+                        LrDialogs.resetDoNotShowFlag("immichDeletePhotosTrashBehavior")
+                        LrDialogs.message("The delete behavior prompt will be shown again on the next publish.")
                     end,
-                },
-            },
+                }),
+            }),
         },
     }
 end
@@ -60,7 +59,7 @@ end
 function PluginInfoDialogSections.endDialog(propertyTable)
     prefs.logging = propertyTable.logging
     if propertyTable.logging then
-        log:enable('logfile')
+        log:enable("logfile")
     else
         log:disable()
     end
