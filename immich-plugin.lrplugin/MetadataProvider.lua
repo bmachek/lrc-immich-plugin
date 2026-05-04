@@ -1,17 +1,16 @@
-require "MetadataTask"
+require("MetadataTask")
 
 return {
 
     metadataFieldsForPhotos = {
         {
             id = "immichAssetId",
-            title = 'Immich Asset ID',
+            title = "Immich Asset ID",
             dataType = "string",
             readOnly = true,
             browsable = true,
             searchable = true,
         },
-
     },
 
     schemaVersion = 10,

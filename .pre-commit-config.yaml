@@ -1,0 +1,12 @@
+repos:
+  - repo: https://github.com/JohnnyMorganz/StyLua
+    rev: v2.0.2
+    hooks:
+      - id: stylua
+        files: ^immich-plugin\.lrplugin/.*\.lua$
+
+  - repo: https://github.com/lunarmodules/luacheck
+    rev: v1.2.0
+    hooks:
+      - id: luacheck
+        files: ^immich-plugin\.lrplugin/.*\.lua$

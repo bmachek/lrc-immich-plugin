@@ -1,7 +1,6 @@
 MetadataTask = {}
 
-local keyAssetId = 'immichAssetId'
-
+local keyAssetId = "immichAssetId"
 
 -- Set or clear stored Immich asset ID for a photo. Pass nil or "" to clear (e.g. when asset was deleted in Immich).
 function MetadataTask.setImmichAssetId(photo, assetId)

@@ -9,10 +9,9 @@ This module provides functionality to:
 
 --]]
 
-require "ImmichAPI"
+require("ImmichAPI")
 
 StackManager = {}
-
 
 --------------------------------------------------------------------------------
 -- Upload one asset or replace existing; returns Immich asset id or nil
@@ -42,16 +41,16 @@ function StackManager.hasEdits(photo, editedPhotosCache)
         log:warn("Cannot access catalog for edit detection")
         return false
     end
-    
+
     -- Search for photos with adjustments and check if this photo is in the results
     local editedPhotos = catalog:findPhotos({
         searchDesc = {
             criteria = "hasAdjustments",
             operation = "isTrue",
             value = true,
-        }
+        },
     })
-    
+
     -- Check if the current photo is in the edited photos results
     local hasEdits = false
     for _, p in ipairs(editedPhotos) do
@@ -60,7 +59,7 @@ function StackManager.hasEdits(photo, editedPhotosCache)
             break
         end
     end
-    
+
     -- Only check for cropping if hasAdjustments didn't detect anything
     -- (cropped-only photos are not detected by hasAdjustments)
     if not hasEdits then
@@ -69,9 +68,9 @@ function StackManager.hasEdits(photo, editedPhotosCache)
                 criteria = "cropped",
                 operation = "isTrue",
                 value = true,
-            }
+            },
         })
-        
+
         -- Check if the current photo is in the cropped photos results
         for _, p in ipairs(croppedPhotos) do
             if p.localIdentifier == photo.localIdentifier then
@@ -81,7 +80,7 @@ function StackManager.hasEdits(photo, editedPhotosCache)
             end
         end
     end
-    
+
     return hasEdits
 end
 
@@ -95,29 +94,29 @@ function StackManager.getEditedPhotosCache()
         log:warn("Cannot access catalog for edit detection")
         return {}
     end
-    
+
     -- Get all photos with adjustments
     local editedPhotos = catalog:findPhotos({
         searchDesc = {
             criteria = "hasAdjustments",
             operation = "isTrue",
             value = true,
-        }
+        },
     })
-    
+
     -- Get all photos with cropping
     local croppedPhotos = catalog:findPhotos({
         searchDesc = {
             criteria = "cropped",
             operation = "isTrue",
             value = true,
-        }
+        },
     })
-    
+
     -- Create a lookup table for fast checking
     local editedPhotoIds = {}
     local uniqueCount = 0
-    
+
     -- Add photos with adjustments
     for _, p in ipairs(editedPhotos) do
         if p.localIdentifier then
@@ -125,7 +124,7 @@ function StackManager.getEditedPhotosCache()
             uniqueCount = uniqueCount + 1
         end
     end
-    
+
     -- Add photos with cropping (avoid duplicates)
     for _, p in ipairs(croppedPhotos) do
         if p.localIdentifier and not editedPhotoIds[p.localIdentifier] then
@@ -133,8 +132,16 @@ function StackManager.getEditedPhotosCache()
             uniqueCount = uniqueCount + 1
         end
     end
-    
-    log:info("Created edited photos cache with " .. #editedPhotos .. " hasAdjustments + " .. #croppedPhotos .. " cropped = " .. uniqueCount .. " unique photos")
+
+    log:info(
+        "Created edited photos cache with "
+            .. #editedPhotos
+            .. " hasAdjustments + "
+            .. #croppedPhotos
+            .. " cropped = "
+            .. uniqueCount
+            .. " unique photos"
+    )
     return editedPhotoIds
 end
 
@@ -147,50 +154,50 @@ function StackManager.analyzeSelectedPhotos()
         log:warn("Cannot access catalog for photo analysis")
         return { total = 0, edited = 0, original = 0, summary = "" }
     end
-    
+
     local selectedPhotos = catalog:getTargetPhotos()
     if not selectedPhotos or #selectedPhotos == 0 then
         return { total = 0, edited = 0, original = 0, summary = "" }
     end
-    
+
     local totalCount = #selectedPhotos
-    
+
     -- Get all photos with adjustments in the entire catalog
     local allEditedPhotos = catalog:findPhotos({
         searchDesc = {
             criteria = "hasAdjustments",
             operation = "isTrue",
             value = true,
-        }
+        },
     })
-    
+
     -- Get all photos with cropping in the entire catalog
     local allCroppedPhotos = catalog:findPhotos({
         searchDesc = {
             criteria = "cropped",
             operation = "isTrue",
             value = true,
-        }
+        },
     })
-    
+
     -- Create lookup tables for fast checking
     local editedPhotoIds = {}
     local croppedPhotoIds = {}
-    
+
     -- Build lookup for edited photos
     for _, p in ipairs(allEditedPhotos) do
         if p.localIdentifier then
             editedPhotoIds[p.localIdentifier] = true
         end
     end
-    
+
     -- Build lookup for cropped photos
     for _, p in ipairs(allCroppedPhotos) do
         if p.localIdentifier then
             croppedPhotoIds[p.localIdentifier] = true
         end
     end
-    
+
     -- Count edited photos in selection using fast lookups
     local editedCount = 0
     for _, photo in ipairs(selectedPhotos) do
@@ -201,26 +208,27 @@ function StackManager.analyzeSelectedPhotos()
             end
         end
     end
-    
+
     local originalCount = totalCount - editedCount
-    
+
     -- Generate summary text
     local summary
     if editedCount > 0 then
         if originalCount > 0 then
-            summary = string.format("%d photos selected: %d edited, %d original", totalCount, editedCount, originalCount)
+            summary =
+                string.format("%d photos selected: %d edited, %d original", totalCount, editedCount, originalCount)
         else
             summary = string.format("%d photos selected: all edited", totalCount)
         end
     else
         summary = string.format("%d photos selected: no edits detected", totalCount)
     end
-    
+
     return {
         total = totalCount,
         edited = editedCount,
         original = originalCount,
-        summary = summary
+        summary = summary,
     }
 end
 
@@ -232,7 +240,7 @@ function StackManager.getOriginalFilePath(photo)
         return nil
     end
     local originalPath = photo:getRawMetadata("path")
-    
+
     if not originalPath or type(originalPath) ~= "string" or originalPath == "" then
         log:warn("getOriginalFilePath: no path metadata for photo " .. tostring(photo.localIdentifier))
         return nil
@@ -263,29 +271,31 @@ function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, ex
         return editedAssetId, "Invalid rendition"
     end
     local photo = rendition.photo
-    
+
     -- Get original file path
     local originalPath = StackManager.getOriginalFilePath(photo)
     if not originalPath then
         log:warn("processPhotoWithStack: cannot access original file for " .. tostring(photo.localIdentifier))
         return editedAssetId, "Cannot access original file"
     end
-    
+
     -- Generate device asset ID for original using UUID
     local baseDeviceId = util.getPhotoDeviceId(photo)
     if not baseDeviceId then
         log:warn("processPhotoWithStack: no device ID for photo " .. tostring(photo.localIdentifier))
         return editedAssetId, "Cannot generate asset ID for original"
     end
-    local originalDeviceAssetId = StackManager.generateOriginalDeviceAssetId(
-        baseDeviceId, originalPath)
-    
+    local originalDeviceAssetId = StackManager.generateOriginalDeviceAssetId(baseDeviceId, originalPath)
+
     log:trace("Uploading original file: " .. originalPath)
-    
+
     -- Check if original asset already exists (use enhanced check but without metadata lookup for originals)
-    local existingOriginalId, existingOriginalDeviceId = immich:checkIfAssetExists(originalDeviceAssetId,
-        LrPathUtils.leafName(originalPath), photo:getFormattedMetadata("dateCreated"))
-    
+    local existingOriginalId, _ = immich:checkIfAssetExists(
+        originalDeviceAssetId,
+        LrPathUtils.leafName(originalPath),
+        photo:getFormattedMetadata("dateCreated")
+    )
+
     local originalAssetId
     if existingOriginalId then
         originalAssetId = existingOriginalId
@@ -294,14 +304,14 @@ function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, ex
         -- Upload original file
         originalAssetId = immich:uploadAsset(originalPath, originalDeviceAssetId)
     end
-    
+
     if not originalAssetId then
         return editedAssetId, "Failed to upload original file"
     end
-    
+
     -- Create stack with edited as primary, original as secondary
-    local stackId = immich:createStack({editedAssetId, originalAssetId})
-    
+    local stackId = immich:createStack({ editedAssetId, originalAssetId })
+
     if stackId then
         log:trace("Stack created successfully: " .. stackId)
         return editedAssetId, nil -- Success

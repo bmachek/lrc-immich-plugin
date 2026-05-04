@@ -7,7 +7,7 @@ Provides:
 - Safe temporary file deletion (ensures cleanup on error or cancel)
 ]]
 
-require "StackManager"
+require("StackManager")
 
 UploadHelpers = {}
 
@@ -15,7 +15,9 @@ UploadHelpers = {}
 -- Delete a temporary file; never throws. Call after each upload so temp files
 -- do not remain on early cancel or error.
 function UploadHelpers.safeDeleteTempFile(path)
-    if not path or type(path) ~= "string" then return end
+    if not path or type(path) ~= "string" then
+        return
+    end
     local ok, err = LrTasks.pcall(function()
         if LrFileUtils.exists(path) then
             LrFileUtils.delete(path)
@@ -44,7 +46,9 @@ end
 -- exportedPrimaryByPhoto: map photo.localIdentifier -> { assetId, photo }.
 -- Appends warnings to stackWarnings.
 function UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
-    if not next(exportedPrimaryByPhoto) then return end
+    if not next(exportedPrimaryByPhoto) then
+        return
+    end
     local processedStackKeys = {}
     for lid, rec in pairs(exportedPrimaryByPhoto) do
         local photo = rec.photo
@@ -60,14 +64,20 @@ function UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, sta
                         local ex = exportedPrimaryByPhoto[member.localIdentifier]
                         if ex then
                             local pos = member:getRawMetadata("stackPositionInFolder")
-                            if type(pos) == "string" then pos = tonumber(string.match(pos, "%d+")) end
+                            if type(pos) == "string" then
+                                pos = tonumber(string.match(pos, "%d+"))
+                            end
                             table.insert(ordered, { pos = pos or 999, assetId = ex.assetId })
                         end
                     end
-                    table.sort(ordered, function(a, b) return (a.pos or 999) < (b.pos or 999) end)
+                    table.sort(ordered, function(a, b)
+                        return (a.pos or 999) < (b.pos or 999)
+                    end)
                     if #ordered >= 2 then
                         local assetIds = {}
-                        for _, e in ipairs(ordered) do table.insert(assetIds, e.assetId) end
+                        for _, e in ipairs(ordered) do
+                            table.insert(assetIds, e.assetId)
+                        end
                         local stackId = immich:createStack(assetIds)
                         if not stackId then
                             table.insert(stackWarnings, "LR stack: failed to create Immich stack")
