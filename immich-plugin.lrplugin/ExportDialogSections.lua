@@ -4,20 +4,6 @@ require("SharedDialogSections")
 
 ExportDialogSections = {}
 
-local function _updateCantExportBecause(propertyTable)
-    LrTasks.startAsyncTask(function()
-        propertyTable.immich:reconfigure(propertyTable.url, propertyTable.apiKey)
-        if not propertyTable.immich:checkConnectivity() then
-            propertyTable.LR_cantExportBecause = "Immich connection not setup"
-            return
-        else
-            propertyTable.albums = propertyTable.immich:getAlbums()
-        end
-
-        propertyTable.LR_cantExportBecause = nil
-    end)
-end
-
 function ExportDialogSections.startDialog(propertyTable)
     LrTasks.startAsyncTask(function()
         propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
@@ -30,9 +16,6 @@ end
 -------------------------------------------------------------------------------
 
 function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
-    local bind = LrView.bind
-    local share = LrView.share
-
     local result = {
 
         SharedDialogSections.getOriginalFilesSection(f, propertyTable),

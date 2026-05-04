@@ -11,7 +11,6 @@ end
 
 function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
     local bind = LrView.bind
-    local share = LrView.share
 
     return {
 

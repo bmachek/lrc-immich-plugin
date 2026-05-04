@@ -805,7 +805,8 @@ end
 
 -- Enhanced duplicate detection that checks metadata first, then bulk check, then individual check
 -- Returns assetId, deviceAssetId if found, nil otherwise
--- Backward compatible: also searches by localIdentifier so existing installations (uploaded with localIdentifier) are found
+-- Backward compatible: also searches by localIdentifier so existing installations
+-- (uploaded with localIdentifier) are found
 function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, dateCreated)
     require("MetadataTask")
 

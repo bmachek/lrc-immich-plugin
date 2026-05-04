@@ -51,7 +51,7 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
                 end
 
                 -- Explicitly free the huge asset string from memory
-                assetData = nil
+                assetData = nil -- luacheck: ignore 311
                 collectgarbage("collect")
             else
                 LrDialogs.message("Error", TITLES.ERROR_DOWNLOAD .. asset.id, "critical")
@@ -73,7 +73,7 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
                         end
 
                         -- Explicitly free the huge video string from memory
-                        livePhotoVideoData = nil
+                        livePhotoVideoData = nil -- luacheck: ignore 311
                         collectgarbage("collect")
                     else
                         LrDialogs.message("Error", TITLES.ERROR_DOWNLOAD .. livePhotoVideoId, "critical")

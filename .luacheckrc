@@ -25,6 +25,24 @@ globals = {
     "LrSystemInfo",
     "LrTasks",
     "LrView",
+    -- Lightroom plugin runtime globals
+    "MAC_ENV",
+    "WIN_ENV",
+    "_PLUGIN",
+    -- Plugin's own modules, loaded as side-effect requires from Init.lua / Info.lua
+    "ErrorHandler",
+    "ExportDialogSections",
+    "ExportTask",
+    "ImmichAPI",
+    "ImportDialog",
+    "MetadataTask",
+    "PluginInfoDialogSections",
+    "PublishDialogSections",
+    "PublishTask",
+    "SharedDialogSections",
+    "StackManager",
+    "UploadHelpers",
+    "util",
 }
 
 exclude_files = {

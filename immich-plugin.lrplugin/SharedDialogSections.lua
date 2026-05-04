@@ -16,7 +16,8 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
             f:row({
                 margin_bottom = 5,
                 f:static_text({
-                    title = "Upload original files alongside edited exports to create stacks in Immich.\nTip: Uploading originals increases file size but preserves RAW data.",
+                    title = "Upload original files alongside edited exports to create stacks in Immich."
+                        .. "\nTip: Uploading originals increases file size but preserves RAW data.",
                     alignment = "left",
                     font = "<system/small>",
                 }),
@@ -109,7 +110,7 @@ function SharedDialogSections.getServerConnectionSection(f, propertyTable)
                 title = "Test connection",
                 action = function()
                     LrTasks.startAsyncTask(function()
-                        local success, message, api =
+                        local _, message, api =
                             ImmichAPI.testConnection(propertyTable.url, propertyTable.apiKey, propertyTable.immich)
                         if api then
                             propertyTable.immich = api
@@ -140,8 +141,8 @@ function SharedDialogSections.setupOriginalFileObservers(propertyTable)
         local mode = propertyTable.originalFileMode
         local format = string.upper(propertyTable.LR_format or "")
         if format == "ORIGINAL" and (mode == "original_plus_jpeg_if_edited" or propertyTable.stackOriginalExport) then
-            propertyTable.originalFormatWarning =
-                "No reformat selected: switch to any rendered format (e.g. JPEG, TIFF, PNG) to produce a distinct export for stacking."
+            propertyTable.originalFormatWarning = "No reformat selected: switch to any rendered format"
+                .. " (e.g. JPEG, TIFF, PNG) to produce a distinct export for stacking."
         else
             propertyTable.originalFormatWarning = ""
         end

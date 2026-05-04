@@ -48,7 +48,8 @@ local function addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, al
 end
 
 --------------------------------------------------------------------------------
--- Process one photo group in original+export publish flow. Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
+-- Process one photo group in original+export publish flow.
+-- Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
 local function processPublishOnePhotoGroup(
     immich,
     lid,
@@ -137,7 +138,8 @@ local function processPublishOnePhotoGroup(
             if not stackWarnings._originalNotUploadedWarned then
                 table.insert(
                     stackWarnings,
-                    "Originals not uploaded in publish mode to avoid untracked orphans in Immich (applies to all photos in this run)"
+                    "Originals not uploaded in publish mode to avoid untracked orphans in Immich"
+                        .. " (applies to all photos in this run)"
                 )
                 stackWarnings._originalNotUploadedWarned = true
             end
@@ -371,7 +373,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         functionContext = functionContext,
     })
 
-    local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = runPublishExport(
+    local failures, stackWarnings = runPublishExport(
         immich,
         exportContext,
         progressScope,
@@ -578,7 +580,8 @@ function PublishTask.deletePhotosFromPublishedCollection(
     if #notExistingAlbums > 0 then
         LrDialogs.message(
             "Some albums not found",
-            "The following albums were not found on the Immich server, but the photos were removed from the collection: \n"
+            "The following albums were not found on the Immich server,"
+                .. " but the photos were removed from the collection: \n"
                 .. table.concat(notExistingAlbums, "\n"),
             "info"
         )

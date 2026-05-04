@@ -290,7 +290,8 @@ local function processOnePhotoGroup(
                 table.insert(
                     stackWarnings,
                     filename
-                        .. ": skipped original+export stack — 'Original / no reformat' produces an identical copy. Switch to any rendered format (e.g. JPEG, TIFF, PNG)."
+                        .. ": skipped original+export stack — 'Original / no reformat' produces an identical copy."
+                        .. " Switch to any rendered format (e.g. JPEG, TIFF, PNG)."
                 )
             else
                 local originalPath = StackManager.getOriginalFilePath(photo)
@@ -433,9 +434,13 @@ local function processSingleRenditionRenditions(
                             .. tostring(deviceAssetId)
                             .. ")"
                     )
-                    local id, errReason = (existingId == nil) and immich:uploadAsset(originalPath, deviceAssetId)
-                        -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
-                        or immich:replaceAsset(existingId, originalPath, deviceAssetId)
+                    -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
+                    local id, errReason
+                    if existingId == nil then
+                        id, errReason = immich:uploadAsset(originalPath, deviceAssetId)
+                    else
+                        id, errReason = immich:replaceAsset(existingId, originalPath, deviceAssetId)
+                    end
                     if not id then
                         table.insert(
                             failures,
@@ -453,7 +458,8 @@ local function processSingleRenditionRenditions(
                                 table.insert(
                                     stackWarnings,
                                     photo:getFormattedMetadata("fileName")
-                                        .. ": skipped rendered export — 'Original / no reformat' does not produce an edited version. Switch to any rendered format (e.g. JPEG, TIFF, PNG)."
+                                        .. ": skipped rendered export — 'Original / no reformat' does not produce"
+                                        .. " an edited version. Switch to any rendered format (e.g. JPEG, TIFF, PNG)."
                                 )
                             else
                                 local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
@@ -510,9 +516,13 @@ local function processSingleRenditionRenditions(
                     photo:getFormattedMetadata("fileName"),
                     photo:getFormattedMetadata("dateCreated")
                 )
-                local id, errReason = (existingId == nil) and immich:uploadAsset(pathOrMessage, deviceAssetId)
-                    -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
-                    or immich:replaceAsset(existingId, pathOrMessage, deviceAssetId)
+                -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
+                local id, errReason
+                if existingId == nil then
+                    id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId)
+                else
+                    id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId)
+                end
                 if not id then
                     table.insert(
                         failures,
@@ -655,7 +665,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
 
     local editedPhotosCache = getEditedPhotosCacheIfNeeded(exportParams)
 
-    local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto =
+    local failures, stackWarnings, atLeastSomeSuccess, _ =
         runExport(immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
     progressScope:done()
 

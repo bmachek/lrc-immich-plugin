@@ -33,7 +33,8 @@ return {
                     spacing = f:control_spacing(),
                     margin = 5,
                     f:static_text({
-                        title = "Choose an Immich album to import photos into Lightroom. Only new photos will be downloaded.",
+                        title = "Choose an Immich album to import photos into Lightroom."
+                            .. " Only new photos will be downloaded.",
                         alignment = "left",
                         font = "<system/small>",
                     }),

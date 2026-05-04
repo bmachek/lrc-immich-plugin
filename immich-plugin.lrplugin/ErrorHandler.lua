@@ -22,7 +22,6 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
         return
     end
     local f = LrView.osFactory()
-    local bind = LrView.bind
     local share = LrView.share
 
     local dialogView = f:column({
@@ -54,7 +53,7 @@ function ErrorHandler.customErrorDialog(errorMessage, detailedInfo)
         }),
     })
 
-    local result = LrDialogs.presentModalDialog({
+    LrDialogs.presentModalDialog({
         title = "Error",
         contents = dialogView,
     })

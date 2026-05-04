@@ -290,7 +290,7 @@ function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, ex
     log:trace("Uploading original file: " .. originalPath)
 
     -- Check if original asset already exists (use enhanced check but without metadata lookup for originals)
-    local existingOriginalId, existingOriginalDeviceId = immich:checkIfAssetExists(
+    local existingOriginalId, _ = immich:checkIfAssetExists(
         originalDeviceAssetId,
         LrPathUtils.leafName(originalPath),
         photo:getFormattedMetadata("dateCreated")
