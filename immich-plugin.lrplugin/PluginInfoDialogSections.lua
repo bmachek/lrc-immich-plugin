@@ -39,6 +39,21 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
                 },
             },
         },
+        {
+            bind_to_object = propertyTable,
+
+            title = "Immich Plugin Dialogs",
+            f:row {
+                spacing = f:control_spacing(),
+                f:push_button {
+                    title = "Reset delete behavior prompt",
+                    action = function ()
+                        LrDialogs.resetDoNotShowFlag('immichDeletePhotosTrashBehavior')
+                        LrDialogs.message('The delete behavior prompt will be shown again on the next publish.')
+                    end,
+                },
+            },
+        },
     }
 end
 
