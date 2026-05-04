@@ -24,7 +24,7 @@ function MetadataTask.setImmichAssetId(photo, assetId)
         catalog:withPrivateWriteAccessDo(function()
             photo:setPropertyForPlugin(_PLUGIN, keyAssetId, valueToSet)
             success = true
-        end)
+        end, { timeout = 5 })
     end)
     if not ok then
         log:error("setImmichAssetId: failed to write metadata: " .. tostring(err))
