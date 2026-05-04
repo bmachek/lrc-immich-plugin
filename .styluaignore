@@ -1,0 +1,4 @@
+immich-plugin.lrplugin/JSON.lua
+immich-plugin.lrplugin/inspect.lua
+.venv/
+lua_env/
