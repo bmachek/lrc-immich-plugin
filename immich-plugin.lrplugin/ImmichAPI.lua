@@ -429,6 +429,11 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibili
             log:trace("replaceAsset: Upload returned same ID, no replace needed: " .. immichId)
             return immichId
         end
+        -- If the old asset no longer exists on the server, skip metadata copy and delete steps.
+        if self:doGetRequestAllow404("/assets/" .. immichId) == nil then
+            log:info("replaceAsset: old asset " .. immichId .. " no longer exists on server, returning new asset")
+            return newImmichId
+        end
         if self:copyAssetMetadata(immichId, newImmichId) then
             if self:deleteAsset(immichId) then
                 log:info("replaceAsset: " .. immichId .. " -> " .. newImmichId)
