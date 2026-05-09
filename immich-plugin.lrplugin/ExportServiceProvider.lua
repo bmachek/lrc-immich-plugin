@@ -17,6 +17,7 @@ return {
         { key = "originalFileMode", default = "none" },
         { key = "stackOriginalExport", default = false },
         { key = "stackLrStacks", default = false },
+        { key = "lockedFolderMode", default = "none" },
     },
 
     canExportVideo = true,

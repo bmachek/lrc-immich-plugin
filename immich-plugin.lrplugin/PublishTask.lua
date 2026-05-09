@@ -6,6 +6,27 @@ require("MetadataTask")
 PublishTask = {}
 
 --------------------------------------------------------------------------------
+-- Resolves the locked folder visibility string from lockedFolderMode setting.
+-- Returns "private" to upload to locked folder, nil for normal upload.
+local function resolveLockedFolder(exportParams)
+    local mode = exportParams.lockedFolderMode
+    if not mode or mode == "none" then
+        return nil
+    elseif mode == "always" then
+        return "locked"
+    elseif mode == "ask" then
+        local result = LrDialogs.confirm(
+            "Upload to Locked Folder?",
+            "Photos will be hidden from the timeline and require a PIN to view in Immich.",
+            "Yes",
+            "No"
+        )
+        return (result == "ok") and "locked" or nil
+    end
+    return nil
+end
+
+--------------------------------------------------------------------------------
 -- Resolve or create album for publish; record remote id/url on exportSession.
 -- Returns: albumCreationStrategy, albumId, albumAssetIds.
 local function resolvePublishAlbum(immich, exportContext)
@@ -60,7 +81,8 @@ local function processPublishOnePhotoGroup(
     failures,
     stackWarnings,
     atLeastSomeSuccess,
-    exportedPrimaryByPhoto
+    exportedPrimaryByPhoto,
+    visibility
 )
     if not items or not items[1] then
         return
@@ -77,8 +99,14 @@ local function processPublishOnePhotoGroup(
             -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
             local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
             local deviceAssetId = lid .. suffix
-            local id, errReason =
-                StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            local id, errReason = StackManager.uploadOneAssetOrReplace(
+                immich,
+                item.path,
+                deviceAssetId,
+                filename,
+                dateCreated,
+                visibility
+            )
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
                 table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -124,7 +152,7 @@ local function processPublishOnePhotoGroup(
             "original+export [" .. filename .. "]: single rendition, uploading as export (" .. deviceAssetId .. ")"
         )
         local id, errReason =
-            StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated, visibility)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
             table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -169,7 +197,8 @@ local function processPublishStackOriginalExportRenditions(
     nPhotos,
     albumCreationStrategy,
     albumId,
-    albumAssetIds
+    albumAssetIds,
+    visibility
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
@@ -204,7 +233,8 @@ local function processPublishStackOriginalExportRenditions(
                 failures,
                 stackWarnings,
                 atLeastSomeSuccess,
-                exportedPrimaryByPhoto
+                exportedPrimaryByPhoto,
+                visibility
             )
         end
         -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
@@ -226,7 +256,8 @@ local function processPublishSingleRenditionRenditions(
     exportParams,
     albumCreationStrategy,
     albumId,
-    albumAssetIds
+    albumAssetIds,
+    visibility
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = false
@@ -248,11 +279,11 @@ local function processPublishSingleRenditionRenditions(
             )
             local id, errReason
             if existingId == nil then
-                id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId)
+                id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId, visibility)
             else
                 -- Always use the current UUID deviceAssetId (not the legacy localIdentifier from the old
                 -- asset) so the new asset can be found by UUID on the next run, breaking the replace cycle.
-                id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId)
+                id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId, visibility)
             end
 
             if not id then
@@ -299,7 +330,8 @@ local function runPublishExport(
     exportParams,
     albumCreationStrategy,
     albumId,
-    albumAssetIds
+    albumAssetIds,
+    visibility
 )
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     local useStacking = exportParams.stackOriginalExport
@@ -317,7 +349,8 @@ local function runPublishExport(
                 nPhotos,
                 albumCreationStrategy,
                 albumId,
-                albumAssetIds
+                albumAssetIds,
+                visibility
             )
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
@@ -328,7 +361,8 @@ local function runPublishExport(
             exportParams,
             albumCreationStrategy,
             albumId,
-            albumAssetIds
+            albumAssetIds,
+            visibility
         )
     end
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
@@ -359,6 +393,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             .. tostring(exportParams.stackLrStacks)
             .. " | albumCreationStrategy="
             .. tostring(albumCreationStrategy)
+            .. " | lockedFolderMode="
+            .. tostring(exportParams.lockedFolderMode)
             .. " ==="
     )
 
@@ -373,6 +409,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         functionContext = functionContext,
     })
 
+    local visibility = resolveLockedFolder(exportParams)
     local failures, stackWarnings = runPublishExport(
         immich,
         exportContext,
@@ -381,7 +418,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         exportParams,
         albumCreationStrategy,
         albumId,
-        albumAssetIds
+        albumAssetIds,
+        visibility
     )
     progressScope:done()
 

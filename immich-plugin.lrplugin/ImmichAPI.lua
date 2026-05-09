@@ -365,7 +365,7 @@ function ImmichAPI:getAssetUrl(id)
     return self.url .. "/photos/" .. id
 end
 
-function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId)
+function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId, visibility)
     if util.nilOrEmpty(pathOrMessage) then
         ErrorHandler.handleError("No filename given. Check logs.", "uploadAsset: pathOrMessage empty")
         return nil
@@ -394,6 +394,9 @@ function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId)
         { name = "fileModifiedAt", value = submitDate },
         { name = "isFavorite", value = "false" },
     }
+    if visibility and visibility ~= "" then
+        table.insert(mimeChunks, { name = "visibility", value = visibility })
+    end
 
     local parsedResponse, errReason = self:doMultiPartPostRequest(apiPath, mimeChunks)
     if parsedResponse ~= nil then
@@ -403,7 +406,7 @@ function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId)
     return nil, errReason
 end
 
-function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
+function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibility)
     if util.nilOrEmpty(immichId) then
         ErrorHandler.handleError("Immich asset ID missing. Check logs.", "replaceAsset: immichId empty")
         return nil
@@ -419,7 +422,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId)
         return nil
     end
 
-    local newImmichId, errReason = self:uploadAsset(pathOrMessage, deviceAssetId)
+    local newImmichId, errReason = self:uploadAsset(pathOrMessage, deviceAssetId, visibility)
     if newImmichId ~= nil then
         -- Immich may return the existing asset ID (e.g. duplicate detection); skip replace steps
         if newImmichId == immichId then
