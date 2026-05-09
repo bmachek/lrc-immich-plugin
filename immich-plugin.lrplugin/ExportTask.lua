@@ -121,6 +121,27 @@ local function validateAndConnect(exportContext)
 end
 
 --------------------------------------------------------------------------------
+-- Resolves the locked folder visibility string from lockedFolderMode setting.
+-- Returns "private" to upload to locked folder, nil for normal upload.
+local function resolveLockedFolder(exportParams)
+    local mode = exportParams.lockedFolderMode
+    if not mode or mode == "none" then
+        return nil
+    elseif mode == "always" then
+        return "locked"
+    elseif mode == "ask" then
+        local result = LrDialogs.confirm(
+            "Upload to Locked Folder?",
+            "Photos will be hidden from the timeline and require a PIN to view in Immich.",
+            "Yes",
+            "No"
+        )
+        return (result == "ok") and "locked" or nil
+    end
+    return nil
+end
+
+--------------------------------------------------------------------------------
 local function buildProgressTitle(nPhotos, originalFileMode, url)
     local modeText = ""
     if originalFileMode and originalFileMode ~= "none" then
@@ -213,7 +234,8 @@ local function processOnePhotoGroup(
     failures,
     stackWarnings,
     atLeastSomeSuccess,
-    exportedPrimaryByPhoto
+    exportedPrimaryByPhoto,
+    visibility
 )
     if not items or not items[1] then
         return
@@ -231,7 +253,7 @@ local function processOnePhotoGroup(
             local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
             local deviceAssetId = lid .. suffix
             local id, errReason =
-                StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+                StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated, visibility)
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
                 table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -275,7 +297,7 @@ local function processOnePhotoGroup(
             "original+export [" .. filename .. "]: single rendition, uploading as export (" .. deviceAssetId .. ")"
         )
         local id, errReason =
-            StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated)
+            StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated, visibility)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
             table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -301,7 +323,8 @@ local function processOnePhotoGroup(
                         originalPath,
                         lid .. "_orig",
                         filename,
-                        dateCreated
+                        dateCreated,
+                        visibility
                     )
                     if origId then
                         if not immich:createStack({ id, origId }) then
@@ -341,7 +364,8 @@ local function processStackOriginalExportRenditions(
     exportParams,
     albumId,
     useAlbum,
-    editedPhotosCache
+    editedPhotosCache,
+    visibility
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
@@ -377,7 +401,8 @@ local function processStackOriginalExportRenditions(
                 failures,
                 stackWarnings,
                 atLeastSomeSuccess,
-                exportedPrimaryByPhoto
+                exportedPrimaryByPhoto,
+                visibility
             )
         end
         -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
@@ -400,7 +425,8 @@ local function processSingleRenditionRenditions(
     exportParams,
     albumId,
     useAlbum,
-    editedPhotosCache
+    editedPhotosCache,
+    visibility
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = false
@@ -437,9 +463,9 @@ local function processSingleRenditionRenditions(
                     -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
                     local id, errReason
                     if existingId == nil then
-                        id, errReason = immich:uploadAsset(originalPath, deviceAssetId)
+                        id, errReason = immich:uploadAsset(originalPath, deviceAssetId, visibility)
                     else
-                        id, errReason = immich:replaceAsset(existingId, originalPath, deviceAssetId)
+                        id, errReason = immich:replaceAsset(existingId, originalPath, deviceAssetId, visibility)
                     end
                     if not id then
                         table.insert(
@@ -476,9 +502,9 @@ local function processSingleRenditionRenditions(
                                     immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
                                 local exportId
                                 if existingExportId then
-                                    exportId = immich:replaceAsset(existingExportId, pathOrMessage, deviceAssetIdEdited)
+                                    exportId = immich:replaceAsset(existingExportId, pathOrMessage, deviceAssetIdEdited, visibility)
                                 else
-                                    exportId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited)
+                                    exportId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited, visibility)
                                 end
                                 if exportId then
                                     primaryId = exportId
@@ -519,9 +545,9 @@ local function processSingleRenditionRenditions(
                 -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
                 local id, errReason
                 if existingId == nil then
-                    id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId)
+                    id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId, visibility)
                 else
-                    id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId)
+                    id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId, visibility)
                 end
                 if not id then
                     table.insert(
@@ -537,7 +563,7 @@ local function processSingleRenditionRenditions(
                             or (originalFileMode == "edited" and StackManager.hasEdits(photo, editedPhotosCache))
                         if shouldStack then
                             local _, stackError =
-                                StackManager.processPhotoWithStack(immich, rendition, id, exportParams)
+                                StackManager.processPhotoWithStack(immich, rendition, id, exportParams, visibility)
                             if stackError then
                                 table.insert(
                                     stackWarnings,
@@ -579,7 +605,8 @@ local function runExport(
     exportParams,
     albumId,
     useAlbum,
-    editedPhotosCache
+    editedPhotosCache,
+    visibility
 )
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     if exportParams.stackOriginalExport then
@@ -591,7 +618,8 @@ local function runExport(
             exportParams,
             albumId,
             useAlbum,
-            editedPhotosCache
+            editedPhotosCache,
+            visibility
         )
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processSingleRenditionRenditions(
@@ -602,7 +630,8 @@ local function runExport(
             exportParams,
             albumId,
             useAlbum,
-            editedPhotosCache
+            editedPhotosCache,
+            visibility
         )
     end
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
@@ -645,6 +674,8 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
             .. tostring(exportParams.stackLrStacks)
             .. " | albumMode="
             .. tostring(exportParams.albumMode)
+            .. " | lockedFolderMode="
+            .. tostring(exportParams.lockedFolderMode)
             .. " ==="
     )
 
@@ -663,10 +694,11 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
         return
     end
 
+    local visibility = resolveLockedFolder(exportParams)
     local editedPhotosCache = getEditedPhotosCacheIfNeeded(exportParams)
 
     local failures, stackWarnings, atLeastSomeSuccess, _ =
-        runExport(immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache)
+        runExport(immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache, visibility)
     progressScope:done()
 
     log:info(

@@ -18,6 +18,7 @@ return {
         { key = "originalFileMode", default = "none" },
         { key = "stackOriginalExport", default = false },
         { key = "stackLrStacks", default = false },
+        { key = "lockedFolderMode", default = "none" },
     },
 
     small_icon = "icons/logo_small.png",

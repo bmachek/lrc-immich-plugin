@@ -83,6 +83,47 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
     }
 end
 
+-- Generate the Shared 'Locked Folder' dialog section
+function SharedDialogSections.getLockedFolderSection(f, propertyTable)
+    local bind = LrView.bind
+    local share = LrView.share
+
+    return {
+        title = "Locked Folder",
+        bind_to_object = propertyTable,
+        f:column({
+            spacing = f:control_spacing(),
+            f:row({
+                margin_bottom = 5,
+                f:static_text({
+                    title = "Photos uploaded to the locked folder are hidden from the timeline"
+                        .. " and require a PIN to view in Immich.",
+                    alignment = "left",
+                    font = "<system/small>",
+                }),
+            }),
+            f:row({
+                f:static_text({
+                    title = "Locked folder:",
+                    alignment = "right",
+                    width = share("labelWidth"),
+                }),
+                f:popup_menu({
+                    alignment = "left",
+                    immediate = true,
+                    width_in_chars = 32,
+                    items = {
+                        { title = "Don't use locked folder", value = "none" },
+                        { title = "Always upload to locked folder", value = "always" },
+                        { title = "Ask on each run", value = "ask" },
+                    },
+                    value = bind("lockedFolderMode"),
+                }),
+            }),
+        }),
+    }
+end
+
 -- Generate the Shared 'Immich Server connection' dialog section
 function SharedDialogSections.getServerConnectionSection(f, propertyTable)
     local bind = LrView.bind
