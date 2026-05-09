@@ -422,27 +422,38 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibili
         return nil
     end
 
-    local newImmichId, errReason = self:uploadAsset(pathOrMessage, deviceAssetId, visibility)
+    -- Upload to regular library first so copy/delete work even when the target
+    -- visibility is "locked" (Immich blocks copy and delete on locked assets).
+    -- Visibility is applied after metadata is transferred.
+    local newImmichId, errReason = self:uploadAsset(pathOrMessage, deviceAssetId, nil)
     if newImmichId ~= nil then
         -- Immich may return the existing asset ID (e.g. duplicate detection); skip replace steps
         if newImmichId == immichId then
             log:trace("replaceAsset: Upload returned same ID, no replace needed: " .. immichId)
+            if visibility then
+                self:setAssetVisibility(newImmichId, visibility)
+            end
             return immichId
         end
-        -- If the old asset no longer exists on the server, skip metadata copy and delete steps.
-        if self:doGetRequestAllow404("/assets/" .. immichId) == nil then
+        -- If the old asset no longer exists, nothing to copy/delete.
+        local oldAssetInfo = self:doGetRequestAllow404("/assets/" .. immichId)
+        if oldAssetInfo == nil then
             log:info("replaceAsset: old asset " .. immichId .. " no longer exists on server, returning new asset")
+            if visibility then
+                self:setAssetVisibility(newImmichId, visibility)
+            end
             return newImmichId
         end
         if self:copyAssetMetadata(immichId, newImmichId) then
+            if visibility then
+                self:setAssetVisibility(newImmichId, visibility)
+            end
             if self:deleteAsset(immichId) then
                 log:info("replaceAsset: " .. immichId .. " -> " .. newImmichId)
                 return newImmichId
             else
-                ErrorHandler.handleError(
-                    "Failed to delete old asset after replacement. Check logs.",
-                    "copyAssetMetadata: Failed to delete old asset " .. immichId
-                )
+                -- Old asset may be in locked folder; log and continue with new ID.
+                log:warn("replaceAsset: failed to delete old asset " .. immichId .. " (may be in locked folder)")
                 return newImmichId
             end
         else
@@ -455,6 +466,21 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibili
         end
     end
     return nil, errReason
+end
+
+function ImmichAPI:setAssetVisibility(assetId, visibility)
+    if util.nilOrEmpty(assetId) then
+        log:warn("setAssetVisibility: assetId empty")
+        return false
+    end
+    local body = { ids = { assetId }, visibility = visibility }
+    local parsedResponse = self:doCustomRequest("PUT", "/assets", body)
+    if parsedResponse == nil then
+        log:error("setAssetVisibility: failed to set visibility " .. tostring(visibility) .. " on " .. assetId)
+        return false
+    end
+    log:trace("setAssetVisibility: " .. assetId .. " -> " .. tostring(visibility))
+    return true
 end
 
 function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
@@ -877,8 +903,8 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
         local response = self:doPostRequest("/search/metadata", postBody)
 
         if response and response.assets and response.assets.count >= 1 then
-            local foundId = response.assets.items[1].id
-            local foundDeviceId = response.assets.items[1].deviceAssetId
+            foundId = response.assets.items[1].id
+            foundDeviceId = response.assets.items[1].deviceAssetId
             log:trace(
                 "checkIfAssetExistsEnhanced: Found existing asset with filename "
                     .. filename
