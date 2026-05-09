@@ -252,8 +252,14 @@ local function processOnePhotoGroup(
             -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
             local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
             local deviceAssetId = lid .. suffix
-            local id, errReason =
-                StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated, visibility)
+            local id, errReason = StackManager.uploadOneAssetOrReplace(
+                immich,
+                item.path,
+                deviceAssetId,
+                filename,
+                dateCreated,
+                visibility
+            )
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
                 table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -502,7 +508,12 @@ local function processSingleRenditionRenditions(
                                     immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
                                 local exportId
                                 if existingExportId then
-                                    exportId = immich:replaceAsset(existingExportId, pathOrMessage, deviceAssetIdEdited, visibility)
+                                    exportId = immich:replaceAsset(
+                                        existingExportId,
+                                        pathOrMessage,
+                                        deviceAssetIdEdited,
+                                        visibility
+                                    )
                                 else
                                     exportId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited, visibility)
                                 end
@@ -697,8 +708,17 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     local visibility = resolveLockedFolder(exportParams)
     local editedPhotosCache = getEditedPhotosCacheIfNeeded(exportParams)
 
-    local failures, stackWarnings, atLeastSomeSuccess, _ =
-        runExport(immich, exportContext, progressScope, nPhotos, exportParams, albumId, useAlbum, editedPhotosCache, visibility)
+    local failures, stackWarnings, atLeastSomeSuccess, _ = runExport(
+        immich,
+        exportContext,
+        progressScope,
+        nPhotos,
+        exportParams,
+        albumId,
+        useAlbum,
+        editedPhotosCache,
+        visibility
+    )
     progressScope:done()
 
     log:info(
