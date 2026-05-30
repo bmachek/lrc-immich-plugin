@@ -26,6 +26,12 @@ Provides both **Export** and **Publish Services**, plus tools to **import assets
 
 ---
 
+## Screenshot
+
+![Publish Service settings](docs/screenshots/publisher.png)
+
+---
+
 ## Quick facts
 
 - **Platform**: Lightroom Classic (macOS and Windows).
