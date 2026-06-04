@@ -114,29 +114,70 @@ function UploadHelpers.collectExportKeywords(photo)
 end
 
 --------------------------------------------------------------------------------
--- Resolve a photo's capture time as a zoned ISO string Immich can store without
--- shifting it. Lightroom keeps the capture instant as an absolute value, and
--- LrDate.timeToW3CDate renders it in UTC (DST-aware) but, on some versions,
--- without a "Z". An Immich value with no zone is assumed to be UTC, so we mark
--- the UTC rendering with "Z"; if timeToW3CDate already supplies a zone we keep
--- it. Falls back to the local ISO field when no numeric capture time exists.
+-- Parse an ISO datetime's calendar components into an LrDate, ignoring any zone.
+-- Used only to diff two such values, so the (consistent) reference zone cancels.
+local function naiveTime(isoStr)
+    local y, mo, d, h, mi, s = (isoStr or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
+    if not y then
+        return nil
+    end
+    local ok, t = pcall(LrDate.timeFromComponents, tonumber(y), tonumber(mo), tonumber(d),
+        tonumber(h), tonumber(mi), tonumber(s), "gmt")
+    if ok then
+        return t
+    end
+    return nil
+end
+
+-- Resolve a photo's capture time as a zoned ISO string for Immich. Immich assumes
+-- any value lacking a timezone is UTC and displays it shifted by whatever zone it
+-- infers for the asset, so we send Lightroom's local wall-clock together with an
+-- explicit offset. Immich then displays exactly the wall-clock Lightroom shows,
+-- regardless of the zone it would otherwise infer. The offset is derived from
+-- Lightroom itself: local wall-clock (dateTimeOriginalISO8601) minus its UTC
+-- rendering (timeToW3CDate), so it matches what Lightroom displays and is
+-- DST-aware. Falls back to the raw value if the offset cannot be determined.
 function UploadHelpers.captureTimeForImmich(photo)
-    local cocoa = photo:getRawMetadata("dateTimeOriginal") or photo:getRawMetadata("dateTime")
+    -- Diagnostic: which Lightroom field actually holds the displayed capture time?
+    log:trace("captureTimeForImmich fields:"
+        .. " dateTimeOriginalISO8601=" .. tostring(photo:getRawMetadata("dateTimeOriginalISO8601"))
+        .. " dateTimeISO8601=" .. tostring(photo:getRawMetadata("dateTimeISO8601"))
+        .. " dateTimeDigitizedISO8601=" .. tostring(photo:getRawMetadata("dateTimeDigitizedISO8601"))
+        .. " dateCreated(fmt)=" .. tostring(photo:getFormattedMetadata("dateCreated")))
+
+    -- Match the order Lightroom itself uses to show a capture time: original,
+    -- then digitized, then the adjusted dateTime. For some videos (e.g. iPhone
+    -- .mov with no EXIF DateTimeOriginal) the dateTime field holds a bogus value,
+    -- while the digitized field carries the correct, file-embedded capture time.
+    local localIso = photo:getRawMetadata("dateTimeOriginalISO8601")
+        or photo:getRawMetadata("dateTimeDigitizedISO8601")
+        or photo:getRawMetadata("dateTimeISO8601")
+    if util.nilOrEmpty(localIso) then
+        return nil
+    end
+    -- Lightroom already supplied a zone: trust it.
+    if localIso:match("[Zz]$") or localIso:match("[%+%-]%d%d:?%d%d$") then
+        log:trace("captureTimeForImmich: zoned '" .. localIso .. "'")
+        return localIso
+    end
+    local cocoa = photo:getRawMetadata("dateTimeOriginal")
+        or photo:getRawMetadata("dateTimeDigitized")
+        or photo:getRawMetadata("dateTime")
     if type(cocoa) == "number" then
-        local w3c = LrDate.timeToW3CDate(cocoa)
-        if w3c and w3c ~= "" then
-            if w3c:match("[Zz]$") or w3c:match("[%+%-]%d%d:?%d%d$") then
-                log:trace("captureTimeForImmich: zoned '" .. w3c .. "'")
-                return w3c
-            end
-            log:trace("captureTimeForImmich: utc '" .. w3c .. "' -> '" .. w3c .. "Z'")
-            return w3c .. "Z"
+        local utcIso = LrDate.timeToW3CDate(cocoa)
+        local localNaive, utcNaive = naiveTime(localIso), naiveTime(utcIso)
+        if localNaive and utcNaive then
+            local offsetSec = localNaive - utcNaive
+            local sign = offsetSec >= 0 and "+" or "-"
+            local mins = math.floor((math.abs(offsetSec) + 30) / 60)
+            local offset = string.format("%s%02d:%02d", sign, math.floor(mins / 60), mins % 60)
+            log:trace("captureTimeForImmich: local='" .. localIso .. "' utc='" .. tostring(utcIso)
+                .. "' offset='" .. offset .. "'")
+            return localIso .. offset
         end
     end
-    local iso = photo:getRawMetadata("dateTimeOriginalISO8601") or photo:getRawMetadata("dateTimeISO8601")
-    log:warn("captureTimeForImmich: no numeric capture time (cocoa=" .. tostring(cocoa)
-        .. "); falling back to local '" .. tostring(iso) .. "'")
-    return iso
+    log:warn("captureTimeForImmich: could not derive offset; sending local '" .. localIso .. "' as-is")
+    return localIso
 end
 
 --------------------------------------------------------------------------------
