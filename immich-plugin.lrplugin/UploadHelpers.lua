@@ -121,8 +121,16 @@ local function naiveTime(isoStr)
     if not y then
         return nil
     end
-    local ok, t = pcall(LrDate.timeFromComponents, tonumber(y), tonumber(mo), tonumber(d),
-        tonumber(h), tonumber(mi), tonumber(s), "gmt")
+    local ok, t = pcall(
+        LrDate.timeFromComponents,
+        tonumber(y),
+        tonumber(mo),
+        tonumber(d),
+        tonumber(h),
+        tonumber(mi),
+        tonumber(s),
+        "gmt"
+    )
     if ok then
         return t
     end
@@ -146,13 +154,11 @@ end
 -- caller leaves Immich's own extraction untouched. Capture-time edits land in the
 -- original field, so this still honors "Edit Capture Time".
 function UploadHelpers.captureTimeForImmich(photo)
-    local cocoa = photo:getRawMetadata("dateTimeOriginal")
-        or photo:getRawMetadata("dateTimeDigitized")
+    local cocoa = photo:getRawMetadata("dateTimeOriginal") or photo:getRawMetadata("dateTimeDigitized")
 
     -- Prefer the ISO8601 string (Lightroom's local wall-clock, faithful to the
     -- capture-location zone). Fall back to rendering the numeric field locally.
-    local localIso = photo:getRawMetadata("dateTimeOriginalISO8601")
-        or photo:getRawMetadata("dateTimeDigitizedISO8601")
+    local localIso = photo:getRawMetadata("dateTimeOriginalISO8601") or photo:getRawMetadata("dateTimeDigitizedISO8601")
     if util.nilOrEmpty(localIso) then
         if type(cocoa) ~= "number" then
             return nil
