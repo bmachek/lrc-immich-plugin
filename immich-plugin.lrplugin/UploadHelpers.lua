@@ -134,35 +134,42 @@ end
 -- infers for the asset, so we send Lightroom's local wall-clock together with an
 -- explicit offset. Immich then displays exactly the wall-clock Lightroom shows,
 -- regardless of the zone it would otherwise infer. The offset is derived from
--- Lightroom itself: local wall-clock (dateTimeOriginalISO8601) minus its UTC
--- rendering (timeToW3CDate), so it matches what Lightroom displays and is
--- DST-aware. Falls back to the raw value if the offset cannot be determined.
+-- Lightroom itself (local wall-clock minus its UTC rendering), so it matches what
+-- Lightroom displays and is DST-aware.
+--
+-- Source priority: the "original capture" field, then "digitized". The adjusted
+-- "dateTime" field is excluded -- for videos Lightroom routinely fills it with a
+-- bogus value (wrong day, unrelated time). Each field has an ISO8601 string and a
+-- numeric variant; for some videos (e.g. .mts) the string is nil while the numeric
+-- one still holds the value Lightroom shows under "Original Date/Time", so we fall
+-- back to the numeric field. Returns nil when nothing usable is present, so the
+-- caller leaves Immich's own extraction untouched. Capture-time edits land in the
+-- original field, so this still honors "Edit Capture Time".
 function UploadHelpers.captureTimeForImmich(photo)
-    -- Diagnostic: which Lightroom field actually holds the displayed capture time?
-    log:trace("captureTimeForImmich fields:"
-        .. " dateTimeOriginalISO8601=" .. tostring(photo:getRawMetadata("dateTimeOriginalISO8601"))
-        .. " dateTimeISO8601=" .. tostring(photo:getRawMetadata("dateTimeISO8601"))
-        .. " dateTimeDigitizedISO8601=" .. tostring(photo:getRawMetadata("dateTimeDigitizedISO8601"))
-        .. " dateCreated(fmt)=" .. tostring(photo:getFormattedMetadata("dateCreated")))
-
-    -- Match the order Lightroom itself uses to show a capture time: original,
-    -- then digitized, then the adjusted dateTime. For some videos (e.g. iPhone
-    -- .mov with no EXIF DateTimeOriginal) the dateTime field holds a bogus value,
-    -- while the digitized field carries the correct, file-embedded capture time.
-    local localIso = photo:getRawMetadata("dateTimeOriginalISO8601")
-        or photo:getRawMetadata("dateTimeDigitizedISO8601")
-        or photo:getRawMetadata("dateTimeISO8601")
-    if util.nilOrEmpty(localIso) then
-        return nil
-    end
-    -- Lightroom already supplied a zone: trust it.
-    if localIso:match("[Zz]$") or localIso:match("[%+%-]%d%d:?%d%d$") then
-        log:trace("captureTimeForImmich: zoned '" .. localIso .. "'")
-        return localIso
-    end
     local cocoa = photo:getRawMetadata("dateTimeOriginal")
         or photo:getRawMetadata("dateTimeDigitized")
-        or photo:getRawMetadata("dateTime")
+
+    -- Prefer the ISO8601 string (Lightroom's local wall-clock, faithful to the
+    -- capture-location zone). Fall back to rendering the numeric field locally.
+    local localIso = photo:getRawMetadata("dateTimeOriginalISO8601")
+        or photo:getRawMetadata("dateTimeDigitizedISO8601")
+    if util.nilOrEmpty(localIso) then
+        if type(cocoa) ~= "number" then
+            return nil
+        end
+        localIso = LrDate.timeToUserFormat(cocoa, "%Y-%m-%dT%H:%M:%S")
+        if util.nilOrEmpty(localIso) then
+            return nil
+        end
+    end
+
+    -- Lightroom already supplied a zone: trust it.
+    if localIso:match("[Zz]$") or localIso:match("[%+%-]%d%d:?%d%d$") then
+        return localIso
+    end
+
+    -- No offset: derive it (DST-aware) from the same instant -- the local
+    -- wall-clock minus its UTC rendering -- and append it.
     if type(cocoa) == "number" then
         local utcIso = LrDate.timeToW3CDate(cocoa)
         local localNaive, utcNaive = naiveTime(localIso), naiveTime(utcIso)
@@ -171,8 +178,6 @@ function UploadHelpers.captureTimeForImmich(photo)
             local sign = offsetSec >= 0 and "+" or "-"
             local mins = math.floor((math.abs(offsetSec) + 30) / 60)
             local offset = string.format("%s%02d:%02d", sign, math.floor(mins / 60), mins % 60)
-            log:trace("captureTimeForImmich: local='" .. localIso .. "' utc='" .. tostring(utcIso)
-                .. "' offset='" .. offset .. "'")
             return localIso .. offset
         end
     end
