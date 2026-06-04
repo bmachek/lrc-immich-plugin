@@ -114,6 +114,32 @@ function UploadHelpers.collectExportKeywords(photo)
 end
 
 --------------------------------------------------------------------------------
+-- Resolve a photo's capture time as a zoned ISO string Immich can store without
+-- shifting it. Lightroom keeps the capture instant as an absolute value, and
+-- LrDate.timeToW3CDate renders it in UTC (DST-aware) but, on some versions,
+-- without a "Z". An Immich value with no zone is assumed to be UTC, so we mark
+-- the UTC rendering with "Z"; if timeToW3CDate already supplies a zone we keep
+-- it. Falls back to the local ISO field when no numeric capture time exists.
+function UploadHelpers.captureTimeForImmich(photo)
+    local cocoa = photo:getRawMetadata("dateTimeOriginal") or photo:getRawMetadata("dateTime")
+    if type(cocoa) == "number" then
+        local w3c = LrDate.timeToW3CDate(cocoa)
+        if w3c and w3c ~= "" then
+            if w3c:match("[Zz]$") or w3c:match("[%+%-]%d%d:?%d%d$") then
+                log:trace("captureTimeForImmich: zoned '" .. w3c .. "'")
+                return w3c
+            end
+            log:trace("captureTimeForImmich: utc '" .. w3c .. "' -> '" .. w3c .. "Z'")
+            return w3c .. "Z"
+        end
+    end
+    local iso = photo:getRawMetadata("dateTimeOriginalISO8601") or photo:getRawMetadata("dateTimeISO8601")
+    log:warn("captureTimeForImmich: no numeric capture time (cocoa=" .. tostring(cocoa)
+        .. "); falling back to local '" .. tostring(iso) .. "'")
+    return iso
+end
+
+--------------------------------------------------------------------------------
 -- Push Lightroom metadata that Immich cannot read from the uploaded file to the
 -- primary asset. Only applied to videos: Lightroom rewrites edited capture date
 -- and keywords into rendered photos (which Immich extracts on ingest) but passes
@@ -132,10 +158,9 @@ function UploadHelpers.applyVideoMetadata(immich, photo, assetId)
     -- leaves the thumbnail in an error state, so wait for it to be ready first.
     immich:waitForAssetReady(assetId, 30)
 
-    -- Edited capture time. Prefer the original-capture ISO field (reflects
-    -- Lightroom's "Edit Capture Time"), fall back to the adjusted date/time.
-    local isoDate = photo:getRawMetadata("dateTimeOriginalISO8601")
-        or photo:getRawMetadata("dateTimeISO8601")
+    -- Edited capture time, as a zoned ISO string so Immich stores the correct
+    -- instant (it assumes UTC for any value lacking a timezone).
+    local isoDate = UploadHelpers.captureTimeForImmich(photo)
     if not util.nilOrEmpty(isoDate) then
         immich:setAssetDate(assetId, isoDate)
     end
