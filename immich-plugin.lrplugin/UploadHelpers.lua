@@ -90,3 +90,93 @@ function UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, sta
         end
     end
 end
+
+--------------------------------------------------------------------------------
+-- Collect a photo's keywords as Immich tag names, honoring each keyword's
+-- "Include on Export" attribute (the same gate Lightroom uses when embedding
+-- keywords into rendered files).
+function UploadHelpers.collectExportKeywords(photo)
+    local names = {}
+    local keywords = photo:getRawMetadata("keywords")
+    if type(keywords) ~= "table" then
+        return names
+    end
+    for _, keyword in ipairs(keywords) do
+        local attrs = keyword:getAttributes()
+        if attrs == nil or attrs.includeOnExport ~= false then
+            local name = keyword:getName()
+            if not util.nilOrEmpty(name) then
+                table.insert(names, name)
+            end
+        end
+    end
+    return names
+end
+
+--------------------------------------------------------------------------------
+-- Push Lightroom metadata that Immich cannot read from the uploaded file to the
+-- primary asset. Only applied to videos: Lightroom rewrites edited capture date
+-- and keywords into rendered photos (which Immich extracts on ingest) but passes
+-- video containers through untouched, so those edits never reach Immich
+-- otherwise. Best-effort; failures are logged, not fatal.
+function UploadHelpers.applyVideoMetadata(immich, photo, assetId)
+    if not photo or util.nilOrEmpty(assetId) then
+        return
+    end
+    if photo:getRawMetadata("fileFormat") ~= "VIDEO" then
+        return
+    end
+
+    -- Immich probes and thumbnails a freshly uploaded video asynchronously.
+    -- Changing its date here before that finishes races the ingest pipeline and
+    -- leaves the thumbnail in an error state, so wait for it to be ready first.
+    immich:waitForAssetReady(assetId, 30)
+
+    -- Edited capture time. Prefer the original-capture ISO field (reflects
+    -- Lightroom's "Edit Capture Time"), fall back to the adjusted date/time.
+    local isoDate = photo:getRawMetadata("dateTimeOriginalISO8601")
+        or photo:getRawMetadata("dateTimeISO8601")
+    if not util.nilOrEmpty(isoDate) then
+        immich:setAssetDate(assetId, isoDate)
+    end
+
+    -- Keywords -> tags. Additive only: assign the photo's current export keywords
+    -- as tags and never remove any. Tags added directly in Immich are preserved.
+    local tagNames = UploadHelpers.collectExportKeywords(photo)
+    if #tagNames > 0 then
+        local tags = immich:upsertTags(tagNames)
+        if tags then
+            local tagIds = {}
+            for _, tag in ipairs(tags) do
+                if tag.id then
+                    table.insert(tagIds, tag.id)
+                end
+            end
+            if #tagIds > 0 then
+                immich:assignTagsToAsset(tagIds, assetId)
+            end
+        end
+    end
+
+    -- The date change above can invalidate the video's thumbnail (Immich
+    -- regenerates it, and a freshly uploaded or just-replaced asset can be left
+    -- showing an error). The pre-upload wait can't prevent this because the
+    -- breakage is caused by our own edit, and an existing asset already has a
+    -- stale thumbnail that defeats the wait. Queue a regeneration so it recovers.
+    immich:regenerateThumbnail(assetId)
+end
+
+--------------------------------------------------------------------------------
+-- Apply applyVideoMetadata to every successfully-uploaded primary asset. Runs
+-- after all uploads so it lands after replaceAsset's metadata copy. One bad
+-- photo never aborts the batch.
+function UploadHelpers.applyVideoMetadataForAll(immich, exportedPrimaryByPhoto)
+    for _, rec in pairs(exportedPrimaryByPhoto) do
+        local ok, err = LrTasks.pcall(function()
+            UploadHelpers.applyVideoMetadata(immich, rec.photo, rec.assetId)
+        end)
+        if not ok then
+            log:warn("applyVideoMetadata failed: " .. tostring(err))
+        end
+    end
+end

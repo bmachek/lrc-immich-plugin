@@ -648,6 +648,7 @@ local function runExport(
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
         UploadHelpers.applyLrStacksInImmich(immich, exportedPrimaryByPhoto, stackWarnings)
     end
+    UploadHelpers.applyVideoMetadataForAll(immich, exportedPrimaryByPhoto)
     return failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
 end
 
