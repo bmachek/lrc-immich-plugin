@@ -483,6 +483,94 @@ function ImmichAPI:setAssetVisibility(assetId, visibility)
     return true
 end
 
+-- Set the capture date (dateTimeOriginal) on an existing asset, mirroring the
+-- web UI's date editor. Used to push Lightroom's edited capture time for assets
+-- Immich cannot read it from the file (videos). Immich persists this to a
+-- sidecar, so it survives later metadata re-extraction.
+function ImmichAPI:setAssetDate(assetId, isoDate)
+    if util.nilOrEmpty(assetId) or util.nilOrEmpty(isoDate) then
+        log:warn("setAssetDate: assetId or date empty")
+        return false
+    end
+    local body = { dateTimeOriginal = isoDate }
+    local parsedResponse = self:doCustomRequest("PUT", "/assets/" .. assetId, body)
+    if parsedResponse == nil then
+        log:error("setAssetDate: failed to set date " .. tostring(isoDate) .. " on " .. assetId)
+        return false
+    end
+    log:trace("setAssetDate: " .. assetId .. " -> " .. tostring(isoDate))
+    return true
+end
+
+-- Upsert tags by value (supports nested "parent/child"). Returns the array of
+-- tag objects ({ id, name, value }) on success, or nil.
+function ImmichAPI:upsertTags(tagNames)
+    if type(tagNames) ~= "table" or #tagNames == 0 then
+        return nil
+    end
+    local body = { tags = tagNames }
+    local parsedResponse = self:doCustomRequest("PUT", "/tags", body)
+    if parsedResponse == nil then
+        log:error("upsertTags: failed to upsert tags")
+        return nil
+    end
+    return parsedResponse
+end
+
+-- Assign already-upserted tag ids to a single asset (bulk endpoint).
+function ImmichAPI:assignTagsToAsset(tagIds, assetId)
+    if type(tagIds) ~= "table" or #tagIds == 0 or util.nilOrEmpty(assetId) then
+        return false
+    end
+    local body = { tagIds = tagIds, assetIds = { assetId } }
+    local parsedResponse = self:doCustomRequest("PUT", "/tags/assets", body)
+    if parsedResponse == nil then
+        log:error("assignTagsToAsset: failed to assign tags to " .. assetId)
+        return false
+    end
+    log:trace("assignTagsToAsset: " .. #tagIds .. " tag(s) -> " .. assetId)
+    return true
+end
+
+-- Poll until Immich has finished ingesting the asset (thumbnail generated).
+-- A freshly uploaded video is probed and thumbnailed asynchronously; mutating its
+-- metadata before that completes races the ingest pipeline and leaves the
+-- thumbnail in an error state. Returns true once ready, false on timeout.
+function ImmichAPI:waitForAssetReady(assetId, maxSeconds)
+    if util.nilOrEmpty(assetId) then
+        return false
+    end
+    local limit = maxSeconds or 30
+    local waited = 0
+    while waited < limit do
+        local asset = self:doGetRequest("/assets/" .. assetId)
+        if asset ~= nil and type(asset.thumbhash) == "string" and asset.thumbhash ~= "" then
+            return true
+        end
+        LrTasks.sleep(1)
+        waited = waited + 1
+    end
+    log:warn("waitForAssetReady: timed out after " .. limit .. "s waiting for " .. assetId)
+    return false
+end
+
+-- Queue a thumbnail regeneration for an asset (same action as the web UI's
+-- "Regenerate thumbnails"). Used after a metadata change so a video whose
+-- thumbnail was invalidated recovers on its own. Returns true on success.
+function ImmichAPI:regenerateThumbnail(assetId)
+    if util.nilOrEmpty(assetId) then
+        return false
+    end
+    local body = { assetIds = { assetId }, name = "regenerate-thumbnail" }
+    local parsedResponse = self:doCustomRequest("POST", "/assets/jobs", body)
+    if parsedResponse == nil then
+        log:error("regenerateThumbnail: failed to queue for " .. assetId)
+        return false
+    end
+    log:trace("regenerateThumbnail: queued for " .. assetId)
+    return true
+end
+
 function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
     if util.nilOrEmpty(sourceAssetId) then
         ErrorHandler.handleError(
