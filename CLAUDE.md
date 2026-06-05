@@ -63,3 +63,5 @@ Export supports modes: `none`, `existing`, `new`, `folder` (dynamic per-folder a
 ### Photo Identity
 
 Photos are identified by UUID (stable across reimports) with fallback to `localIdentifier` for backward compatibility with older metadata.
+
+@.claude/skills/lrc-plugin-dev.md

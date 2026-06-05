@@ -1,8 +1,13 @@
 .DS_Store
-.claude
 .venv/
 lua_env/
 
 # MemPalace per-project files (issue #185)
 mempalace.yaml
 entities.json
+
+.claude/settings.local.json
+.claude/sessions/
+.claude/logs/
+.claude/mcp-settings.json
+
