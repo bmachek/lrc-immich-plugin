@@ -444,6 +444,24 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibili
             end
             return newImmichId
         end
+        -- Defense-in-depth: never replace/delete an asset the plugin did not upload (deviceId mismatch).
+        -- Guards against any path that resolves a foreign asset (e.g. an external-library RAW that shares
+        -- the photo's filename + capture time) as a replace target. Keep the freshly uploaded asset, roll
+        -- back nothing the user owns, and surface the situation to the caller.
+        if oldAssetInfo.deviceId ~= self.deviceIdString then
+            log:warn(
+                "replaceAsset: old asset "
+                    .. immichId
+                    .. " was not uploaded by this plugin (deviceId="
+                    .. tostring(oldAssetInfo.deviceId)
+                    .. "); refusing to replace/delete it, keeping newly uploaded asset "
+                    .. newImmichId
+            )
+            if visibility then
+                self:setAssetVisibility(newImmichId, visibility)
+            end
+            return newImmichId
+        end
         if self:copyAssetMetadata(immichId, newImmichId) then
             if visibility then
                 self:setAssetVisibility(newImmichId, visibility)
@@ -983,7 +1001,11 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
         end
     end
 
-    -- Step 3: Fallback to filename + dateCreated search (for backward compatibility)
+    -- Step 3: Fallback to filename + dateCreated search (for backward compatibility).
+    -- Only accept a match the plugin itself uploaded (deviceId == our deviceIdString). Without this
+    -- guard, a same-named asset from another source (e.g. a RAW in an Immich external library that
+    -- shares the photo's filename + capture time) would be treated as a replace target and trashed
+    -- by replaceAsset on the first publish.
     if dateCreated ~= nil and dateCreated ~= "" then
         log:trace("checkIfAssetExistsEnhanced: deviceAssetId not found, trying filename + date")
         local postBody =
@@ -991,16 +1013,24 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, da
         local response = self:doPostRequest("/search/metadata", postBody)
 
         if response and response.assets and response.assets.count >= 1 then
-            foundId = response.assets.items[1].id
-            foundDeviceId = response.assets.items[1].deviceAssetId
+            local item = response.assets.items[1]
+            if item.deviceId == self.deviceIdString then
+                foundId = item.id
+                foundDeviceId = item.deviceAssetId
+                log:trace(
+                    "checkIfAssetExistsEnhanced: Found existing asset with filename "
+                        .. filename
+                        .. " and creationDate "
+                        .. dateCreated
+                )
+                MetadataTask.setImmichAssetId(photo, foundId)
+                return foundId, foundDeviceId
+            end
             log:trace(
-                "checkIfAssetExistsEnhanced: Found existing asset with filename "
-                    .. filename
-                    .. " and creationDate "
-                    .. dateCreated
+                "checkIfAssetExistsEnhanced: filename+date matched a non-plugin asset (deviceId="
+                    .. tostring(item.deviceId)
+                    .. "); treating as new upload, will not replace/delete it"
             )
-            MetadataTask.setImmichAssetId(photo, foundId)
-            return foundId, foundDeviceId
         end
     end
 
@@ -1040,13 +1070,24 @@ function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
             )
             return nil
         elseif (response.assets.count or 0) >= 1 and response.assets.items and response.assets.items[1] then
+            -- Only accept a match the plugin itself uploaded (deviceId == our deviceIdString), so a
+            -- same-named foreign asset (e.g. an external-library RAW) is never treated as a replace
+            -- target and trashed by replaceAsset.
+            local item = response.assets.items[1]
+            if item.deviceId == self.deviceIdString then
+                log:trace(
+                    "Found existing asset with filename "
+                        .. tostring(filename)
+                        .. " and creationDate "
+                        .. tostring(dateCreated)
+                )
+                return item.id, item.deviceAssetId
+            end
             log:trace(
-                "Found existing asset with filename "
-                    .. tostring(filename)
-                    .. " and creationDate "
-                    .. tostring(dateCreated)
+                "checkIfAssetExists: filename+date matched a non-plugin asset (deviceId="
+                    .. tostring(item.deviceId)
+                    .. "); treating as new upload, will not replace/delete it"
             )
-            return response.assets.items[1].id, response.assets.items[1].deviceAssetId
         end
     end
     return nil
