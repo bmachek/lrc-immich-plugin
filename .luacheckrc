@@ -42,7 +42,7 @@ globals = {
     "SharedDialogSections",
     "StackManager",
     "UploadHelpers",
-    "util",
+    "Util",
 }
 
 exclude_files = {
