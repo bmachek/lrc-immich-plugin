@@ -21,7 +21,7 @@ _G.LrLogger = import("LrLogger")
 
 _G.JSON = require("JSON")
 _G.inspect = require("inspect")
-require("util")
+require("Util")
 require("ErrorHandler")
 
 -- Global initializations
