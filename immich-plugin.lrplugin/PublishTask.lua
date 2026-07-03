@@ -63,7 +63,7 @@ local function addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, al
         if folderAlbumId then
             immich:addAssetToAlbum(folderAlbumId, assetId)
         end
-    elseif albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, assetId)) then
+    elseif albumId and (not albumAssetIds or not Util.table_contains(albumAssetIds, assetId)) then
         immich:addAssetToAlbum(albumId, assetId)
     end
 end
@@ -73,7 +73,6 @@ end
 -- Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
 local function processPublishOnePhotoGroup(
     immich,
-    lid,
     items,
     albumCreationStrategy,
     albumId,
@@ -89,24 +88,21 @@ local function processPublishOnePhotoGroup(
     end
     local photo = items[1].photo
     local filename = photo:getFormattedMetadata("fileName")
-    local dateCreated = photo:getFormattedMetadata("dateCreated")
     if #items >= 2 then
         UploadHelpers.sortOriginalExportItems(items)
         local assetIds = {}
         local primaryId = nil
         for i, item in ipairs(items) do
-            -- After sort: items[1]=export (primary), items[2]=original.
-            -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
-            local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
-            local deviceAssetId = lid .. suffix
-            local id, errReason = StackManager.uploadOneAssetOrReplace(
-                immich,
-                item.path,
-                deviceAssetId,
-                filename,
-                dateCreated,
-                visibility
-            )
+            -- After sort: items[1]=export (primary), items[2..]=original/extra renditions.
+            local id, errReason
+            if i == 1 then
+                -- Primary export: dedup/replace via the plugin's stored Immich asset ID.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
+            else
+                -- Stack secondaries have no stored ID and no safe way to resolve a prior
+                -- upload now that deviceAssetId is gone; upload fresh.
+                id, errReason = immich:uploadAsset(item.path, visibility)
+            end
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
                 table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -118,7 +114,7 @@ local function processPublishOnePhotoGroup(
                 end
                 item.rendition:recordPublishedPhotoId(id)
                 item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-                log:info("original+export [" .. filename .. "]: " .. deviceAssetId .. " -> " .. id)
+                log:info("original+export [" .. filename .. "]: -> " .. id)
             end
         end
         if #assetIds >= 2 and primaryId then
@@ -147,12 +143,8 @@ local function processPublishOnePhotoGroup(
         -- publish collection (deletePhotosFromPublishedCollection only cleans up assets
         -- registered via recordPublishedPhotoId). Warn instead.
         local item = items[1]
-        local deviceAssetId = lid .. "_export"
-        log:info(
-            "original+export [" .. filename .. "]: single rendition, uploading as export (" .. deviceAssetId .. ")"
-        )
-        local id, errReason =
-            StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated, visibility)
+        log:info("original+export [" .. filename .. "]: single rendition, uploading as export")
+        local id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
             table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -213,8 +205,6 @@ local function processPublishStackOriginalExportRenditions(
             break
         end
         if success then
-            -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
-            local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
             -- role = "export": LR_exportOriginalFile is never set, so LR always delivers the
             -- rendered export (never an original-copy rendition), regardless of file extension.
             local item = {
@@ -225,7 +215,6 @@ local function processPublishStackOriginalExportRenditions(
             }
             processPublishOnePhotoGroup(
                 immich,
-                lid,
                 { item },
                 albumCreationStrategy,
                 albumId,
@@ -270,20 +259,13 @@ local function processPublishSingleRenditionRenditions(
         end
         if success then
             local photo = rendition.photo
-            local deviceAssetId = util.getPhotoDeviceId(photo)
-            local existingId = immich:checkIfAssetExistsEnhanced(
-                photo,
-                deviceAssetId,
-                photo:getFormattedMetadata("fileName"),
-                photo:getFormattedMetadata("dateCreated")
-            )
+            -- Primary asset: resolve a prior upload via the stored Immich asset ID.
+            local existingId = immich:checkIfAssetExistsEnhanced(photo)
             local id, errReason
             if existingId == nil then
-                id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId, visibility)
+                id, errReason = immich:uploadAsset(pathOrMessage, visibility)
             else
-                -- Always use the current UUID deviceAssetId (not the legacy localIdentifier from the old
-                -- asset) so the new asset can be found by UUID on the next run, breaking the replace cycle.
-                id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId, visibility)
+                id, errReason = immich:replaceAsset(existingId, pathOrMessage, visibility)
             end
 
             if not id then
@@ -304,7 +286,7 @@ local function processPublishSingleRenditionRenditions(
                         immich:addAssetToAlbum(folderBasedAlbumId, id)
                     end
                 else
-                    if albumId and (not albumAssetIds or not util.table_contains(albumAssetIds, id)) then
+                    if albumId and (not albumAssetIds or not Util.table_contains(albumAssetIds, id)) then
                         immich:addAssetToAlbum(albumId, id)
                     end
                 end
@@ -375,7 +357,7 @@ end
 --------------------------------------------------------------------------------
 
 function PublishTask.processRenderedPhotos(functionContext, exportContext)
-    local exportSession, exportParams, immich = util.validateExportContextAndConnect(exportContext, "Publish")
+    local exportSession, exportParams, immich = Util.validateExportContextAndConnect(exportContext, "Publish")
     if not exportSession then
         return nil
     end
@@ -406,7 +388,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     -- with functionContext stays alive until processRenderedPhotos returns, and is not advanced
     -- by LR's render thread, eliminating both early-close and forward→0→return race conditions.
     local progressScope = LrProgressScope({
-        title = util.buildSimpleUploadProgressTitle(nPhotos, "Publishing", progressTitle),
+        title = Util.buildSimpleUploadProgressTitle(nPhotos, "Publishing", progressTitle),
         functionContext = functionContext,
     })
 
@@ -433,7 +415,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             .. #stackWarnings
             .. " ==="
     )
-    util.reportUploadFailuresAndWarnings(failures, stackWarnings)
+    Util.reportUploadFailuresAndWarnings(failures, stackWarnings)
 end
 
 function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, commentText) end
@@ -509,7 +491,7 @@ function PublishTask.deletePhotosFromPublishedCollection(
     deletedCallback,
     localCollectionId
 )
-    if util.nilOrEmpty(publishSettings.url) or util.nilOrEmpty(publishSettings.apiKey) then
+    if Util.nilOrEmpty(publishSettings.url) or Util.nilOrEmpty(publishSettings.apiKey) then
         ErrorHandler.handleError(
             "Configure Immich in plugin settings.",
             "deletePhotosFromPublishedCollection: URL or API key not set"
@@ -560,7 +542,7 @@ function PublishTask.deletePhotosFromPublishedCollection(
     local notExistingAlbums = {}
 
     for _, publishedPhoto in ipairs(publishedPhotos) do
-        if util.table_contains(arrayOfPhotoIds, publishedPhoto:getRemoteId()) then
+        if Util.table_contains(arrayOfPhotoIds, publishedPhoto:getRemoteId()) then
             local photoRemoteId = publishedPhoto:getRemoteId()
             log:trace("Photo " .. photoRemoteId .. " is in the list to be deleted.")
 
@@ -576,10 +558,10 @@ function PublishTask.deletePhotosFromPublishedCollection(
 
             if albumCreationStrategy == "folder" then
                 local albums = immich:getAlbumsByNameFolderBased(folderName)
-                log:trace("Album found for folder based strategy: " .. util.dumpTable(albums))
+                log:trace("Album found for folder based strategy: " .. Util.dumpTable(albums))
                 if albums ~= nil and #albums == 1 then
                     albumId = albums[1].value
-                elseif not util.table_contains(notExistingAlbums, folderName or "(unknown folder)") then
+                elseif not Util.table_contains(notExistingAlbums, folderName or "(unknown folder)") then
                     table.insert(notExistingAlbums, folderName or "(unknown folder)")
                 end
             else

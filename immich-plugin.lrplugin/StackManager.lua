@@ -14,14 +14,15 @@ require("ImmichAPI")
 StackManager = {}
 
 --------------------------------------------------------------------------------
--- Upload one asset or replace existing; returns Immich asset id or nil
-function StackManager.uploadOneAssetOrReplace(immich, path, deviceAssetId, filename, dateCreated, visibility)
-    local existingId = immich:checkIfAssetExists(deviceAssetId, filename, dateCreated)
+-- Upload a primary asset for a photo, replacing the asset the plugin previously
+-- uploaded when its Immich ID is resolvable from stored Lightroom metadata.
+-- Returns Immich asset id or nil.
+function StackManager.uploadOneAssetOrReplace(immich, photo, path, visibility)
+    local existingId = immich:checkIfAssetExistsEnhanced(photo)
     if existingId == nil then
-        return immich:uploadAsset(path, deviceAssetId, visibility)
+        return immich:uploadAsset(path, visibility)
     else
-        -- Always use the passed deviceAssetId for the new upload to keep it stable.
-        return immich:replaceAsset(existingId, path, deviceAssetId, visibility)
+        return immich:replaceAsset(existingId, path, visibility)
     end
 end
 
@@ -253,13 +254,6 @@ function StackManager.getOriginalFilePath(photo)
 end
 
 --------------------------------------------------------------------------------
--- Generate device asset ID for original file
--- Appends "_original" to the base photo ID to ensure uniqueness
-function StackManager.generateOriginalDeviceAssetId(baseId, originalPath)
-    return tostring(baseId) .. "_original"
-end
-
---------------------------------------------------------------------------------
 -- Upload original file and create stack with edited photo as primary
 function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, exportParams, visibility)
     if not immich then
@@ -279,31 +273,13 @@ function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, ex
         return editedAssetId, "Cannot access original file"
     end
 
-    -- Generate device asset ID for original using UUID
-    local baseDeviceId = util.getPhotoDeviceId(photo)
-    if not baseDeviceId then
-        log:warn("processPhotoWithStack: no device ID for photo " .. tostring(photo.localIdentifier))
-        return editedAssetId, "Cannot generate asset ID for original"
-    end
-    local originalDeviceAssetId = StackManager.generateOriginalDeviceAssetId(baseDeviceId, originalPath)
-
     log:trace("Uploading original file: " .. originalPath)
 
-    -- Check if original asset already exists (use enhanced check but without metadata lookup for originals)
-    local existingOriginalId, _ = immich:checkIfAssetExists(
-        originalDeviceAssetId,
-        LrPathUtils.leafName(originalPath),
-        photo:getFormattedMetadata("dateCreated")
-    )
-
-    local originalAssetId
-    if existingOriginalId then
-        originalAssetId = existingOriginalId
-        log:trace("Original asset already exists: " .. originalAssetId)
-    else
-        -- Upload original file
-        originalAssetId = immich:uploadAsset(originalPath, originalDeviceAssetId, visibility)
-    end
+    -- The original is a stack secondary; the plugin never persists its Immich ID,
+    -- and with deviceAssetId/deviceId removed from Immich there is no safe way to
+    -- resolve a prior upload of it. Upload fresh — a re-export may create a duplicate
+    -- original rather than risk resolving (and later trashing) a foreign asset.
+    local originalAssetId = immich:uploadAsset(originalPath, visibility)
 
     if not originalAssetId then
         return editedAssetId, "Failed to upload original file"

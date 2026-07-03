@@ -117,7 +117,7 @@ end
 --------------------------------------------------------------------------------
 -- Validates export context and creates Immich API instance (uses shared util).
 local function validateAndConnect(exportContext)
-    return util.validateExportContextAndConnect(exportContext, "Export")
+    return Util.validateExportContextAndConnect(exportContext, "Export")
 end
 
 --------------------------------------------------------------------------------
@@ -178,7 +178,7 @@ local function resolveAlbumForExport(immich, exportParams)
         useAlbum = true
     elseif exportParams.albumMode == "new" then
         local newName = exportParams.newAlbumName
-        if util.nilOrEmpty(newName) then
+        if Util.nilOrEmpty(newName) then
             log:warn("ExportTask: new album name empty, skipping album")
         else
             log:trace("Creating new album: " .. newName)
@@ -225,7 +225,6 @@ end
 -- Process one photo group (original+export flow). Mutates state tables; returns nothing.
 local function processOnePhotoGroup(
     immich,
-    lid,
     items,
     exportParams,
     albumId,
@@ -242,24 +241,21 @@ local function processOnePhotoGroup(
     end
     local photo = items[1].photo
     local filename = photo:getFormattedMetadata("fileName")
-    local dateCreated = photo:getFormattedMetadata("dateCreated")
     if #items >= 2 then
         UploadHelpers.sortOriginalExportItems(items)
         local assetIds = {}
         local primaryId = nil
         for i, item in ipairs(items) do
-            -- After sort: items[1]=export (primary), items[2]=original.
-            -- Suffix is stable for the expected two-item pair; extra renditions get an index suffix.
-            local suffix = (i == 1) and "_export" or (i == 2) and "_orig" or ("_rend" .. tostring(i))
-            local deviceAssetId = lid .. suffix
-            local id, errReason = StackManager.uploadOneAssetOrReplace(
-                immich,
-                item.path,
-                deviceAssetId,
-                filename,
-                dateCreated,
-                visibility
-            )
+            -- After sort: items[1]=export (primary), items[2..]=original/extra renditions.
+            local id, errReason
+            if i == 1 then
+                -- Primary export: dedup/replace via the plugin's stored Immich asset ID.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
+            else
+                -- Stack secondaries have no stored ID and no safe way to resolve a prior
+                -- upload now that deviceAssetId is gone; upload fresh.
+                id, errReason = immich:uploadAsset(item.path, visibility)
+            end
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
                 table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -269,7 +265,7 @@ local function processOnePhotoGroup(
                 if primaryId == nil then
                     primaryId = id
                 end
-                log:info("original+export [" .. filename .. "]: " .. deviceAssetId .. " -> " .. id)
+                log:info("original+export [" .. filename .. "]: -> " .. id)
             end
         end
         if #assetIds >= 2 and primaryId then
@@ -291,19 +287,15 @@ local function processOnePhotoGroup(
             -- Note: processPhotoWithStack is intentionally NOT called here. Both renditions
             -- (original copy + rendered export) have already been uploaded and stacked by
             -- immich:createStack above. Calling processPhotoWithStack would re-upload the disk
-            -- original under a different deviceAssetId and create a duplicate stack.
+            -- original and create a duplicate stack.
         end
     elseif #items == 1 then
         -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
         -- delivers the rendered export (never an original-copy rendition), so item.role = "export".
         -- Always treat the single rendition as the export and fetch the disk original.
         local item = items[1]
-        local deviceAssetId = lid .. "_export"
-        log:info(
-            "original+export [" .. filename .. "]: single rendition, uploading as export (" .. deviceAssetId .. ")"
-        )
-        local id, errReason =
-            StackManager.uploadOneAssetOrReplace(immich, item.path, deviceAssetId, filename, dateCreated, visibility)
+        log:info("original+export [" .. filename .. "]: single rendition, uploading as export")
+        local id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
             table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -324,14 +316,8 @@ local function processOnePhotoGroup(
             else
                 local originalPath = StackManager.getOriginalFilePath(photo)
                 if originalPath then
-                    local origId = StackManager.uploadOneAssetOrReplace(
-                        immich,
-                        originalPath,
-                        lid .. "_orig",
-                        filename,
-                        dateCreated,
-                        visibility
-                    )
+                    -- Original is a stack secondary; upload fresh (no stored ID to dedup against).
+                    local origId = immich:uploadAsset(originalPath, visibility)
                     if origId then
                         if not immich:createStack({ id, origId }) then
                             table.insert(stackWarnings, filename .. ": failed to create original+export stack")
@@ -386,8 +372,6 @@ local function processStackOriginalExportRenditions(
             break
         end
         if success then
-            -- Use stable device ID (UUID when available) so deviceAssetIds survive catalog re-imports.
-            local lid = util.getPhotoDeviceId(rendition.photo) or rendition.photo.localIdentifier
             -- role = "export": LR_exportOriginalFile is never set, so LR always delivers the
             -- rendered export (never an original-copy rendition), regardless of file extension.
             local item = {
@@ -398,7 +382,6 @@ local function processStackOriginalExportRenditions(
             }
             processOnePhotoGroup(
                 immich,
-                lid,
                 { item },
                 exportParams,
                 albumId,
@@ -445,7 +428,6 @@ local function processSingleRenditionRenditions(
         end
         if success then
             local photo = rendition.photo
-            local deviceAssetId = util.getPhotoDeviceId(photo)
             local originalFileMode = exportParams.originalFileMode
 
             if originalFileMode == "original_only" or originalFileMode == "original_plus_jpeg_if_edited" then
@@ -453,25 +435,14 @@ local function processSingleRenditionRenditions(
                 if not originalPath then
                     table.insert(failures, photo:getFormattedMetadata("fileName") .. " (original not found)")
                 else
-                    local existingId = immich:checkIfAssetExistsEnhanced(
-                        photo,
-                        deviceAssetId,
-                        photo:getFormattedMetadata("fileName"),
-                        photo:getFormattedMetadata("dateCreated")
-                    )
-                    log:info(
-                        "single-rendition ["
-                            .. photo:getFormattedMetadata("fileName")
-                            .. "]: uploading original ("
-                            .. tostring(deviceAssetId)
-                            .. ")"
-                    )
-                    -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
+                    -- Primary asset: resolve a prior upload via the stored Immich asset ID.
+                    local existingId = immich:checkIfAssetExistsEnhanced(photo)
+                    log:info("single-rendition [" .. photo:getFormattedMetadata("fileName") .. "]: uploading original")
                     local id, errReason
                     if existingId == nil then
-                        id, errReason = immich:uploadAsset(originalPath, deviceAssetId, visibility)
+                        id, errReason = immich:uploadAsset(originalPath, visibility)
                     else
-                        id, errReason = immich:replaceAsset(existingId, originalPath, deviceAssetId, visibility)
+                        id, errReason = immich:replaceAsset(existingId, originalPath, visibility)
                     end
                     if not id then
                         table.insert(
@@ -494,29 +465,13 @@ local function processSingleRenditionRenditions(
                                         .. " an edited version. Switch to any rendered format (e.g. JPEG, TIFF, PNG)."
                                 )
                             else
-                                local deviceAssetIdEdited = tostring(deviceAssetId) .. "_edited"
-                                local fileName, dateCreated =
-                                    photo:getFormattedMetadata("fileName"), photo:getFormattedMetadata("dateCreated")
                                 log:info(
                                     "single-rendition ["
-                                        .. fileName
-                                        .. "]: uploading edited export ("
-                                        .. deviceAssetIdEdited
-                                        .. ")"
+                                        .. photo:getFormattedMetadata("fileName")
+                                        .. "]: uploading edited export"
                                 )
-                                local existingExportId =
-                                    immich:checkIfAssetExists(deviceAssetIdEdited, fileName, dateCreated)
-                                local exportId
-                                if existingExportId then
-                                    exportId = immich:replaceAsset(
-                                        existingExportId,
-                                        pathOrMessage,
-                                        deviceAssetIdEdited,
-                                        visibility
-                                    )
-                                else
-                                    exportId = immich:uploadAsset(pathOrMessage, deviceAssetIdEdited, visibility)
-                                end
+                                -- Edited export is a stack secondary; upload fresh (no stored ID to dedup against).
+                                local exportId = immich:uploadAsset(pathOrMessage, visibility)
                                 if exportId then
                                     primaryId = exportId
                                     if not immich:createStack({ exportId, id }) then
@@ -547,18 +502,13 @@ local function processSingleRenditionRenditions(
                 end
                 UploadHelpers.safeDeleteTempFile(pathOrMessage)
             else
-                local existingId = immich:checkIfAssetExistsEnhanced(
-                    photo,
-                    deviceAssetId,
-                    photo:getFormattedMetadata("fileName"),
-                    photo:getFormattedMetadata("dateCreated")
-                )
-                -- Always use the current UUID deviceAssetId to migrate legacy localIdentifier-based assets.
+                -- Primary asset: resolve a prior upload via the stored Immich asset ID.
+                local existingId = immich:checkIfAssetExistsEnhanced(photo)
                 local id, errReason
                 if existingId == nil then
-                    id, errReason = immich:uploadAsset(pathOrMessage, deviceAssetId, visibility)
+                    id, errReason = immich:uploadAsset(pathOrMessage, visibility)
                 else
-                    id, errReason = immich:replaceAsset(existingId, pathOrMessage, deviceAssetId, visibility)
+                    id, errReason = immich:replaceAsset(existingId, pathOrMessage, visibility)
                 end
                 if not id then
                     table.insert(
@@ -661,7 +611,7 @@ local function finalizeExport(immich, exportParams, albumId, useAlbum, atLeastSo
         log:trace("Deleting newly created album, as no upload succeeded, and album would remain as orphan.")
         immich:deleteAlbum(albumId)
     end
-    util.reportUploadFailuresAndWarnings(failures, stackWarnings)
+    Util.reportUploadFailuresAndWarnings(failures, stackWarnings)
 end
 
 --------------------------------------------------------------------------------

@@ -7,7 +7,6 @@
 local API_BASE_PATH = "/api"
 local HTTP_TIMEOUT_DEFAULT = 30
 local HTTP_TIMEOUT_UPLOAD = 300
-local DEVICE_ID_STRING = "Lightroom Immich Upload Plugin"
 
 local SUCCESS_STATUS_GET = 200
 local SUCCESS_STATUS_POST = { [200] = true, [201] = true }
@@ -57,7 +56,7 @@ local function handleRequestFailure(method, apiPath, status, headers, response)
             .. tostring(status or "?")
             .. ")"
     )
-    log:error("Response headers: " .. ((headers and util.dumpTable(headers)) or "none"))
+    log:error("Response headers: " .. ((headers and Util.dumpTable(headers)) or "none"))
     local parsedErrorString = "HTTP " .. tostring(status or "Error")
     if response ~= nil then
         log:error("Response body: " .. tostring(response))
@@ -79,7 +78,6 @@ end
 
 function ImmichAPI:new(url, apiKey)
     local o = setmetatable({}, ImmichAPI)
-    o.deviceIdString = DEVICE_ID_STRING
     o.apiBasePath = API_BASE_PATH
     o.apiKey = (apiKey ~= nil and type(apiKey) == "string") and apiKey or ""
     o.url = (url ~= nil and type(url) == "string") and url or ""
@@ -90,7 +88,7 @@ function ImmichAPI:reconfigure(url, apiKey)
     self.apiKey = (apiKey ~= nil and type(apiKey) == "string") and apiKey or self.apiKey or ""
     self.url = (url ~= nil and type(url) == "string") and url or self.url or ""
     log:trace("Immich reconfigured with URL: " .. self.url)
-    log:trace("Immich reconfigured with API key: " .. util.cutApiKey(self.apiKey))
+    log:trace("Immich reconfigured with API key: " .. Util.cutApiKey(self.apiKey))
 end
 
 function ImmichAPI:setUrl(url)
@@ -100,7 +98,7 @@ end
 
 function ImmichAPI:setApiKey(apiKey)
     self.apiKey = apiKey
-    log:trace("Immich new API key set: " .. util.cutApiKey(self.apiKey))
+    log:trace("Immich new API key set: " .. Util.cutApiKey(self.apiKey))
 end
 
 -- ---------------------------------------------------------------------------
@@ -108,7 +106,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function ImmichAPI:downloadAsset(assetId)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No asset ID provided. Check logs.", "downloadAsset: assetId empty")
         return nil
     end
@@ -131,7 +129,7 @@ function ImmichAPI:downloadAsset(assetId)
         return response
     else
         log:error("Failed to download asset: " .. assetId)
-        log:error("Response headers: " .. util.dumpTable(headers))
+        log:error("Response headers: " .. Util.dumpTable(headers))
         if response ~= nil then
             log:error("Response body: " .. response)
         end
@@ -140,7 +138,7 @@ function ImmichAPI:downloadAsset(assetId)
 end
 
 function ImmichAPI:hasLivePhotoVideo(assetId)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No asset ID provided. Check logs.", "hasLivePhotoVideo: assetId empty")
         return nil
     end
@@ -158,7 +156,7 @@ function ImmichAPI:hasLivePhotoVideo(assetId)
 end
 
 function ImmichAPI:getLivePhotoVideoId(assetId)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No asset ID provided. Check logs.", "getLivePhotoVideoId: assetId empty")
         return nil
     end
@@ -176,7 +174,7 @@ function ImmichAPI:getLivePhotoVideoId(assetId)
 end
 
 function ImmichAPI:getOriginalFileName(assetId)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No asset ID provided. Check logs.", "getOriginalFileName: assetId empty")
         return nil
     end
@@ -194,7 +192,7 @@ function ImmichAPI:getOriginalFileName(assetId)
 end
 
 function ImmichAPI:getAlbumAssets(albumId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         ErrorHandler.handleError("No album ID provided. Check logs.", "getAlbumAssets: albumId empty")
         return nil
     end
@@ -245,7 +243,7 @@ end
 -- Returns sanitized URL (string) on success; false on empty; nil on invalid format.
 -- Does not show dialogs (for use in validate callbacks). Callers should show errors or return error messages.
 function ImmichAPI:sanityCheckAndFixURL(url)
-    if util.nilOrEmpty(url) then
+    if Util.nilOrEmpty(url) then
         return false
     end
     if not string.match(url, "^https?://") then
@@ -262,7 +260,7 @@ function ImmichAPI:sanityCheckAndFixURL(url)
 end
 
 function ImmichAPI:checkConnectivity()
-    if util.nilOrEmpty(self.url) or util.nilOrEmpty(self.apiKey) then
+    if Util.nilOrEmpty(self.url) or Util.nilOrEmpty(self.apiKey) then
         log:error("checkConnectivity: URL or API key is empty. Configure in plugin settings.")
         return false
     end
@@ -278,7 +276,7 @@ function ImmichAPI:checkConnectivity()
         return true
     else
         log:error("checkConnectivity: test failed.")
-        log:error("Response headers: " .. util.dumpTable(headers))
+        log:error("Response headers: " .. Util.dumpTable(headers))
         local errReason = "HTTP " .. tostring(headers.status)
         if response ~= nil then
             log:error("Response body: " .. response)
@@ -351,7 +349,7 @@ end
 
 -- Thanks to Min Idzelis
 function ImmichAPI:getAlbumUrl(albumId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         return nil
     end
     return self.url .. "/albums/" .. albumId
@@ -359,25 +357,22 @@ end
 
 -- Thanks to Min Idzelis
 function ImmichAPI:getAssetUrl(id)
-    if util.nilOrEmpty(id) then
+    if Util.nilOrEmpty(id) then
         return nil
     end
     return self.url .. "/photos/" .. id
 end
 
-function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId, visibility)
-    if util.nilOrEmpty(pathOrMessage) then
+function ImmichAPI:uploadAsset(pathOrMessage, visibility)
+    if Util.nilOrEmpty(pathOrMessage) then
         ErrorHandler.handleError("No filename given. Check logs.", "uploadAsset: pathOrMessage empty")
         return nil
     end
 
-    if util.nilOrEmpty(deviceAssetId) then
-        ErrorHandler.handleError("Device asset ID missing. Check logs.", "uploadAsset: deviceAssetId empty")
-        return nil
-    end
-
     local apiPath = "/assets"
-    local submitDate = LrDate.timeToIsoDate(LrDate.currentTime())
+    local submitDate = LrDate.timeToW3CDate(LrDate.currentTime())
+    submitDate = string.sub(submitDate, 1, -5)
+    log:trace("uploadAsset: " .. tostring(pathOrMessage) .. " submitted at " .. submitDate)
     local filePath = pathOrMessage
     local fileName = LrPathUtils.leafName(filePath)
 
@@ -388,8 +383,6 @@ function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId, visibility)
             fileName = fileName,
             contentType = "application/octet-stream",
         },
-        { name = "deviceAssetId", value = tostring(deviceAssetId) },
-        { name = "deviceId", value = self.deviceIdString },
         { name = "fileCreatedAt", value = submitDate },
         { name = "fileModifiedAt", value = submitDate },
         { name = "isFavorite", value = "false" },
@@ -400,32 +393,32 @@ function ImmichAPI:uploadAsset(pathOrMessage, deviceAssetId, visibility)
 
     local parsedResponse, errReason = self:doMultiPartPostRequest(apiPath, mimeChunks)
     if parsedResponse ~= nil then
-        log:info("uploadAsset: " .. tostring(deviceAssetId) .. " -> " .. parsedResponse.id)
+        log:info("uploadAsset: " .. tostring(pathOrMessage) .. " -> " .. parsedResponse.id)
         return parsedResponse.id
     end
     return nil, errReason
 end
 
-function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibility)
-    if util.nilOrEmpty(immichId) then
+-- Replaces an asset the plugin previously uploaded. immichId must come from a
+-- trusted source (the Immich asset ID the plugin persisted in Lightroom photo
+-- metadata via checkIfAssetExistsEnhanced) — since Immich removed deviceId there
+-- is no longer any way to verify ownership of an asset resolved by filename/date,
+-- so callers must never pass an id obtained from a heuristic match.
+function ImmichAPI:replaceAsset(immichId, pathOrMessage, visibility)
+    if Util.nilOrEmpty(immichId) then
         ErrorHandler.handleError("Immich asset ID missing. Check logs.", "replaceAsset: immichId empty")
         return nil
     end
 
-    if util.nilOrEmpty(pathOrMessage) then
+    if Util.nilOrEmpty(pathOrMessage) then
         ErrorHandler.handleError("No filename given. Check logs.", "replaceAsset: pathOrMessage empty")
-        return nil
-    end
-
-    if util.nilOrEmpty(deviceAssetId) then
-        ErrorHandler.handleError("Device asset ID missing. Check logs.", "replaceAsset: deviceAssetId empty")
         return nil
     end
 
     -- Upload to regular library first so copy/delete work even when the target
     -- visibility is "locked" (Immich blocks copy and delete on locked assets).
     -- Visibility is applied after metadata is transferred.
-    local newImmichId, errReason = self:uploadAsset(pathOrMessage, deviceAssetId, nil)
+    local newImmichId, errReason = self:uploadAsset(pathOrMessage, nil)
     if newImmichId ~= nil then
         -- Immich may return the existing asset ID (e.g. duplicate detection); skip replace steps
         if newImmichId == immichId then
@@ -439,24 +432,6 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibili
         local oldAssetInfo = self:doGetRequestAllow404("/assets/" .. immichId)
         if oldAssetInfo == nil then
             log:info("replaceAsset: old asset " .. immichId .. " no longer exists on server, returning new asset")
-            if visibility then
-                self:setAssetVisibility(newImmichId, visibility)
-            end
-            return newImmichId
-        end
-        -- Defense-in-depth: never replace/delete an asset the plugin did not upload (deviceId mismatch).
-        -- Guards against any path that resolves a foreign asset (e.g. an external-library RAW that shares
-        -- the photo's filename + capture time) as a replace target. Keep the freshly uploaded asset, roll
-        -- back nothing the user owns, and surface the situation to the caller.
-        if oldAssetInfo.deviceId ~= self.deviceIdString then
-            log:warn(
-                "replaceAsset: old asset "
-                    .. immichId
-                    .. " was not uploaded by this plugin (deviceId="
-                    .. tostring(oldAssetInfo.deviceId)
-                    .. "); refusing to replace/delete it, keeping newly uploaded asset "
-                    .. newImmichId
-            )
             if visibility then
                 self:setAssetVisibility(newImmichId, visibility)
             end
@@ -487,7 +462,7 @@ function ImmichAPI:replaceAsset(immichId, pathOrMessage, deviceAssetId, visibili
 end
 
 function ImmichAPI:setAssetVisibility(assetId, visibility)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         log:warn("setAssetVisibility: assetId empty")
         return false
     end
@@ -506,7 +481,7 @@ end
 -- Immich cannot read it from the file (videos). Immich persists this to a
 -- sidecar, so it survives later metadata re-extraction.
 function ImmichAPI:setAssetDate(assetId, isoDate)
-    if util.nilOrEmpty(assetId) or util.nilOrEmpty(isoDate) then
+    if Util.nilOrEmpty(assetId) or Util.nilOrEmpty(isoDate) then
         log:warn("setAssetDate: assetId or date empty")
         return false
     end
@@ -537,7 +512,7 @@ end
 
 -- Assign already-upserted tag ids to a single asset (bulk endpoint).
 function ImmichAPI:assignTagsToAsset(tagIds, assetId)
-    if type(tagIds) ~= "table" or #tagIds == 0 or util.nilOrEmpty(assetId) then
+    if type(tagIds) ~= "table" or #tagIds == 0 or Util.nilOrEmpty(assetId) then
         return false
     end
     local body = { tagIds = tagIds, assetIds = { assetId } }
@@ -555,7 +530,7 @@ end
 -- metadata before that completes races the ingest pipeline and leaves the
 -- thumbnail in an error state. Returns true once ready, false on timeout.
 function ImmichAPI:waitForAssetReady(assetId, maxSeconds)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         return false
     end
     local limit = maxSeconds or 30
@@ -576,7 +551,7 @@ end
 -- "Regenerate thumbnails"). Used after a metadata change so a video whose
 -- thumbnail was invalidated recovers on its own. Returns true on success.
 function ImmichAPI:regenerateThumbnail(assetId)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         return false
     end
     local body = { assetIds = { assetId }, name = "regenerate-thumbnail" }
@@ -590,7 +565,7 @@ function ImmichAPI:regenerateThumbnail(assetId)
 end
 
 function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
-    if util.nilOrEmpty(sourceAssetId) then
+    if Util.nilOrEmpty(sourceAssetId) then
         ErrorHandler.handleError(
             "Source Immich asset ID missing. Check logs.",
             "copyAssetMetadata: sourceAssetId empty"
@@ -598,7 +573,7 @@ function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
         return nil
     end
 
-    if util.nilOrEmpty(targetAssetId) then
+    if Util.nilOrEmpty(targetAssetId) then
         ErrorHandler.handleError(
             "Target Immich asset ID missing. Check logs.",
             "copyAssetMetadata: targetAssetId empty"
@@ -617,7 +592,7 @@ function ImmichAPI:copyAssetMetadata(sourceAssetId, targetAssetId)
 end
 
 function ImmichAPI:deleteAsset(immichId)
-    if util.nilOrEmpty(immichId) then
+    if Util.nilOrEmpty(immichId) then
         ErrorHandler.handleError("Immich asset ID missing. Check logs.", "deleteAsset: immichId empty")
         return false
     end
@@ -634,12 +609,12 @@ function ImmichAPI:deleteAsset(immichId)
 end
 
 function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         ErrorHandler.handleError("Immich album ID missing. Check logs.", "removeAssetFromAlbum: albumId empty")
         return false
     end
 
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No Immich asset ID given. Check logs.", "removeAssetFromAlbum: assetId empty")
         return false
     end
@@ -657,12 +632,12 @@ function ImmichAPI:removeAssetFromAlbum(albumId, assetId)
 end
 
 function ImmichAPI:addAssetToAlbum(albumId, assetId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         ErrorHandler.handleError("Immich album ID missing. Check logs.", "addAssetToAlbum: albumId empty")
         return nil
     end
 
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No Immich asset ID given. Check logs.", "addAssetToAlbum: assetId empty")
         return nil
     end
@@ -712,7 +687,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function ImmichAPI:createAlbum(albumName)
-    if util.nilOrEmpty(albumName) then
+    if Util.nilOrEmpty(albumName) then
         ErrorHandler.handleError("No album name given. Check logs.", "createAlbum: albumName empty")
         return nil
     end
@@ -728,7 +703,7 @@ function ImmichAPI:createAlbum(albumName)
 end
 
 function ImmichAPI:getAlbumNameById(albumId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         ErrorHandler.handleError("No album ID given. Check logs.", "getAlbumNameById: albumId empty")
         return nil
     end
@@ -746,7 +721,7 @@ function ImmichAPI:getAlbumNameById(albumId)
 end
 
 function ImmichAPI:createOrGetAlbumFolderBased(albumName)
-    if util.nilOrEmpty(albumName) then
+    if Util.nilOrEmpty(albumName) then
         ErrorHandler.handleError("No album name given. Check logs.", "createAlbum: albumName empty")
         return nil
     end
@@ -770,7 +745,7 @@ function ImmichAPI:createOrGetAlbumFolderBased(albumName)
 end
 
 function ImmichAPI:deleteAlbum(albumId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         ErrorHandler.handleError("No album ID provided. Cannot delete album.", "deleteAlbum: albumId empty")
         return false
     end
@@ -789,11 +764,11 @@ function ImmichAPI:deleteAlbum(albumId)
 end
 
 function ImmichAPI:renameAlbum(albumId, newName)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         ErrorHandler.handleError("No album ID provided. Cannot rename album.", "renameAlbum: albumId empty")
         return false
     end
-    if util.nilOrEmpty(newName) then
+    if Util.nilOrEmpty(newName) then
         ErrorHandler.handleError("No new name provided. Cannot rename album.", "renameAlbum: newName empty")
         return false
     end
@@ -852,7 +827,7 @@ function ImmichAPI:getAlbumsWODate()
 end
 
 function ImmichAPI:getAlbumsByNameFolderBased(albumName)
-    if util.nilOrEmpty(albumName) then
+    if Util.nilOrEmpty(albumName) then
         return nil
     end
     local path = "/albums"
@@ -885,7 +860,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function ImmichAPI:getActivities(albumId, assetId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         log:warn("getActivities: albumId empty")
         return nil
     end
@@ -899,206 +874,41 @@ function ImmichAPI:getActivities(albumId, assetId)
     return parsedResponse
 end
 
--- Bulk check if assets exist by deviceAssetIds
--- Returns a map of deviceAssetId -> {id, deviceAssetId} for existing assets
--- This uses the /assets/existing endpoint which returns asset IDs that match the provided deviceAssetIds
-function ImmichAPI:bulkCheckAssets(deviceAssetIds)
-    if not deviceAssetIds or #deviceAssetIds == 0 then
-        return {}
-    end
-
-    local postBody = {
-        deviceAssetIds = deviceAssetIds,
-        deviceId = self.deviceIdString,
-    }
-
-    local response = self:doPostRequest("/assets/existing", postBody)
-
-    if not response or not response.existingIds then
-        log:trace("bulkCheckAssets: No response or invalid response")
-        return {}
-    end
-
-    -- Build a map for quick lookup
-    -- The endpoint returns asset IDs, we need to get their deviceAssetIds to map back
-    local existingMap = {}
-    for _, assetId in ipairs(response.existingIds) do
-        -- Get asset info to retrieve deviceAssetId
-        local assetInfo = self:getAssetInfo(assetId)
-        if assetInfo and assetInfo.deviceAssetId then
-            existingMap[assetInfo.deviceAssetId] = {
-                id = assetId,
-                deviceAssetId = assetInfo.deviceAssetId,
-            }
-        end
-    end
-
-    log:trace(
-        "bulkCheckAssets: Found "
-            .. #response.existingIds
-            .. " existing assets out of "
-            .. #deviceAssetIds
-            .. " checked"
-    )
-    return existingMap
-end
-
--- Enhanced duplicate detection that checks metadata first, then bulk check, then individual check
--- Returns assetId, deviceAssetId if found, nil otherwise
--- Backward compatible: also searches by localIdentifier so existing installations
--- (uploaded with localIdentifier) are found
-function ImmichAPI:checkIfAssetExistsEnhanced(photo, deviceAssetId, filename, dateCreated)
+-- Resolve the Immich asset ID the plugin previously uploaded for this photo.
+-- Immich removed deviceAssetId/deviceId, so the only trustworthy handle is the
+-- asset ID the plugin persisted in Lightroom photo metadata (MetadataTask). We no
+-- longer fall back to a deviceAssetId or filename+date search: without deviceId we
+-- cannot prove ownership of a heuristically matched asset, and treating a foreign
+-- asset (e.g. an external-library RAW sharing this photo's name/date) as a replace
+-- target would trash it. When no stored ID exists, callers upload a fresh asset.
+-- Returns the assetId if found and still present, nil otherwise.
+function ImmichAPI:checkIfAssetExistsEnhanced(photo)
     require("MetadataTask")
 
-    -- Step 1: Check metadata extension first (fastest, most reliable)
     local storedAssetId = MetadataTask.getImmichAssetId(photo)
     if storedAssetId and storedAssetId ~= "" then
-        -- Verify the asset still exists in Immich
+        -- Verify the asset still exists (and is not trashed) in Immich.
         local assetInfo = self:getAssetInfo(storedAssetId)
         if assetInfo and not assetInfo.isTrashed then
             log:trace("checkIfAssetExistsEnhanced: Found assetId in metadata: " .. storedAssetId)
-            return storedAssetId, assetInfo.deviceAssetId or deviceAssetId
-        else
-            -- Asset was deleted in Immich, clear metadata
-            log:trace(
-                "checkIfAssetExistsEnhanced: Stored assetId " .. storedAssetId .. " no longer exists, clearing metadata"
-            )
-            MetadataTask.setImmichAssetId(photo, nil)
+            return storedAssetId
         end
+        -- Asset was deleted in Immich; clear the stale metadata so we upload fresh.
+        log:trace(
+            "checkIfAssetExistsEnhanced: Stored assetId " .. storedAssetId .. " no longer exists, clearing metadata"
+        )
+        MetadataTask.setImmichAssetId(photo, nil)
     end
 
-    local function searchByDeviceAssetId(deviceId)
-        if not deviceId or deviceId == "" then
-            return nil, nil
-        end
-        local postBody = { deviceAssetId = tostring(deviceId), deviceId = self.deviceIdString, isTrashed = false }
-        local response = self:doPostRequest("/search/metadata", postBody)
-        if response and response.assets and response.assets.count >= 1 then
-            return response.assets.items[1].id, response.assets.items[1].deviceAssetId
-        end
-        return nil, nil
-    end
-
-    -- Step 2: Check by current deviceAssetId (UUID or localIdentifier)
-    local id = tostring(deviceAssetId)
-    local foundId, foundDeviceId = searchByDeviceAssetId(id)
-    if foundId then
-        log:trace("checkIfAssetExistsEnhanced: Found existing asset with deviceAssetId " .. id)
-        MetadataTask.setImmichAssetId(photo, foundId)
-        return foundId, foundDeviceId
-    end
-
-    -- Step 2b: Existing installations: assets were uploaded with localIdentifier as deviceAssetId.
-    -- If we're now using UUID (different from localIdentifier), also search by localIdentifier.
-    local localId = (photo and photo.localIdentifier) and tostring(photo.localIdentifier) or nil
-    if localId and localId ~= id then
-        foundId, foundDeviceId = searchByDeviceAssetId(localId)
-        if foundId then
-            log:trace("checkIfAssetExistsEnhanced: Found existing asset with localIdentifier (legacy): " .. localId)
-            MetadataTask.setImmichAssetId(photo, foundId)
-            -- Return Immich's deviceAssetId so replaceAsset uses the same value
-            return foundId, foundDeviceId
-        end
-    end
-
-    -- Step 3: Fallback to filename + dateCreated search (for backward compatibility).
-    -- Only accept a match the plugin itself uploaded (deviceId == our deviceIdString). Without this
-    -- guard, a same-named asset from another source (e.g. a RAW in an Immich external library that
-    -- shares the photo's filename + capture time) would be treated as a replace target and trashed
-    -- by replaceAsset on the first publish.
-    if dateCreated ~= nil and dateCreated ~= "" then
-        log:trace("checkIfAssetExistsEnhanced: deviceAssetId not found, trying filename + date")
-        local postBody =
-            { originalFileName = filename, takenAfter = dateCreated, takenBefore = dateCreated, isTrashed = false }
-        local response = self:doPostRequest("/search/metadata", postBody)
-
-        if response and response.assets and response.assets.count >= 1 then
-            local item = response.assets.items[1]
-            if item.deviceId == self.deviceIdString then
-                foundId = item.id
-                foundDeviceId = item.deviceAssetId
-                log:trace(
-                    "checkIfAssetExistsEnhanced: Found existing asset with filename "
-                        .. filename
-                        .. " and creationDate "
-                        .. dateCreated
-                )
-                MetadataTask.setImmichAssetId(photo, foundId)
-                return foundId, foundDeviceId
-            end
-            log:trace(
-                "checkIfAssetExistsEnhanced: filename+date matched a non-plugin asset (deviceId="
-                    .. tostring(item.deviceId)
-                    .. "); treating as new upload, will not replace/delete it"
-            )
-        end
-    end
-
-    return nil
-end
-
-function ImmichAPI:checkIfAssetExists(localId, filename, dateCreated)
-    if util.nilOrEmpty(localId) then
-        log:warn("checkIfAssetExists: localId empty")
-        return nil
-    end
-    local id = tostring(localId)
-
-    local postBody = { deviceAssetId = id, deviceId = self.deviceIdString, isTrashed = false }
-    local response = self:doPostRequest("/search/metadata", postBody)
-
-    if not response or not response.assets then
-        log:trace("Asset with deviceAssetId " .. id .. " not found. No response or invalid response")
-        return nil
-    elseif (response.assets.count or 0) >= 1 and response.assets.items and response.assets.items[1] then
-        log:trace("Found existing asset with deviceAssetId " .. tostring(localId))
-        return response.assets.items[1].id, response.assets.items[1].deviceAssetId
-    elseif dateCreated ~= nil and dateCreated ~= "" then
-        log:trace("Asset with deviceAssetId " .. id .. " not found")
-
-        postBody =
-            { originalFileName = filename, takenAfter = dateCreated, takenBefore = dateCreated, isTrashed = false }
-        response = self:doPostRequest("/search/metadata", postBody)
-
-        if not response or not response.assets then
-            log:trace(
-                "No asset with originalFilename "
-                    .. tostring(filename)
-                    .. " and creationDate "
-                    .. tostring(dateCreated)
-                    .. " found"
-            )
-            return nil
-        elseif (response.assets.count or 0) >= 1 and response.assets.items and response.assets.items[1] then
-            -- Only accept a match the plugin itself uploaded (deviceId == our deviceIdString), so a
-            -- same-named foreign asset (e.g. an external-library RAW) is never treated as a replace
-            -- target and trashed by replaceAsset.
-            local item = response.assets.items[1]
-            if item.deviceId == self.deviceIdString then
-                log:trace(
-                    "Found existing asset with filename "
-                        .. tostring(filename)
-                        .. " and creationDate "
-                        .. tostring(dateCreated)
-                )
-                return item.id, item.deviceAssetId
-            end
-            log:trace(
-                "checkIfAssetExists: filename+date matched a non-plugin asset (deviceId="
-                    .. tostring(item.deviceId)
-                    .. "); treating as new upload, will not replace/delete it"
-            )
-        end
-    end
     return nil
 end
 
 function ImmichAPI:checkIfAssetIsInAnAlbum(immichId)
-    if util.nilOrEmpty(immichId) then
+    if Util.nilOrEmpty(immichId) then
         log:warn("checkIfAssetIsInAnAlbum: immichId empty")
         return false
     end
-    local postBody = { id = immichId, deviceId = self.deviceIdString, isNotInAlbum = true }
+    local postBody = { id = immichId, isNotInAlbum = true }
     local response = self:doPostRequest("/search/metadata", postBody)
 
     if response and type(response) == "table" and response.assets then
@@ -1114,18 +924,8 @@ function ImmichAPI:checkIfAssetIsInAnAlbum(immichId)
     return true
 end
 
-function ImmichAPI:getLocalIdForAssetId(assetId)
-    local parsedResponse = self:getAssetInfo(assetId)
-
-    if parsedResponse ~= nil then
-        return parsedResponse.deviceAssetId
-    end
-
-    return nil
-end
-
 function ImmichAPI:getAssetInfo(assetId)
-    if util.nilOrEmpty(assetId) then
+    if Util.nilOrEmpty(assetId) then
         log:warn("getAssetInfo: assetId empty")
         return nil
     end
@@ -1135,7 +935,7 @@ function ImmichAPI:getAssetInfo(assetId)
 end
 
 function ImmichAPI:checkIfAlbumExists(albumId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         return false
     end
     log:trace("ImmichAPI: checkIfAlbumExists")
@@ -1144,7 +944,7 @@ function ImmichAPI:checkIfAlbumExists(albumId)
 end
 
 function ImmichAPI:getAlbumInfo(albumId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         log:warn("getAlbumInfo: albumId empty")
         return nil
     end
@@ -1154,7 +954,7 @@ function ImmichAPI:getAlbumInfo(albumId)
 end
 
 function ImmichAPI:getAlbumAssetIds(albumId)
-    if util.nilOrEmpty(albumId) then
+    if Util.nilOrEmpty(albumId) then
         log:warn("getAlbumAssetIds: albumId empty")
         return {}
     end
@@ -1227,7 +1027,7 @@ function ImmichAPI:doCustomRequest(method, apiPath, postBody)
     end
     if SUCCESS_STATUS_CUSTOM[headers.status] then
         log:trace("ImmichAPI " .. method .. " request succeeded: " .. tostring(response))
-        if util.nilOrEmpty(response) then
+        if Util.nilOrEmpty(response) then
             return {}
         end
         return safeDecodeJson(response, method) or {}

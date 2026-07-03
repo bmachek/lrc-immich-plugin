@@ -20,7 +20,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
             title = "Immich Plugin Logging",
             f:row({
                 f:static_text({
-                    title = util.getLogfilePath(),
+                    title = Util.getLogfilePath(),
                 }),
             }),
             f:row({
@@ -32,7 +32,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
                 f:push_button({
                     title = "Show logfile",
                     action = function(button)
-                        LrShell.revealInShell(util.getLogfilePath())
+                        LrShell.revealInShell(Util.getLogfilePath())
                     end,
                 }),
             }),

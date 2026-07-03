@@ -105,7 +105,7 @@ function UploadHelpers.collectExportKeywords(photo)
         local attrs = keyword:getAttributes()
         if attrs == nil or attrs.includeOnExport ~= false then
             local name = keyword:getName()
-            if not util.nilOrEmpty(name) then
+            if not Util.nilOrEmpty(name) then
                 table.insert(names, name)
             end
         end
@@ -159,12 +159,12 @@ function UploadHelpers.captureTimeForImmich(photo)
     -- Prefer the ISO8601 string (Lightroom's local wall-clock, faithful to the
     -- capture-location zone). Fall back to rendering the numeric field locally.
     local localIso = photo:getRawMetadata("dateTimeOriginalISO8601") or photo:getRawMetadata("dateTimeDigitizedISO8601")
-    if util.nilOrEmpty(localIso) then
+    if Util.nilOrEmpty(localIso) then
         if type(cocoa) ~= "number" then
             return nil
         end
         localIso = LrDate.timeToUserFormat(cocoa, "%Y-%m-%dT%H:%M:%S")
-        if util.nilOrEmpty(localIso) then
+        if Util.nilOrEmpty(localIso) then
             return nil
         end
     end
@@ -198,7 +198,7 @@ end
 -- video containers through untouched, so those edits never reach Immich
 -- otherwise. Best-effort; failures are logged, not fatal.
 function UploadHelpers.applyVideoMetadata(immich, photo, assetId)
-    if not photo or util.nilOrEmpty(assetId) then
+    if not photo or Util.nilOrEmpty(assetId) then
         return
     end
     if photo:getRawMetadata("fileFormat") ~= "VIDEO" then
@@ -213,7 +213,7 @@ function UploadHelpers.applyVideoMetadata(immich, photo, assetId)
     -- Edited capture time, as a zoned ISO string so Immich stores the correct
     -- instant (it assumes UTC for any value lacking a timezone).
     local isoDate = UploadHelpers.captureTimeForImmich(photo)
-    if not util.nilOrEmpty(isoDate) then
+    if not Util.nilOrEmpty(isoDate) then
         immich:setAssetDate(assetId, isoDate)
     end
 

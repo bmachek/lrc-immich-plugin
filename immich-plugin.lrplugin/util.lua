@@ -1,9 +1,9 @@
 -- Helper functions
 
-util = {}
+Util = {}
 
 -- Utility function to check if table contains a value
-function util.table_contains(tbl, x)
+function Util.table_contains(tbl, x)
     if type(tbl) ~= "table" then
         return false
     end
@@ -18,7 +18,7 @@ function util.table_contains(tbl, x)
 end
 
 -- Utility function to dump tables as JSON scrambling the API key.
-function util.dumpTable(t)
+function Util.dumpTable(t)
     if t == nil then
         return "nil"
     end
@@ -39,7 +39,7 @@ local function trim(s)
 end
 
 -- Taken from https://github.com/midzelis/mi.Immich.Publisher/blob/main/utils.lua
-function util.nilOrEmpty(val)
+function Util.nilOrEmpty(val)
     if type(val) == "string" then
         return val == nil or trim(val) == ""
     else
@@ -48,14 +48,14 @@ function util.nilOrEmpty(val)
 end
 
 -- Get lowercase file extension from path (e.g. "photo.dng" -> "dng")
-function util.getExtension(path)
+function Util.getExtension(path)
     if not path or type(path) ~= "string" then
         return ""
     end
     return string.lower(string.match(path, "%.([^%.]+)$") or "")
 end
 
-function util.cutApiKey(key)
+function Util.cutApiKey(key)
     if key == nil or type(key) ~= "string" then
         return "(no key)"
     end
@@ -68,7 +68,7 @@ function util.cutApiKey(key)
     return string.sub(key, 1, 20) .. "..."
 end
 
-function util.getLogfilePath()
+function Util.getLogfilePath()
     local filename = "ImmichPlugin.log"
     local macPath14 = LrPathUtils.getStandardFilePath("home") .. "/Library/Logs/Adobe/Lightroom/LrClassicLogs/"
     local winPath14 = LrPathUtils.getStandardFilePath("home")
@@ -93,35 +93,10 @@ function util.getLogfilePath()
     end
 end
 
--- Get photo UUID for use as deviceAssetId
--- UUIDs are stable and don't change when photos are reimported
--- Falls back to localIdentifier if UUID is not available (for backward compatibility)
-function util.getPhotoDeviceId(photo)
-    if not photo then
-        return nil
-    end
-
-    -- Try to get UUID first (preferred, stable identifier)
-    local uuid = photo:getRawMetadata("uuid")
-    if uuid and uuid ~= "" then
-        return tostring(uuid)
-    end
-
-    -- Fallback to localIdentifier for backward compatibility
-    -- This handles cases where UUID might not be available
-    if photo.localIdentifier then
-        log:trace("Photo UUID not available, using localIdentifier: " .. tostring(photo.localIdentifier))
-        return tostring(photo.localIdentifier)
-    end
-
-    log:warn("Neither UUID nor localIdentifier available for photo")
-    return nil
-end
-
 -- Shared by Export and Publish: validate export context and connect to Immich.
 -- contextLabel: "Export" or "Publish" (used in error messages and task name).
 -- Returns: exportSession, exportParams, immich or nil.
-function util.validateExportContextAndConnect(exportContext, contextLabel)
+function Util.validateExportContextAndConnect(exportContext, contextLabel)
     if not exportContext or not exportContext.exportSession or not exportContext.propertyTable then
         ErrorHandler.handleError(
             "Export context is missing. Please try again.",
@@ -132,7 +107,7 @@ function util.validateExportContextAndConnect(exportContext, contextLabel)
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
     local settingsText = (contextLabel == "Publish") and "plugin settings" or "export settings"
-    if util.nilOrEmpty(exportParams.url) or util.nilOrEmpty(exportParams.apiKey) then
+    if Util.nilOrEmpty(exportParams.url) or Util.nilOrEmpty(exportParams.apiKey) then
         ErrorHandler.handleError(
             "Configure Immich URL and API key in the " .. settingsText .. ".",
             (contextLabel or "Export") .. "Task: URL or API key not set"
@@ -151,13 +126,13 @@ function util.validateExportContextAndConnect(exportContext, contextLabel)
 end
 
 -- Shared: build a simple progress title, e.g. "Publishing 5 photos to Immich".
-function util.buildSimpleUploadProgressTitle(nPhotos, verb, suffix)
+function Util.buildSimpleUploadProgressTitle(nPhotos, verb, suffix)
     local countStr = (nPhotos > 1) and (nPhotos .. " photos") or "one photo"
     return verb .. " " .. countStr .. " to " .. (suffix or "Immich")
 end
 
 -- Shared: show failure and stack-warning dialogs after upload.
-function util.reportUploadFailuresAndWarnings(failures, stackWarnings)
+function Util.reportUploadFailuresAndWarnings(failures, stackWarnings)
     if failures and #failures > 0 then
         local message = (#failures == 1) and "1 file failed to upload correctly."
             or (tostring(#failures) .. " files failed to upload correctly.")
