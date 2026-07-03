@@ -370,8 +370,16 @@ function ImmichAPI:uploadAsset(pathOrMessage, visibility)
     end
 
     local apiPath = "/assets"
+    -- Immich requires a strict ISO 8601 datetime with an explicit timezone (a 'Z' or
+    -- a colon-separated offset, e.g. 2026-07-03T05:13:22.583Z). On this SDK
+    -- LrDate.timeToW3CDate returns a naive UTC timestamp with no zone designator, so
+    -- append 'Z'. If a build ever returns an offset already, normalize +0200 -> +02:00.
     local submitDate = LrDate.timeToW3CDate(LrDate.currentTime())
-    submitDate = string.sub(submitDate, 1, -5)
+    if submitDate:match("[Zz]$") or submitDate:match("[%+%-]%d%d:?%d%d$") then
+        submitDate = submitDate:gsub("([+-]%d%d)(%d%d)$", "%1:%2")
+    else
+        submitDate = submitDate .. "Z"
+    end
     log:trace("uploadAsset: " .. tostring(pathOrMessage) .. " submitted at " .. submitDate)
     local filePath = pathOrMessage
     local fileName = LrPathUtils.leafName(filePath)
