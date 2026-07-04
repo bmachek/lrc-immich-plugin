@@ -3,28 +3,28 @@ require("ExportTask")
 
 return {
 
-    hideSections = { "exportLocation" },
+	hideSections = { "exportLocation" },
 
-    allowFileFormats = nil,
+	allowFileFormats = nil,
 
-    allowColorSpaces = nil,
+	allowColorSpaces = nil,
 
-    exportPresetFields = {
-        { key = "url", default = "" },
-        { key = "apiKey", default = "" },
-        { key = "album", default = nil },
-        { key = "albumMode", default = "none" },
-        { key = "originalFileMode", default = "none" },
-        { key = "stackOriginalExport", default = false },
-        { key = "stackLrStacks", default = false },
-        { key = "lockedFolderMode", default = "none" },
-    },
+	exportPresetFields = {
+		{ key = "url", default = "" },
+		{ key = "apiKey", default = "" },
+		{ key = "album", default = nil },
+		{ key = "albumMode", default = "none" },
+		{ key = "originalFileMode", default = "none" },
+		{ key = "stackOriginalExport", default = false },
+		{ key = "stackLrStacks", default = false },
+		{ key = "lockedFolderMode", default = "none" },
+	},
 
-    canExportVideo = true,
+	canExportVideo = true,
 
-    startDialog = ExportDialogSections.startDialog,
-    sectionsForTopOfDialog = ExportDialogSections.sectionsForTopOfDialog,
-    sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
+	startDialog = ExportDialogSections.startDialog,
+	sectionsForTopOfDialog = ExportDialogSections.sectionsForTopOfDialog,
+	sectionsForBottomOfDialog = ExportDialogSections.sectionsForBottomOfDialog,
 
-    processRenderedPhotos = ExportTask.processRenderedPhotos,
+	processRenderedPhotos = ExportTask.processRenderedPhotos,
 }

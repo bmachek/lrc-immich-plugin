@@ -1,9 +1,9 @@
 require("PluginInfoDialogSections")
 
 return {
-    startDialog = PluginInfoDialogSections.startDialog,
-    endDialog = PluginInfoDialogSections.endDialog,
+	startDialog = PluginInfoDialogSections.startDialog,
+	endDialog = PluginInfoDialogSections.endDialog,
 
-    -- sectionsForTopOfDialog = PluginInfoDialogSections.sectionsForTopOfDialog,
-    sectionsForBottomOfDialog = PluginInfoDialogSections.sectionsForBottomOfDialog,
+	-- sectionsForTopOfDialog = PluginInfoDialogSections.sectionsForTopOfDialog,
+	sectionsForBottomOfDialog = PluginInfoDialogSections.sectionsForBottomOfDialog,
 }
