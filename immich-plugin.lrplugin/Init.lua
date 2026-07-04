@@ -28,20 +28,20 @@ require("ErrorHandler")
 _G.prefs = _G.LrPrefs.prefsForPlugin()
 _G.log = import("LrLogger")("ImmichPlugin")
 if _G.prefs.logging == nil then
-	_G.prefs.logging = false
+    _G.prefs.logging = false
 end
 if _G.prefs.logging then
-	_G.log:enable("logfile")
+    _G.log:enable("logfile")
 else
-	_G.log:disable()
+    _G.log:disable()
 end
 
 if _G.prefs.apiKey == nil then
-	_G.prefs.apiKey = ""
+    _G.prefs.apiKey = ""
 end
 if _G.prefs.url == nil then
-	_G.prefs.url = ""
+    _G.prefs.url = ""
 end
 if _G.prefs.importPath == nil then
-	_G.prefs.importPath = LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import")
+    _G.prefs.importPath = LrPathUtils.child(LrPathUtils.getStandardFilePath("pictures"), "Immich Import")
 end

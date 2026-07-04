@@ -2,45 +2,45 @@ require("PublishDialogSections")
 require("PublishTask")
 
 return {
-	startDialog = PublishDialogSections.startDialog,
-	sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
-	sectionsForBottomOfDialog = PublishDialogSections.sectionsForBottomOfDialog,
-	hideSections = { "exportLocation" },
-	allowFileFormats = nil,
-	allowColorSpaces = nil,
-	canExportVideo = true,
-	supportsCustomSortOrder = false,
-	supportsIncrementalPublish = "only",
+    startDialog = PublishDialogSections.startDialog,
+    sectionsForTopOfDialog = PublishDialogSections.sectionsForTopOfDialog,
+    sectionsForBottomOfDialog = PublishDialogSections.sectionsForBottomOfDialog,
+    hideSections = { "exportLocation" },
+    allowFileFormats = nil,
+    allowColorSpaces = nil,
+    canExportVideo = true,
+    supportsCustomSortOrder = false,
+    supportsIncrementalPublish = "only",
 
-	exportPresetFields = {
-		{ key = "url", default = "" },
-		{ key = "apiKey", default = "" },
-		{ key = "originalFileMode", default = "none" },
-		{ key = "stackOriginalExport", default = false },
-		{ key = "stackLrStacks", default = false },
-		{ key = "lockedFolderMode", default = "none" },
-	},
+    exportPresetFields = {
+        { key = "url", default = "" },
+        { key = "apiKey", default = "" },
+        { key = "originalFileMode", default = "none" },
+        { key = "stackOriginalExport", default = false },
+        { key = "stackLrStacks", default = false },
+        { key = "lockedFolderMode", default = "none" },
+    },
 
-	small_icon = "icons/logo_small.png",
+    small_icon = "icons/logo_small.png",
 
-	titleForPublishedCollection = "Immich album",
-	titleForPublishedSmartCollection = "Immich album (Smart collection)",
+    titleForPublishedCollection = "Immich album",
+    titleForPublishedSmartCollection = "Immich album (Smart collection)",
 
-	getCollectionBehaviorInfo = PublishTask.getCollectionBehaviorInfo,
+    getCollectionBehaviorInfo = PublishTask.getCollectionBehaviorInfo,
 
-	processRenderedPhotos = PublishTask.processRenderedPhotos,
+    processRenderedPhotos = PublishTask.processRenderedPhotos,
 
-	canAddCommentsToService = false,
-	-- addCommentToPublishedPhoto = PublishTask.addCommentToPublishedPhoto,
-	getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
+    canAddCommentsToService = false,
+    -- addCommentToPublishedPhoto = PublishTask.addCommentToPublishedPhoto,
+    getCommentsFromPublishedCollection = PublishTask.getCommentsFromPublishedCollection,
 
-	deletePhotosFromPublishedCollection = PublishTask.deletePhotosFromPublishedCollection,
-	deletePublishedCollection = PublishTask.deletePublishedCollection,
-	renamePublishedCollection = PublishTask.renamePublishedCollection,
-	shouldDeletePhotosFromServiceOnDeleteFromCatalog = PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog,
-	validatePublishedCollectionName = PublishTask.validatePublishedCollectionName,
+    deletePhotosFromPublishedCollection = PublishTask.deletePhotosFromPublishedCollection,
+    deletePublishedCollection = PublishTask.deletePublishedCollection,
+    renamePublishedCollection = PublishTask.renamePublishedCollection,
+    shouldDeletePhotosFromServiceOnDeleteFromCatalog = PublishTask.shouldDeletePhotosFromServiceOnDeleteFromCatalog,
+    validatePublishedCollectionName = PublishTask.validatePublishedCollectionName,
 
-	viewForCollectionSettings = PublishTask.viewForCollectionSettings,
-	endDialogForCollectionSettings = PublishTask.endDialogForCollectionSettings,
-	updateCollectionSettings = PublishTask.updateCollectionSettings,
+    viewForCollectionSettings = PublishTask.viewForCollectionSettings,
+    endDialogForCollectionSettings = PublishTask.endDialogForCollectionSettings,
+    updateCollectionSettings = PublishTask.updateCollectionSettings,
 }
