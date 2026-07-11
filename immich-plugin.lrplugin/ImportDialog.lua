@@ -17,8 +17,17 @@ return {
             return
         end
 
-        -- Set default selected album
+        -- Default to the album chosen last time this dialog ran (matched by name so it
+        -- survives across sessions), falling back to the first album in the list.
         prefs.selectedAlbum = albums[1] and albums[1].value or nil
+        if prefs.lastImportAlbumName then
+            for _, album in ipairs(albums) do
+                if album.title == prefs.lastImportAlbumName then
+                    prefs.selectedAlbum = album.value
+                    break
+                end
+            end
+        end
 
         -- Create the dialog UI
         local f = LrView.osFactory()
@@ -65,6 +74,8 @@ return {
         -- Handle dialog result
         if result == "ok" and prefs.selectedAlbum then
             local albumTitle = getAlbumTitleById(albums, prefs.selectedAlbum)
+            -- Remember this album so it is pre-selected next time the dialog opens.
+            prefs.lastImportAlbumName = albumTitle
             loadAlbumPhotos(prefs.selectedAlbum, albumTitle)
         end
     end),

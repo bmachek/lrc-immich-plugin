@@ -197,21 +197,27 @@ function ImmichAPI:getAlbumAssets(albumId)
         return nil
     end
 
-    local path = "/albums/" .. albumId
-    local parsedResponse = self:doGetRequest(path)
-
-    if not parsedResponse or not parsedResponse.assets then
-        log:trace("getAlbumAssets: No assets found for album ID: " .. albumId)
-        return nil
-    end
-
     local assets = {}
-    for _, asset in ipairs(parsedResponse.assets) do
-        table.insert(assets, {
-            id = asset.id,
-            originalFileName = asset.originalFileName,
-        })
-    end
+    local page = 1
+    repeat
+        local postBody = { albumIds = { albumId }, page = page, size = 250 }
+        local response = self:doPostRequest("/search/metadata", postBody)
+
+        if not response or type(response) ~= "table" or not response.assets then
+            log:error("getAlbumAssets: search/metadata failed for album ID: " .. albumId .. " (page " .. page .. ")")
+            return nil
+        end
+
+        for _, asset in ipairs(response.assets.items or {}) do
+            table.insert(assets, {
+                id = asset.id,
+                originalFileName = asset.originalFileName,
+            })
+        end
+
+        -- nextPage is a string page number (or nil/JSON null when there are no more pages).
+        page = tonumber(response.assets.nextPage)
+    until not page
 
     log:trace("getAlbumAssets: Retrieved " .. #assets .. " assets for album ID: " .. albumId)
     return assets
