@@ -677,9 +677,149 @@ function PublishTask.getCollectionBehaviorInfo(publishSettings)
     }
 end
 
+-- Sharing UI shown when editing the settings of an already-published Immich album collection.
+-- Lets the user generate an album share link and share the album with individual Immich users.
+function PublishTask.viewForSharingSettings(f, publishSettings, info)
+    local ctx = info.pluginContext or {}
+    local settings = info.publishedCollection:getCollectionInfoSummary().collectionSettings or {}
+    local strategy = settings.albumCreationStrategy or "collection"
+    local albumId = info.publishedCollection:getRemoteId()
+
+    if strategy == "folder" then
+        return f:group_box({
+            title = "Immich album sharing",
+            fill_horizontal = 1,
+            f:static_text({
+                title = "This collection creates one album per folder, so it has no single album to share.",
+                fill_horizontal = 1,
+            }),
+        })
+    end
+
+    if Util.nilOrEmpty(albumId) then
+        return f:group_box({
+            title = "Immich album sharing",
+            fill_horizontal = 1,
+            f:static_text({
+                title = "Publish this collection to Immich first, then reopen these settings"
+                    .. " to create a share link or share with users.",
+                fill_horizontal = 1,
+            }),
+        })
+    end
+
+    ctx.shareUrl = ""
+    ctx.shareRole = "viewer"
+    ctx.selectedShareUser = 0
+    ctx.immichShareUsers = { { title = "Loading users...", value = 0 } }
+
+    -- Populate the user picker asynchronously (same pattern as the album picker below).
+    LrTasks.startAsyncTask(function()
+        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        local users = immich:getAllUsers()
+        local items = { { title = "Please select", value = 0 } }
+        if users then
+            for _, u in ipairs(users) do
+                local label = u.name or u.email or u.id
+                if u.name and u.email then
+                    label = u.name .. " (" .. u.email .. ")"
+                end
+                table.insert(items, { title = label, value = u.id })
+            end
+        end
+        ctx.immichShareUsers = items
+    end)
+
+    local bind = LrView.bind
+    local share = LrView.share
+
+    return f:group_box({
+        bind_to_object = ctx,
+        title = "Immich album sharing",
+        fill_horizontal = 1,
+        f:column({
+            spacing = share("inter_control_spacing"),
+            fill_horizontal = 1,
+            f:row({
+                f:push_button({
+                    title = "Generate share link",
+                    action = function()
+                        LrTasks.startAsyncTask(function()
+                            local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+                            local url = immich:createAlbumSharedLink(albumId, {})
+                            if Util.nilOrEmpty(url) then
+                                ErrorHandler.handleError(
+                                    "Could not create share link. Check logs.",
+                                    "viewForSharingSettings: createAlbumSharedLink returned nil"
+                                )
+                            else
+                                ctx.shareUrl = url
+                            end
+                        end)
+                    end,
+                }),
+                f:edit_field({
+                    value = bind("shareUrl"),
+                    fill_horizontal = 1,
+                    width_in_chars = 24,
+                    tooltip = "Select to copy the share link",
+                }),
+                f:push_button({
+                    title = "Open",
+                    action = function()
+                        if not Util.nilOrEmpty(ctx.shareUrl) then
+                            LrShell.openUrlInBrowser(ctx.shareUrl)
+                        end
+                    end,
+                }),
+            }),
+            f:separator({ fill_horizontal = 1 }),
+            f:row({
+                f:static_text({ title = "Share with user:" }),
+                f:popup_menu({
+                    items = bind("immichShareUsers"),
+                    value = bind("selectedShareUser"),
+                    width = share("field_width"),
+                }),
+                f:popup_menu({
+                    items = {
+                        { title = "Viewer", value = "viewer" },
+                        { title = "Editor", value = "editor" },
+                    },
+                    value = bind("shareRole"),
+                }),
+                f:push_button({
+                    title = "Share",
+                    action = function()
+                        LrTasks.startAsyncTask(function()
+                            if Util.nilOrEmpty(ctx.selectedShareUser) or ctx.selectedShareUser == 0 then
+                                LrDialogs.message("Select a user to share with.", nil, "warning")
+                                return
+                            end
+                            local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+                            if immich:addUserToAlbum(albumId, ctx.selectedShareUser, ctx.shareRole) then
+                                LrDialogs.message(
+                                    "Album shared",
+                                    "Shared with the selected user as " .. tostring(ctx.shareRole) .. ".",
+                                    "info"
+                                )
+                            else
+                                ErrorHandler.handleError(
+                                    "Could not share album with user. Check logs.",
+                                    "viewForSharingSettings: addUserToAlbum failed"
+                                )
+                            end
+                        end)
+                    end,
+                }),
+            }),
+        }),
+    })
+end
+
 function PublishTask.viewForCollectionSettings(f, publishSettings, info)
     if info.publishedCollection ~= nil then
-        return f:row({}) -- No settings for existing published collections.
+        return PublishTask.viewForSharingSettings(f, publishSettings, info)
     end
 
     info.pluginContext.albumCreationStrategy = "collection"

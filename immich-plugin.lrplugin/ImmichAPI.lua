@@ -1059,6 +1059,84 @@ function ImmichAPI:createSharedLink(assetIds, opts)
     return self.url .. "/share/" .. response.key
 end
 
+-- Create an "album" shared link for a whole album.
+-- opts: { expiresAt = ISO-8601 string or nil, password = string or nil, allowDownload = bool }
+-- Returns the full share URL (<serverUrl>/share/<key>) on success; nil + error reason otherwise.
+function ImmichAPI:createAlbumSharedLink(albumId, opts)
+    if Util.nilOrEmpty(albumId) then
+        ErrorHandler.handleError("No album to share. Check logs.", "createAlbumSharedLink: albumId empty")
+        return nil
+    end
+    opts = opts or {}
+
+    local postBody = {
+        type = "ALBUM",
+        albumId = albumId,
+        allowDownload = opts.allowDownload ~= false,
+        allowUpload = false,
+    }
+    if not Util.nilOrEmpty(opts.expiresAt) then
+        postBody.expiresAt = opts.expiresAt
+    end
+    if not Util.nilOrEmpty(opts.password) then
+        postBody.password = opts.password
+    end
+
+    local response, errReason = self:doPostRequest("/shared-links", postBody)
+    if not response or Util.nilOrEmpty(response.key) then
+        log:error("createAlbumSharedLink: no key returned in response")
+        return nil, errReason
+    end
+
+    log:trace("createAlbumSharedLink: created link for album " .. albumId)
+    return self.url .. "/share/" .. response.key
+end
+
+-- ---------------------------------------------------------------------------
+-- Users / album sharing
+-- ---------------------------------------------------------------------------
+
+-- List Immich users available to share with. Returns an array of { id, name, email }
+-- (nil on failure). Requires the API key's account to be allowed to list users.
+function ImmichAPI:getAllUsers()
+    local parsedResponse = self:doGetRequest("/users")
+    if type(parsedResponse) ~= "table" then
+        log:warn("getAllUsers: unexpected response")
+        return nil
+    end
+
+    local users = {}
+    for i = 1, #parsedResponse do
+        local row = parsedResponse[i]
+        if row and row.id then
+            table.insert(users, { id = row.id, name = row.name, email = row.email })
+        end
+    end
+    return users
+end
+
+-- Share an album with a single user. role: "viewer" | "editor". Returns true on success.
+function ImmichAPI:addUserToAlbum(albumId, userId, role)
+    if Util.nilOrEmpty(albumId) then
+        ErrorHandler.handleError("Immich album ID missing. Check logs.", "addUserToAlbum: albumId empty")
+        return false
+    end
+    if Util.nilOrEmpty(userId) then
+        ErrorHandler.handleError("No user selected. Check logs.", "addUserToAlbum: userId empty")
+        return false
+    end
+
+    local apiPath = "/albums/" .. albumId .. "/users"
+    local postBody = { albumUsers = { { userId = userId, role = role or "viewer" } } }
+
+    local parsedResponse = self:doCustomRequest("PUT", apiPath, postBody)
+    if parsedResponse == nil then
+        log:error("addUserToAlbum: unable to share album (" .. albumId .. ") with user (" .. tostring(userId) .. ")")
+        return false
+    end
+    return true
+end
+
 -- ---------------------------------------------------------------------------
 -- HTTP request layer
 -- ---------------------------------------------------------------------------
