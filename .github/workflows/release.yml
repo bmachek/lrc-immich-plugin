@@ -35,6 +35,14 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           custom_tag: ${{ inputs.tag }}
+      - name: Update Info.lua version
+        run: |
+          VERSION="${{ steps.tag_version.outputs.new_version }}"
+          IFS='.' read -r MAJOR MINOR REVISION <<< "$VERSION"
+          sed -i -E \
+            "s/VERSION = \{ major = [0-9]+, minor = [0-9]+, revision = [0-9]+, build = [0-9]+ \}/VERSION = { major = ${MAJOR:-0}, minor = ${MINOR:-0}, revision = ${REVISION:-0}, build = 0 }/" \
+            immich-plugin.lrplugin/Info.lua
+          grep 'VERSION =' immich-plugin.lrplugin/Info.lua
       - name: Zip it up
         run: zip -r 'immich-plugin.lrplugin.zip' immich-plugin.lrplugin -x '*.git*'
       - name: Create a GitHub release
