@@ -6,6 +6,7 @@ local TITLES = {
     ERROR_NO_ALBUMS = "Failed to load album assets.",
     ERROR_DOWNLOAD = "Failed to download asset: ",
     ERROR_SAVE_FILE = "Failed to save asset to temporary file.",
+    ERROR_SEARCH = "Failed to search Immich. Check logs.",
 }
 
 -- Fetch albums from Immich
@@ -14,24 +15,19 @@ local function getImmichAlbums()
     return immichAPI:getAlbumsWODate()
 end
 
-local function downloadAlbumAssets(immichAPI, albumId, myPath)
-    local albumAssets = immichAPI:getAlbumAssets(albumId)
-
-    if not albumAssets or #albumAssets == 0 then
-        LrDialogs.message("Error", TITLES.ERROR_NO_ALBUMS, "critical")
-        return
-    end
-
+-- Download a list of { id, originalFileName } assets into myPath, in configurable-size
+-- parallel batches with a cancelable progress bar. Shared by album import and search import.
+local function downloadAssets(immichAPI, assets, myPath)
     local progressScope = LrProgressScope({
         title = TITLES.DOWNLOAD_PROGRESS,
         caption = "Starting...",
     })
 
     local completedTasks = 0
-    local totalTasks = #albumAssets
+    local totalTasks = #assets
     local taskQueue = {}
 
-    for i, asset in ipairs(albumAssets) do
+    for i, asset in ipairs(assets) do
         if progressScope:isCanceled() then
             break
         end
@@ -121,6 +117,46 @@ local function downloadAlbumAssets(immichAPI, albumId, myPath)
     progressScope:done()
 end
 
+-- Fetch an album's assets and download them into myPath.
+local function downloadAlbumAssets(immichAPI, albumId, myPath)
+    local albumAssets = immichAPI:getAlbumAssets(albumId)
+
+    if not albumAssets or #albumAssets == 0 then
+        LrDialogs.message("Error", TITLES.ERROR_NO_ALBUMS, "critical")
+        return
+    end
+
+    downloadAssets(immichAPI, albumAssets, myPath)
+end
+
+-- Ensure prefs.importPath and a named subfolder under it exist; return the subfolder path.
+local function prepareImportFolder(subfolderName)
+    local importDirectory = prefs.importPath
+    if not LrFileUtils.exists(importDirectory) then
+        LrFileUtils.createDirectory(importDirectory)
+    end
+
+    local myPath = LrPathUtils.child(importDirectory, subfolderName)
+    if not LrFileUtils.exists(myPath) then
+        LrFileUtils.createDirectory(myPath)
+    end
+
+    return myPath
+end
+
+-- Turn arbitrary text (e.g. a search query) into a safe folder name.
+local function sanitizeFolderName(name)
+    local safe = tostring(name or ""):gsub('[/\\:%*%?"<>|]', "_")
+    safe = safe:match("^%s*(.-)%s*$") or ""
+    if safe == "" then
+        safe = "search"
+    end
+    if #safe > 60 then
+        safe = safe:sub(1, 60):match("^%s*(.-)%s*$")
+    end
+    return safe
+end
+
 -- Function to get the album title by albumId
 local function getAlbumTitleById(albums, albumId)
     if albums then
@@ -139,21 +175,37 @@ local function loadAlbumPhotos(albumId, albumTitle)
         local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
         local catalog = LrApplication.activeCatalog()
 
-        -- Create parent directory first. Fix for #66
-        local importDirectory = prefs.importPath
-        if not LrFileUtils.exists(importDirectory) then
-            LrFileUtils.createDirectory(importDirectory)
-        end
-
-        local myPath = LrPathUtils.child(importDirectory, albumTitle)
-        if not LrFileUtils.exists(myPath) then
-            LrFileUtils.createDirectory(myPath)
-        end
+        -- Create parent + album subfolder first. Fix for #66
+        local myPath = prepareImportFolder(albumTitle)
 
         -- Download album assets
         downloadAlbumAssets(immichAPI, albumId, myPath)
 
         -- Import assets into Lightroom
+        catalog:triggerImportUI(myPath)
+    end)
+end
+
+-- Run a smart (CLIP) search and import the matching assets into Lightroom.
+local function loadSearchPhotos(query)
+    LrTasks.startAsyncTask(function()
+        local immichAPI = ImmichAPI:new(prefs.url, prefs.apiKey)
+        local catalog = LrApplication.activeCatalog()
+
+        local searchAssets = immichAPI:searchSmart(query)
+        if not searchAssets then
+            LrDialogs.message("Error", TITLES.ERROR_SEARCH, "critical")
+            return
+        end
+        if #searchAssets == 0 then
+            LrDialogs.message("No results", 'No photos in Immich matched: "' .. query .. '"', "info")
+            return
+        end
+
+        local myPath = prepareImportFolder(sanitizeFolderName("Search - " .. query))
+
+        downloadAssets(immichAPI, searchAssets, myPath)
+
         catalog:triggerImportUI(myPath)
     end)
 end
@@ -352,6 +404,7 @@ end
 return {
     getImmichAlbums = getImmichAlbums,
     loadAlbumPhotos = loadAlbumPhotos,
+    loadSearchPhotos = loadSearchPhotos,
     getAlbumTitleById = getAlbumTitleById,
     showConfigurationDialog = showConfigurationDialog,
 }

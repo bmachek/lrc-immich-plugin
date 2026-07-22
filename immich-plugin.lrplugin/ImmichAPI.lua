@@ -223,6 +223,41 @@ function ImmichAPI:getAlbumAssets(albumId)
     return assets
 end
 
+-- Run Immich's smart (CLIP) search for a free-text query and return the matching assets.
+-- Returns the same { id, originalFileName } shape as getAlbumAssets so callers can reuse the
+-- same downloader. Returns nil on request failure (distinct from an empty table = no matches).
+function ImmichAPI:searchSmart(query)
+    if Util.nilOrEmpty(query) then
+        ErrorHandler.handleError("No search query provided. Check logs.", "searchSmart: query empty")
+        return nil
+    end
+
+    local assets = {}
+    local page = 1
+    repeat
+        local postBody = { query = query, page = page, size = 250 }
+        local response = self:doPostRequest("/search/smart", postBody)
+
+        if not response or type(response) ~= "table" or not response.assets then
+            log:error("searchSmart: search/smart failed for query: " .. query .. " (page " .. page .. ")")
+            return nil
+        end
+
+        for _, asset in ipairs(response.assets.items or {}) do
+            table.insert(assets, {
+                id = asset.id,
+                originalFileName = asset.originalFileName,
+            })
+        end
+
+        -- nextPage is a string page number (or nil/JSON null when there are no more pages).
+        page = tonumber(response.assets.nextPage)
+    until not page
+
+    log:trace("searchSmart: Retrieved " .. #assets .. " assets for query: " .. query)
+    return assets
+end
+
 -- ---------------------------------------------------------------------------
 -- Headers
 -- ---------------------------------------------------------------------------
@@ -985,6 +1020,43 @@ function ImmichAPI:getAlbumAssetIds(albumId)
     end
 
     return assetIds
+end
+
+-- ---------------------------------------------------------------------------
+-- Shared links
+-- ---------------------------------------------------------------------------
+
+-- Create an "individual" shared link covering the given asset IDs.
+-- opts: { expiresAt = ISO-8601 string or nil, password = string or nil, allowDownload = bool }
+-- Returns the full share URL (<serverUrl>/share/<key>) on success; nil + error reason otherwise.
+function ImmichAPI:createSharedLink(assetIds, opts)
+    if type(assetIds) ~= "table" or #assetIds == 0 then
+        ErrorHandler.handleError("No assets to share. Check logs.", "createSharedLink: empty assetIds")
+        return nil
+    end
+    opts = opts or {}
+
+    local postBody = {
+        type = "INDIVIDUAL",
+        assetIds = assetIds,
+        allowDownload = opts.allowDownload ~= false,
+        allowUpload = false,
+    }
+    if not Util.nilOrEmpty(opts.expiresAt) then
+        postBody.expiresAt = opts.expiresAt
+    end
+    if not Util.nilOrEmpty(opts.password) then
+        postBody.password = opts.password
+    end
+
+    local response, errReason = self:doPostRequest("/shared-links", postBody)
+    if not response or Util.nilOrEmpty(response.key) then
+        log:error("createSharedLink: no key returned in response")
+        return nil, errReason
+    end
+
+    log:trace("createSharedLink: created link for " .. #assetIds .. " asset(s)")
+    return self.url .. "/share/" .. response.key
 end
 
 -- ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ globals = {
     "PublishTask",
     "SharedDialogSections",
     "StackManager",
+    "SyncFromImmichTask",
     "UploadHelpers",
     "Util",
 }

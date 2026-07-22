@@ -28,6 +28,18 @@ return {
             file = "ImportDialog.lua",
         },
         {
+            title = "Import from Immich (Search)",
+            file = "SmartSearchImportDialog.lua",
+        },
+        {
+            title = "Sync from Immich",
+            file = "SyncFromImmichDialog.lua",
+        },
+        {
+            title = "Create Immich share link",
+            file = "ShareLinkDialog.lua",
+        },
+        {
             title = "Immich import configuration",
             file = "ImportConfiguration.lua",
         },
@@ -37,6 +49,10 @@ return {
         {
             title = "Import from Immich",
             file = "ImportDialog.lua",
+        },
+        {
+            title = "Import from Immich (Search)",
+            file = "SmartSearchImportDialog.lua",
         },
         {
             title = "Immich import configuration",
