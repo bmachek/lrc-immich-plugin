@@ -69,6 +69,57 @@ local function addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, al
 end
 
 --------------------------------------------------------------------------------
+-- True if the current publish settings request uploading original files at all.
+local function publishWantsOriginals(exportParams)
+    local mode = exportParams.originalFileMode
+    return exportParams.stackOriginalExport == true
+        or mode == "edited"
+        or mode == "all"
+        or mode == "original_only"
+        or mode == "original_plus_jpeg_if_edited"
+end
+
+--------------------------------------------------------------------------------
+-- Per-photo decision: should the disk original be uploaded (as an untracked stack
+-- secondary) for this photo, given the publish settings?
+local function shouldUploadPublishOriginal(exportParams, photo, editedPhotosCache)
+    if exportParams.stackOriginalExport == true then
+        return true
+    end
+    local mode = exportParams.originalFileMode
+    if mode == "all" or mode == "original_only" or mode == "original_plus_jpeg_if_edited" then
+        return true
+    end
+    if mode == "edited" then
+        return StackManager.hasEdits(photo, editedPhotosCache)
+    end
+    return false
+end
+
+--------------------------------------------------------------------------------
+-- When publish settings request originals, ask the user whether to upload them,
+-- warning that originals are untracked orphans in Immich. Remembers the choice
+-- via a "don't show again" preference. Returns true to upload originals.
+local function confirmOrphanOriginals(exportParams)
+    if not publishWantsOriginals(exportParams) then
+        return false
+    end
+    local action = LrDialogs.promptForActionWithDoNotShow({
+        actionPrefKey = "immichPublishUploadOrphanOriginals",
+        message = "Upload original files in Publish?",
+        info = "Original files uploaded during Publish are stacked with the exported photo but are NOT tracked by"
+            .. " Lightroom.\n\nThey will not be updated when you re-publish, and will NOT be removed from Immich when"
+            .. " you remove photos from this collection or delete the collection — they remain as orphans you must"
+            .. " clean up manually in Immich.",
+        verbBtns = {
+            { verb = "skip", label = "Skip originals" },
+            { verb = "upload", label = "Upload originals" },
+        },
+    })
+    return action == "upload"
+end
+
+--------------------------------------------------------------------------------
 -- Process one photo group in original+export publish flow.
 -- Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
 local function processPublishOnePhotoGroup(
@@ -81,7 +132,10 @@ local function processPublishOnePhotoGroup(
     stackWarnings,
     atLeastSomeSuccess,
     exportedPrimaryByPhoto,
-    visibility
+    visibility,
+    exportParams,
+    editedPhotosCache,
+    allowOrphanOriginals
 )
     if not items or not items[1] then
         return
@@ -137,11 +191,15 @@ local function processPublishOnePhotoGroup(
     elseif #items == 1 then
         -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
         -- delivers the rendered export (never an original-copy rendition), so item.role = "export".
-        -- Always treat the single rendition as the export.
-        -- Do NOT upload the disk original: assets uploaded outside of recordPublishedPhotoId
-        -- cannot be tracked by Lightroom and become orphans when the photo is removed from the
-        -- publish collection (deletePhotosFromPublishedCollection only cleans up assets
-        -- registered via recordPublishedPhotoId). Warn instead.
+        -- Always treat the single rendition as the tracked export primary.
+        --
+        -- The disk original can optionally be uploaded as a stack secondary (allowOrphanOriginals,
+        -- confirmed by the user). Such assets are uploaded outside recordPublishedPhotoId, so
+        -- Lightroom cannot track them: they are NOT updated on re-publish and NOT removed when the
+        -- photo leaves the collection (deletePhotosFromPublishedCollection only cleans up assets
+        -- registered via recordPublishedPhotoId). They become orphans the user must clean up in
+        -- Immich. When the user declines (or the settings don't request originals), only the export
+        -- is uploaded and we warn instead.
         local item = items[1]
         log:info("original+export [" .. filename .. "]: single rendition, uploading as export")
         local id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
@@ -154,14 +212,54 @@ local function processPublishOnePhotoGroup(
             MetadataTask.setImmichAssetId(photo, primaryId)
             item.rendition:recordPublishedPhotoId(id)
             item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-            -- Warn once per publish run (not once per photo) to keep the post-publish dialog concise.
-            if not stackWarnings._originalNotUploadedWarned then
-                table.insert(
-                    stackWarnings,
-                    "Originals not uploaded in publish mode to avoid untracked orphans in Immich"
-                        .. " (applies to all photos in this run)"
-                )
-                stackWarnings._originalNotUploadedWarned = true
+
+            local wantsOriginal = exportParams and shouldUploadPublishOriginal(exportParams, photo, editedPhotosCache)
+            if wantsOriginal and allowOrphanOriginals then
+                if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
+                    -- 'Original / no reformat' makes the export a byte-for-byte copy of the source,
+                    -- so uploading the disk original would create two identical assets. Skip.
+                    table.insert(
+                        stackWarnings,
+                        filename
+                            .. ": skipped original+export stack — 'Original / no reformat' produces an identical copy."
+                            .. " Switch to any rendered format (e.g. JPEG, TIFF, PNG)."
+                    )
+                else
+                    local originalPath = StackManager.getOriginalFilePath(photo)
+                    if originalPath then
+                        -- Untracked orphan secondary: upload fresh (no stored ID to dedup against).
+                        local origId = immich:uploadAsset(originalPath, visibility)
+                        if origId then
+                            -- Warn once per publish run to keep the post-publish dialog concise.
+                            if not stackWarnings._orphanOriginalsWarned then
+                                table.insert(
+                                    stackWarnings,
+                                    "Original files were uploaded as untracked assets: Lightroom will not update or"
+                                        .. " remove them from Immich, so clean up orphaned originals manually"
+                                        .. " (applies to all photos in this run)"
+                                )
+                                stackWarnings._orphanOriginalsWarned = true
+                            end
+                            if not immich:createStack({ id, origId }) then
+                                table.insert(stackWarnings, filename .. ": failed to create original+export stack")
+                            end
+                        else
+                            table.insert(stackWarnings, filename .. ": failed to upload original file")
+                        end
+                    else
+                        table.insert(stackWarnings, filename .. ": original file not accessible; uploaded export only")
+                    end
+                end
+            elseif wantsOriginal then
+                -- User declined the orphan upload: keep export-only behavior and warn once.
+                if not stackWarnings._originalNotUploadedWarned then
+                    table.insert(
+                        stackWarnings,
+                        "Originals not uploaded in publish mode to avoid untracked orphans in Immich"
+                            .. " (applies to all photos in this run)"
+                    )
+                    stackWarnings._originalNotUploadedWarned = true
+                end
             end
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             addAssetToPublishAlbum(
@@ -190,7 +288,10 @@ local function processPublishStackOriginalExportRenditions(
     albumCreationStrategy,
     albumId,
     albumAssetIds,
-    visibility
+    visibility,
+    exportParams,
+    editedPhotosCache,
+    allowOrphanOriginals
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
@@ -223,7 +324,10 @@ local function processPublishStackOriginalExportRenditions(
                 stackWarnings,
                 atLeastSomeSuccess,
                 exportedPrimaryByPhoto,
-                visibility
+                visibility,
+                exportParams,
+                editedPhotosCache,
+                allowOrphanOriginals
             )
         end
         -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
@@ -313,7 +417,9 @@ local function runPublishExport(
     albumCreationStrategy,
     albumId,
     albumAssetIds,
-    visibility
+    visibility,
+    editedPhotosCache,
+    allowOrphanOriginals
 )
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     local useStacking = exportParams.stackOriginalExport
@@ -332,7 +438,10 @@ local function runPublishExport(
                 albumCreationStrategy,
                 albumId,
                 albumAssetIds,
-                visibility
+                visibility,
+                exportParams,
+                editedPhotosCache,
+                allowOrphanOriginals
             )
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
@@ -393,6 +502,16 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     })
 
     local visibility = resolveLockedFolder(exportParams)
+
+    -- Ask once whether to upload (untracked) originals when settings request them.
+    local allowOrphanOriginals = confirmOrphanOriginals(exportParams)
+    -- The "edited" mode needs a catalog-wide edit cache to decide per photo.
+    local editedPhotosCache = nil
+    if allowOrphanOriginals and exportParams.originalFileMode == "edited" then
+        editedPhotosCache = StackManager.getEditedPhotosCache()
+    end
+    log:info("Publish upload originals (orphans): " .. tostring(allowOrphanOriginals))
+
     local failures, stackWarnings = runPublishExport(
         immich,
         exportContext,
@@ -402,7 +521,9 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         albumCreationStrategy,
         albumId,
         albumAssetIds,
-        visibility
+        visibility,
+        editedPhotosCache,
+        allowOrphanOriginals
     )
     progressScope:done()
 
