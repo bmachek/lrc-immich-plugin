@@ -1,4 +1,6 @@
 require("ImmichAPI")
+require("MetadataTask")
+require("AssetStampTask")
 
 -- Constants
 local TITLES = {
@@ -15,6 +17,27 @@ local function getImmichAlbums()
     return immichAPI:getAlbumsWODate()
 end
 
+-- Build a set of Immich asset IDs already present in the catalog so re-import can skip them.
+-- Best-effort: any failure returns an empty set (i.e. skip nothing, download everything).
+local function getExistingAssetIds()
+    local existing = {}
+    local ok = LrTasks.pcall(function()
+        local catalog = LrApplication.activeCatalog()
+        local photos = catalog:findPhotosWithProperty(_PLUGIN, "immichAssetId")
+        for _, photo in ipairs(photos or {}) do
+            local id = MetadataTask.getImmichAssetId(photo)
+            if not Util.nilOrEmpty(id) then
+                existing[id] = true
+            end
+        end
+    end)
+    if not ok then
+        log:warn("getExistingAssetIds: catalog scan failed; not skipping any assets")
+        return {}
+    end
+    return existing
+end
+
 -- Download a list of { id, originalFileName } assets into myPath, in configurable-size
 -- parallel batches with a cancelable progress bar. Shared by album import and search import.
 local function downloadAssets(immichAPI, assets, myPath)
@@ -23,11 +46,24 @@ local function downloadAssets(immichAPI, assets, myPath)
         caption = "Starting...",
     })
 
+    -- Skip assets already imported in a previous run (true incremental import).
+    local existing = getExistingAssetIds()
+    local pathToId = {}
+    local skippedExisting = 0
+    local toDownload = {}
+    for _, asset in ipairs(assets) do
+        if existing[asset.id] then
+            skippedExisting = skippedExisting + 1
+        else
+            table.insert(toDownload, asset)
+        end
+    end
+
     local completedTasks = 0
-    local totalTasks = #assets
+    local totalTasks = #toDownload
     local taskQueue = {}
 
-    for i, asset in ipairs(assets) do
+    for _, asset in ipairs(toDownload) do
         if progressScope:isCanceled() then
             break
         end
@@ -42,6 +78,8 @@ local function downloadAssets(immichAPI, assets, myPath)
                 if file then
                     file:write(assetData)
                     file:close()
+                    -- Remember the download path so the imported photo can be stamped later.
+                    pathToId[tempFilePath] = asset.id
                 else
                     LrDialogs.message("Error", TITLES.ERROR_SAVE_FILE, "critical")
                 end
@@ -115,18 +153,24 @@ local function downloadAssets(immichAPI, assets, myPath)
     end
 
     progressScope:done()
+
+    if skippedExisting > 0 then
+        log:trace("downloadAssets: skipped " .. skippedExisting .. " asset(s) already in the catalog")
+    end
+
+    return pathToId
 end
 
--- Fetch an album's assets and download them into myPath.
+-- Fetch an album's assets and download them into myPath. Returns a { path -> assetId } map.
 local function downloadAlbumAssets(immichAPI, albumId, myPath)
     local albumAssets = immichAPI:getAlbumAssets(albumId)
 
     if not albumAssets or #albumAssets == 0 then
         LrDialogs.message("Error", TITLES.ERROR_NO_ALBUMS, "critical")
-        return
+        return nil
     end
 
-    downloadAssets(immichAPI, albumAssets, myPath)
+    return downloadAssets(immichAPI, albumAssets, myPath)
 end
 
 -- Ensure prefs.importPath and a named subfolder under it exist; return the subfolder path.
@@ -179,10 +223,15 @@ local function loadAlbumPhotos(albumId, albumTitle)
         local myPath = prepareImportFolder(albumTitle)
 
         -- Download album assets
-        downloadAlbumAssets(immichAPI, albumId, myPath)
+        local pathToId = downloadAlbumAssets(immichAPI, albumId, myPath)
 
         -- Import assets into Lightroom
         catalog:triggerImportUI(myPath)
+
+        -- Stamp the imported photos with their Immich asset IDs once they land in the catalog.
+        if pathToId then
+            AssetStampTask.pollAfterImport(pathToId)
+        end
     end)
 end
 
@@ -204,9 +253,13 @@ local function loadSearchPhotos(query)
 
         local myPath = prepareImportFolder(sanitizeFolderName("Search - " .. query))
 
-        downloadAssets(immichAPI, searchAssets, myPath)
+        local pathToId = downloadAssets(immichAPI, searchAssets, myPath)
 
         catalog:triggerImportUI(myPath)
+
+        if pathToId then
+            AssetStampTask.pollAfterImport(pathToId)
+        end
     end)
 end
 

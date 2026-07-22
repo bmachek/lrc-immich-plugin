@@ -40,6 +40,10 @@ return {
             file = "ShareLinkDialog.lua",
         },
         {
+            title = "Stamp imported Immich IDs",
+            file = "StampImportedDialog.lua",
+        },
+        {
             title = "Immich import configuration",
             file = "ImportConfiguration.lua",
         },

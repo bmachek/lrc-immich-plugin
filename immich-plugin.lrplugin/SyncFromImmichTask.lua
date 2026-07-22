@@ -1,5 +1,6 @@
 require("ImmichAPI")
 require("MetadataTask")
+require("AssetStampTask")
 
 --[[
     SyncFromImmichTask – pull metadata from Immich back onto the selected Lightroom photos.
@@ -28,6 +29,9 @@ end
 -- options: { favorite, rating, caption, gps, people, overwrite } (all booleans)
 function SyncFromImmichTask.run(options)
     LrTasks.startAsyncTask(function()
+        -- Flush any pending import stamps first, so freshly imported photos become syncable.
+        AssetStampTask.reconcile(false)
+
         local catalog = LrApplication.activeCatalog()
         local photos = catalog:getTargetPhotos()
 

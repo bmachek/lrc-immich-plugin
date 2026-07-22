@@ -1,5 +1,6 @@
 require("ImmichAPI")
 require("MetadataTask")
+require("AssetStampTask")
 
 local ImportServiceProvider = require("ImportServiceProvider")
 local showConfigurationDialog = ImportServiceProvider.showConfigurationDialog
@@ -22,6 +23,9 @@ return {
         if Util.nilOrEmpty(prefs.apiKey) or Util.nilOrEmpty(prefs.url) then
             return
         end
+
+        -- Flush any pending import stamps first, so freshly imported photos become shareable.
+        AssetStampTask.reconcile(false)
 
         local catalog = LrApplication.activeCatalog()
         local photos = catalog:getTargetPhotos()
