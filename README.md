@@ -62,13 +62,9 @@ You can find the Wiki from the repository home page under the **Wiki** tab.
 
 ## Credits
 
-- **All contributors** to this project.
+- **All supporters and contributors** of this project.
 - [Jeffrey Friedl for `JSON.lua`](http://regex.info/blog/lua/json)
 - [Enrique García Cota for `inspect.lua`](https://github.com/kikito/inspect.lua)
 - [Min Idzelis for giving ideas with his Immich Plug‑in](https://github.com/midzelis/mi.Immich.Publisher)
 
 ---
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=bmachek/lrc-immich-plugin&type=Date)](https://www.star-history.com/#bmachek/lrc-immich-plugin&Date)
