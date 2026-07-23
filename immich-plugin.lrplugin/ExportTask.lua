@@ -479,8 +479,13 @@ local function processSingleRenditionRenditions(
                                 )
                                 -- Edited export is the rendered derivative: dedup/persist via the
                                 -- export ID so re-export updates it instead of duplicating.
-                                local exportId =
-                                    StackManager.uploadOneAssetOrReplace(immich, photo, pathOrMessage, visibility, false)
+                                local exportId = StackManager.uploadOneAssetOrReplace(
+                                    immich,
+                                    photo,
+                                    pathOrMessage,
+                                    visibility,
+                                    false
+                                )
                                 if exportId then
                                     MetadataTask.setImmichAssetId(photo, exportId)
                                     primaryId = exportId

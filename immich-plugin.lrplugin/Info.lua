@@ -52,7 +52,6 @@ return {
         },
     },
 
-
     LrHelpMenuItems = {
         {
             title = "Stamp imported Immich IDs",

@@ -67,7 +67,10 @@ function MetadataTask.getImmichOriginalAssetId(photo)
     local assetId = getField(photo, keyOriginalAssetId)
     if assetId then
         log:trace(
-            "getImmichOriginalAssetId: Found originalAssetId " .. assetId .. " for photo " .. tostring(photo.localIdentifier)
+            "getImmichOriginalAssetId: Found originalAssetId "
+                .. assetId
+                .. " for photo "
+                .. tostring(photo.localIdentifier)
         )
     end
     return assetId

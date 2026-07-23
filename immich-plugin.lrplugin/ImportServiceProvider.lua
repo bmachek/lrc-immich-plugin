@@ -437,7 +437,7 @@ local function showConfigurationDialog()
                     width = share("labelWidth"),
                 }),
                 f:static_text({
-                    title = "When off, run \"Stamp imported Immich IDs\" manually to link imported photos.",
+                    title = 'When off, run "Stamp imported Immich IDs" manually to link imported photos.',
                     font = "<system/small>",
                     fill_horizontal = 1,
                 }),

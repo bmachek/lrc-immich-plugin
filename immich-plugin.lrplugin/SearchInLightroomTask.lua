@@ -96,7 +96,11 @@ function SearchInLightroomTask.run(options)
                 local stampedPhotos = catalog:findPhotosWithProperty(_PLUGIN, field)
                 for _, photo in ipairs(stampedPhotos or {}) do
                     local assetId = photo:getPropertyForPlugin(_PLUGIN, field)
-                    if not Util.nilOrEmpty(assetId) and matchedIds[tostring(assetId)] and not seen[photo.localIdentifier] then
+                    if
+                        not Util.nilOrEmpty(assetId)
+                        and matchedIds[tostring(assetId)]
+                        and not seen[photo.localIdentifier]
+                    then
                         seen[photo.localIdentifier] = true
                         table.insert(found, photo)
                     end
@@ -162,10 +166,16 @@ function SearchInLightroomTask.run(options)
         local skipped = #searchAssets - #found
         local info = string.format(
             'Added %d of %d Immich match(es) for "%s" to collection "%s".',
-            #found, #searchAssets, query, collectionName
+            #found,
+            #searchAssets,
+            query,
+            collectionName
         )
         if skipped > 0 then
-            info = info .. "\n" .. skipped .. " match(es) are not in this catalog (or were not exported by this plugin)."
+            info = info
+                .. "\n"
+                .. skipped
+                .. " match(es) are not in this catalog (or were not exported by this plugin)."
         end
         LrDialogs.showBezel(string.format('%d photo(s) → "%s"', #found, collectionName))
         log:trace("SearchInLightroomTask: " .. info)
