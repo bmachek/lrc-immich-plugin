@@ -1,4 +1,5 @@
 require("ImmichAPI")
+require("SharedDialogSections")
 
 PluginInfoDialogSections = {}
 
@@ -7,6 +8,14 @@ function PluginInfoDialogSections.startDialog(propertyTable)
         prefs.logging = false
     end
     propertyTable.logging = prefs.logging
+
+    -- Global Immich connection, shared by Import, Sync, Search, Share links and
+    -- any Export/Publish preset that opts into the global connection.
+    propertyTable.url = prefs.url or ""
+    propertyTable.apiKey = prefs.apiKey or ""
+    LrTasks.startAsyncTask(function()
+        propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+    end)
 end
 
 function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
@@ -14,6 +23,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 
     return {
 
+        SharedDialogSections.getServerConnectionSection(f, propertyTable),
         {
             bind_to_object = propertyTable,
 
@@ -56,6 +66,8 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 end
 
 function PluginInfoDialogSections.endDialog(propertyTable)
+    prefs.url = propertyTable.url
+    prefs.apiKey = propertyTable.apiKey
     prefs.logging = propertyTable.logging
     if propertyTable.logging then
         log:enable("logfile")

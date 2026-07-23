@@ -13,6 +13,7 @@ return {
     supportsIncrementalPublish = "only",
 
     exportPresetFields = {
+        { key = "useGlobalConnection", default = false },
         { key = "url", default = "" },
         { key = "apiKey", default = "" },
         { key = "originalFileMode", default = "none" },

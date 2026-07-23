@@ -276,19 +276,13 @@ local function showConfigurationDialog()
         local bind = LrView.bind
         local share = LrView.share
         local propertyTable = LrBinding.makePropertyTable(context)
-        propertyTable.url = ""
-        propertyTable.apiKey = ""
         propertyTable.importPath = ""
         propertyTable.importBatchSize = prefs.importBatchSize or 2
         propertyTable.stampAfterImport = prefs.stampAfterImport ~= false
-
-        if prefs.url ~= nil then
-            propertyTable.url = prefs.url
-        end
-
-        if prefs.apiKey ~= nil then
-            propertyTable.apiKey = prefs.apiKey
-        end
+        -- Server connection (URL + API key) is configured centrally in Plugin Manager
+        -- and shared across Import, Sync, Search and Share links.
+        propertyTable.serverStatus = Util.nilOrEmpty(prefs.url) and "Not configured — set it in the Plugin Manager."
+            or ("Server: " .. prefs.url)
 
         if prefs.importPath ~= nil then
             propertyTable.importPath = prefs.importPath
@@ -299,61 +293,25 @@ local function showConfigurationDialog()
             spacing = f:control_spacing(),
             f:row({
                 f:static_text({
-                    title = "URL:",
+                    title = "Server:",
                     alignment = "right",
                     width = share("labelWidth"),
                 }),
-                f:edit_field({
-                    value = bind("url"),
-                    truncation = "middle",
-                    immediate = false,
+                f:static_text({
+                    title = bind("serverStatus"),
                     fill_horizontal = 1,
-                    width_in_chars = 28,
-                    validate = function(v, url)
-                        local sanitizedURL = ImmichAPI:sanityCheckAndFixURL(url)
-                        if sanitizedURL == false then
-                            return false, url, "URL must not be empty. Example: https://demo.immich.app"
-                        end
-                        if sanitizedURL == nil then
-                            return false, url, "Entered URL not valid.\nShould look like https://demo.immich.app"
-                        end
-                        if
-                            sanitizedURL == url or (type(url) == "string" and sanitizedURL == url:match("^%s*(.-)%s*$"))
-                        then
-                            return true, sanitizedURL, ""
-                        end
-                        LrDialogs.message("Entered URL was autocorrected to " .. sanitizedURL)
-                        return true, sanitizedURL, ""
-                    end,
-                }),
-                f:push_button({
-                    title = "Test connection",
-                    action = function(button)
-                        LrTasks.startAsyncTask(function()
-                            local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
-                            if immich:checkConnectivity() then
-                                LrDialogs.message("Connection test successful")
-                            else
-                                LrDialogs.message("Connection test NOT successful")
-                            end
-                        end)
-                    end,
                 }),
             }),
-
             f:row({
                 f:static_text({
-                    title = "API Key:",
-                    alignment = "right",
+                    title = "",
                     width = share("labelWidth"),
-                    visible = bind("hasNoError"),
                 }),
-                f:password_field({
-                    value = bind("apiKey"),
-                    truncation = "middle",
-                    immediate = true,
+                f:static_text({
+                    title = "Configure the Immich URL and API key in the Plugin Manager"
+                        .. " (Immich Plugin section). They are shared across Import, Sync, Search and Share links.",
+                    font = "<system/small>",
                     fill_horizontal = 1,
-                    width_in_chars = 28,
                 }),
             }),
 
@@ -452,32 +410,24 @@ local function showConfigurationDialog()
             resizable_width = true,
         })
 
-        -- Handle dialog result
+        -- Handle dialog result. The server connection (URL + API key) lives in the
+        -- Plugin Manager now, so this dialog only persists import-specific settings.
         if result == "ok" then
-            log:info("User clicked Save on configuration dialog")
-            LrTasks.startAsyncTask(function()
-                log:info("Testing connection to: " .. propertyTable.url)
-                local immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
-                if immich:checkConnectivity() then
-                    log:info("Connection successful, saving configuration:")
-                    log:info("  URL: " .. propertyTable.url)
-                    log:info("  Import Path: " .. propertyTable.importPath)
-                    prefs.url = propertyTable.url
-                    prefs.apiKey = propertyTable.apiKey
-                    prefs.importPath = propertyTable.importPath
-                    prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 2
-                    prefs.stampAfterImport = propertyTable.stampAfterImport == true
-                    log:info("Configuration saved successfully")
-                else
-                    log:error("Connection test failed for URL: " .. propertyTable.url)
-                    ErrorHandler.handleError(
-                        "Invalid import configuration. Settings haven't been saved.",
-                        "Invalid import configuration, settings not saved to preferences."
-                    )
-                end
-            end)
+            log:info("User clicked Save on import configuration dialog")
+            prefs.importPath = propertyTable.importPath
+            prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 2
+            prefs.stampAfterImport = propertyTable.stampAfterImport == true
+            log:info("Import configuration saved: path=" .. tostring(propertyTable.importPath))
+            if Util.nilOrEmpty(prefs.url) or Util.nilOrEmpty(prefs.apiKey) then
+                LrDialogs.message(
+                    "Import settings saved.",
+                    "No Immich server is configured yet. Set the URL and API key in the"
+                        .. " Plugin Manager (Immich Plugin section) before importing.",
+                    "info"
+                )
+            end
         else
-            log:info("User cancelled configuration dialog")
+            log:info("User cancelled import configuration dialog")
         end
     end)
 end

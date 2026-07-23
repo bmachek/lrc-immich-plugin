@@ -6,7 +6,7 @@ ExportDialogSections = {}
 
 function ExportDialogSections.startDialog(propertyTable)
     LrTasks.startAsyncTask(function()
-        propertyTable.immich = ImmichAPI:new(propertyTable.url, propertyTable.apiKey)
+        propertyTable.immich = ImmichAPI:new(Util.resolveConnection(propertyTable))
         propertyTable.albums = propertyTable.immich:getAlbums()
     end)
 
@@ -20,7 +20,7 @@ function ExportDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 
         SharedDialogSections.getOriginalFilesSection(f, propertyTable),
         SharedDialogSections.getLockedFolderSection(f, propertyTable),
-        SharedDialogSections.getServerConnectionSection(f, propertyTable),
+        SharedDialogSections.getServerConnectionSection(f, propertyTable, { allowGlobal = true }),
     }
 
     return result

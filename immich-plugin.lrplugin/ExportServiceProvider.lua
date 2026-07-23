@@ -10,6 +10,7 @@ return {
     allowColorSpaces = nil,
 
     exportPresetFields = {
+        { key = "useGlobalConnection", default = false },
         { key = "url", default = "" },
         { key = "apiKey", default = "" },
         { key = "album", default = nil },

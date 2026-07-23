@@ -121,6 +121,20 @@ function Util.getLogfilePath()
     end
 end
 
+-- Resolve the effective Immich URL/API key for an export or publish preset.
+-- When the preset opts into the global (plugin-wide) connection, use the shared
+-- prefs configured in Plugin Manager; otherwise use the preset's own values.
+-- Returns: url, apiKey.
+function Util.resolveConnection(settings)
+    if settings and settings.useGlobalConnection then
+        return prefs.url, prefs.apiKey
+    end
+    if settings then
+        return settings.url, settings.apiKey
+    end
+    return nil, nil
+end
+
 -- Shared by Export and Publish: validate export context and connect to Immich.
 -- contextLabel: "Export" or "Publish" (used in error messages and task name).
 -- Returns: exportSession, exportParams, immich or nil.
@@ -134,15 +148,17 @@ function Util.validateExportContextAndConnect(exportContext, contextLabel)
     end
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
-    local settingsText = (contextLabel == "Publish") and "plugin settings" or "export settings"
-    if Util.nilOrEmpty(exportParams.url) or Util.nilOrEmpty(exportParams.apiKey) then
+    local url, apiKey = Util.resolveConnection(exportParams)
+    local settingsText = exportParams.useGlobalConnection and "the plugin manager (global connection)"
+        or ((contextLabel == "Publish") and "plugin settings" or "export settings")
+    if Util.nilOrEmpty(url) or Util.nilOrEmpty(apiKey) then
         ErrorHandler.handleError(
-            "Configure Immich URL and API key in the " .. settingsText .. ".",
+            "Configure Immich URL and API key in " .. settingsText .. ".",
             (contextLabel or "Export") .. "Task: URL or API key not set"
         )
         return nil
     end
-    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
+    local immich = ImmichAPI:new(url, apiKey)
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in " .. settingsText .. ".",

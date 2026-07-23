@@ -654,11 +654,12 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     end
 
     local nPhotos = exportSession:countRenditions()
+    local resolvedUrl = Util.resolveConnection(exportParams)
     log:info(
         "=== Export START: "
             .. nPhotos
             .. " photos | url="
-            .. tostring(exportParams.url)
+            .. tostring(resolvedUrl)
             .. " | originalFileMode="
             .. tostring(exportParams.originalFileMode)
             .. " | stackOriginalExport="
@@ -680,7 +681,7 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
     -- with functionContext stays alive until processRenderedPhotos returns, and is not advanced
     -- by LR's render thread, eliminating both early-close and forward→0→return race conditions.
     local progressScope = LrProgressScope({
-        title = buildProgressTitle(nPhotos, exportParams.originalFileMode, exportParams.url or ""),
+        title = buildProgressTitle(nPhotos, exportParams.originalFileMode, resolvedUrl or ""),
         functionContext = functionContext,
     })
 

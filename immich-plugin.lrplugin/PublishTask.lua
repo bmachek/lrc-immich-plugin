@@ -498,7 +498,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         "=== Publish START: "
             .. nPhotos
             .. " photos | url="
-            .. tostring(exportParams.url)
+            .. tostring((Util.resolveConnection(exportParams)))
             .. " | stackOriginalExport="
             .. tostring(exportParams.stackOriginalExport)
             .. " | stackWithExistingOriginal="
@@ -512,7 +512,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             .. " ==="
     )
 
-    local progressTitle = (prefs and prefs.url and prefs.url ~= "") and prefs.url or "Immich"
+    local resolvedUrl = Util.resolveConnection(exportParams)
+    local progressTitle = (resolvedUrl and resolvedUrl ~= "") and resolvedUrl or "Immich"
     -- Use LrProgressScope tied to functionContext rather than exportContext:configureProgress.
     -- configureProgress creates a scope managed by LR's render pipeline, which closes the bar
     -- when rendering completes — potentially long before all uploads are done. LrProgressScope
@@ -564,7 +565,7 @@ end
 function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, commentText) end
 
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -634,14 +635,15 @@ function PublishTask.deletePhotosFromPublishedCollection(
     deletedCallback,
     localCollectionId
 )
-    if Util.nilOrEmpty(publishSettings.url) or Util.nilOrEmpty(publishSettings.apiKey) then
+    local resolvedUrl, resolvedApiKey = Util.resolveConnection(publishSettings)
+    if Util.nilOrEmpty(resolvedUrl) or Util.nilOrEmpty(resolvedApiKey) then
         ErrorHandler.handleError(
             "Configure Immich in plugin settings.",
             "deletePhotosFromPublishedCollection: URL or API key not set"
         )
         return nil
     end
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -753,7 +755,7 @@ function PublishTask.deletePhotosFromPublishedCollection(
 end
 
 function PublishTask.deletePublishedCollection(publishSettings, info)
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -781,7 +783,7 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
 end
 
 function PublishTask.renamePublishedCollection(publishSettings, info)
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -858,7 +860,7 @@ function PublishTask.viewForSharingSettings(f, publishSettings, info)
 
     -- Populate the user picker asynchronously (same pattern as the album picker below).
     LrTasks.startAsyncTask(function()
-        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
         local users = immich:getAllUsers()
         local items = { { title = "Please select", value = 0 } }
         if users then
@@ -888,7 +890,7 @@ function PublishTask.viewForSharingSettings(f, publishSettings, info)
                     title = "Generate share link",
                     action = function()
                         LrTasks.startAsyncTask(function()
-                            local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+                            local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
                             local url = immich:createAlbumSharedLink(albumId, {})
                             if Util.nilOrEmpty(url) then
                                 ErrorHandler.handleError(
@@ -939,7 +941,7 @@ function PublishTask.viewForSharingSettings(f, publishSettings, info)
                                 LrDialogs.message("Select a user to share with.", nil, "warning")
                                 return
                             end
-                            local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+                            local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
                             if immich:addUserToAlbum(albumId, ctx.selectedShareUser, ctx.shareRole) then
                                 LrDialogs.message(
                                     "Album shared",
@@ -970,7 +972,7 @@ function PublishTask.viewForCollectionSettings(f, publishSettings, info)
     info.pluginContext.immichAlbums = { { title = "Please select", value = 0 } }
 
     LrTasks.startAsyncTask(function()
-        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
         local albums = immich:getAlbumsWODate()
         if albums == nil then
             albums = {}
@@ -1048,7 +1050,7 @@ function PublishTask.updateCollectionSettings(publishSettings, info)
     end
     local props = info.collectionSettings
     if props.albumCreationStrategy == "existing" and props.remoteId then
-        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
         if not immich:checkConnectivity() then
             log:warn("updateCollectionSettings: Immich connection not available")
             return
