@@ -40,9 +40,11 @@ globals = {
     "PluginInfoDialogSections",
     "PublishDialogSections",
     "PublishTask",
+    "SearchInLightroomTask",
     "SharedDialogSections",
     "StackManager",
     "SyncFromImmichTask",
+    "SyncTask",
     "UploadHelpers",
     "Util",
 }
