@@ -39,7 +39,7 @@ return {
             spacing = f:control_spacing(),
             margin = 15,
             f:group_box({
-                title = "Sync metadata from Immich",
+                title = "Pull metadata from Immich",
                 fill_horizontal = 1,
                 f:column({
                     spacing = f:control_spacing(),
@@ -65,9 +65,9 @@ return {
         })
 
         local result = LrDialogs.presentModalDialog({
-            title = "Sync from Immich",
+            title = "Pull metadata from Immich",
             contents = contents,
-            actionVerb = "Sync",
+            actionVerb = "Pull",
         })
 
         if result == "ok" then

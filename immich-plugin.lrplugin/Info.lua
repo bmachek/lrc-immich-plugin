@@ -66,7 +66,7 @@ return {
             file = "StampImportedDialog.lua",
         },
         {
-            title = "Sync from Immich",
+            title = "Pull metadata from Immich",
             file = "SyncFromImmichDialog.lua",
         },
         {
