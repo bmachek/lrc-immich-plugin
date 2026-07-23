@@ -28,7 +28,7 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
                 .. " actions — Import from Immich, Sync with Immich, Find in Lightroom (search),"
                 .. " Create share link and Pull metadata.\n"
                 .. "Export and Publish presets have their own connection, but each can be set to reuse"
-                .. " this global one via the \"Use global server connection\" checkbox in its settings.\n"
+                .. ' this global one via the "Use global server connection" checkbox in its settings.\n'
                 .. "Create an API key in Immich under Account Settings → API Keys.",
         }),
         {
