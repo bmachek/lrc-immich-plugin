@@ -931,10 +931,18 @@ end
 -- asset (e.g. an external-library RAW sharing this photo's name/date) as a replace
 -- target would trash it. When no stored ID exists, callers upload a fresh asset.
 -- Returns the assetId if found and still present, nil otherwise.
-function ImmichAPI:checkIfAssetExistsEnhanced(photo)
+-- Resolve a prior upload of this photo so a re-upload replaces it instead of duplicating.
+-- isOriginal selects which stored ID to use: the original/RAW master (immichOriginalAssetId)
+-- when uploading an original, or the rendered/derivative export (immichAssetId) otherwise.
+-- Keying by the kind of file being uploaded is what prevents a rendered export from
+-- resolving to (and, via replaceAsset, deleting) the original RAW asset.
+function ImmichAPI:checkIfAssetExistsEnhanced(photo, isOriginal)
     require("MetadataTask")
 
-    local storedAssetId = MetadataTask.getImmichAssetId(photo)
+    local getStored = isOriginal and MetadataTask.getImmichOriginalAssetId or MetadataTask.getImmichAssetId
+    local clearStored = isOriginal and MetadataTask.setImmichOriginalAssetId or MetadataTask.setImmichAssetId
+
+    local storedAssetId = getStored(photo)
     if storedAssetId and storedAssetId ~= "" then
         -- Verify the asset still exists (and is not trashed) in Immich.
         local assetInfo = self:getAssetInfo(storedAssetId)
@@ -946,7 +954,7 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo)
         log:trace(
             "checkIfAssetExistsEnhanced: Stored assetId " .. storedAssetId .. " no longer exists, clearing metadata"
         )
-        MetadataTask.setImmichAssetId(photo, nil)
+        clearStored(photo, nil)
     end
 
     return nil

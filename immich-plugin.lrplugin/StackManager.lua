@@ -14,11 +14,12 @@ require("ImmichAPI")
 StackManager = {}
 
 --------------------------------------------------------------------------------
--- Upload a primary asset for a photo, replacing the asset the plugin previously
--- uploaded when its Immich ID is resolvable from stored Lightroom metadata.
--- Returns Immich asset id or nil.
-function StackManager.uploadOneAssetOrReplace(immich, photo, path, visibility)
-    local existingId = immich:checkIfAssetExistsEnhanced(photo)
+-- Upload an asset for a photo, replacing the asset the plugin previously uploaded when
+-- its Immich ID is resolvable from stored Lightroom metadata. isOriginal selects which
+-- stored ID to dedup against (original master vs rendered export) so an original never
+-- resolves to a derivative and vice versa. Returns Immich asset id or nil.
+function StackManager.uploadOneAssetOrReplace(immich, photo, path, visibility, isOriginal)
+    local existingId = immich:checkIfAssetExistsEnhanced(photo, isOriginal)
     if existingId == nil then
         return immich:uploadAsset(path, visibility)
     else
@@ -275,15 +276,18 @@ function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, ex
 
     log:trace("Uploading original file: " .. originalPath)
 
-    -- The original is a stack secondary; the plugin never persists its Immich ID,
-    -- and with deviceAssetId/deviceId removed from Immich there is no safe way to
-    -- resolve a prior upload of it. Upload fresh — a re-export may create a duplicate
-    -- original rather than risk resolving (and later trashing) a foreign asset.
-    local originalAssetId = immich:uploadAsset(originalPath, visibility)
+    -- The original is a stack secondary. Its Immich ID is persisted separately
+    -- (immichOriginalAssetId), so a re-export replaces the same original instead of
+    -- creating a duplicate. Deduping against the original field (never the export field)
+    -- means a rendered export can never resolve to — and delete — the original RAW.
+    local originalAssetId = StackManager.uploadOneAssetOrReplace(immich, photo, originalPath, visibility, true)
 
     if not originalAssetId then
         return editedAssetId, "Failed to upload original file"
     end
+
+    require("MetadataTask")
+    MetadataTask.setImmichOriginalAssetId(photo, originalAssetId)
 
     -- Create stack with edited as primary, original as secondary
     local stackId = immich:createStack({ editedAssetId, originalAssetId })

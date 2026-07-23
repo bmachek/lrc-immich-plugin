@@ -249,12 +249,12 @@ local function processOnePhotoGroup(
             -- After sort: items[1]=export (primary), items[2..]=original/extra renditions.
             local id, errReason
             if i == 1 then
-                -- Primary export: dedup/replace via the plugin's stored Immich asset ID.
-                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
+                -- Primary export: dedup/replace via the stored rendered-export ID.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility, false)
             else
-                -- Stack secondaries have no stored ID and no safe way to resolve a prior
-                -- upload now that deviceAssetId is gone; upload fresh.
-                id, errReason = immich:uploadAsset(item.path, visibility)
+                -- Stack secondary = the original master: dedup/replace via the stored
+                -- original ID so re-export updates it instead of creating a duplicate.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility, true)
             end
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
@@ -264,6 +264,9 @@ local function processOnePhotoGroup(
                 table.insert(assetIds, id)
                 if primaryId == nil then
                     primaryId = id
+                else
+                    -- Secondary original: persist its ID.
+                    MetadataTask.setImmichOriginalAssetId(photo, id)
                 end
                 log:info("original+export [" .. filename .. "]: -> " .. id)
             end
@@ -316,9 +319,11 @@ local function processOnePhotoGroup(
             else
                 local originalPath = StackManager.getOriginalFilePath(photo)
                 if originalPath then
-                    -- Original is a stack secondary; upload fresh (no stored ID to dedup against).
-                    local origId = immich:uploadAsset(originalPath, visibility)
+                    -- Original is a stack secondary; dedup/replace via the stored original ID
+                    -- and persist it so re-export updates it instead of duplicating.
+                    local origId = StackManager.uploadOneAssetOrReplace(immich, photo, originalPath, visibility, true)
                     if origId then
+                        MetadataTask.setImmichOriginalAssetId(photo, origId)
                         if not immich:createStack({ id, origId }) then
                             table.insert(stackWarnings, filename .. ": failed to create original+export stack")
                         end
@@ -435,8 +440,10 @@ local function processSingleRenditionRenditions(
                 if not originalPath then
                     table.insert(failures, photo:getFormattedMetadata("fileName") .. " (original not found)")
                 else
-                    -- Primary asset: resolve a prior upload via the stored Immich asset ID.
-                    local existingId = immich:checkIfAssetExistsEnhanced(photo)
+                    -- Primary asset is the original master: dedup/replace and persist via the
+                    -- original ID (never the export ID), so a later JPEG export cannot resolve
+                    -- to and delete this RAW.
+                    local existingId = immich:checkIfAssetExistsEnhanced(photo, true)
                     log:info("single-rendition [" .. photo:getFormattedMetadata("fileName") .. "]: uploading original")
                     local id, errReason
                     if existingId == nil then
@@ -451,7 +458,7 @@ local function processSingleRenditionRenditions(
                         )
                     else
                         atLeastSomeSuccess = true
-                        MetadataTask.setImmichAssetId(photo, id)
+                        MetadataTask.setImmichOriginalAssetId(photo, id)
                         local primaryId = id
                         if
                             originalFileMode == "original_plus_jpeg_if_edited"
@@ -470,9 +477,12 @@ local function processSingleRenditionRenditions(
                                         .. photo:getFormattedMetadata("fileName")
                                         .. "]: uploading edited export"
                                 )
-                                -- Edited export is a stack secondary; upload fresh (no stored ID to dedup against).
-                                local exportId = immich:uploadAsset(pathOrMessage, visibility)
+                                -- Edited export is the rendered derivative: dedup/persist via the
+                                -- export ID so re-export updates it instead of duplicating.
+                                local exportId =
+                                    StackManager.uploadOneAssetOrReplace(immich, photo, pathOrMessage, visibility, false)
                                 if exportId then
+                                    MetadataTask.setImmichAssetId(photo, exportId)
                                     primaryId = exportId
                                     if not immich:createStack({ exportId, id }) then
                                         table.insert(

@@ -88,11 +88,18 @@ function SearchInLightroomTask.run(options)
         progressScope:setCaption("Matching against Lightroom catalog...")
         local found = {}
         local ok = LrTasks.pcall(function()
-            local stampedPhotos = catalog:findPhotosWithProperty(_PLUGIN, "immichAssetId")
-            for _, photo in ipairs(stampedPhotos or {}) do
-                local assetId = MetadataTask.getImmichAssetId(photo)
-                if not Util.nilOrEmpty(assetId) and matchedIds[tostring(assetId)] then
-                    table.insert(found, photo)
+            -- A photo maps to Immich via the derivative-export ID and/or the original-master ID
+            -- (imported photos only have the latter). Enumerate both plugin properties and match
+            -- either against the search results, de-duplicating photos that carry both.
+            local seen = {}
+            for _, field in ipairs({ "immichAssetId", "immichOriginalAssetId" }) do
+                local stampedPhotos = catalog:findPhotosWithProperty(_PLUGIN, field)
+                for _, photo in ipairs(stampedPhotos or {}) do
+                    local assetId = photo:getPropertyForPlugin(_PLUGIN, field)
+                    if not Util.nilOrEmpty(assetId) and matchedIds[tostring(assetId)] and not seen[photo.localIdentifier] then
+                        seen[photo.localIdentifier] = true
+                        table.insert(found, photo)
+                    end
                 end
             end
         end)

@@ -28,10 +28,6 @@ return {
             file = "ImportDialog.lua",
         },
         {
-            title = "Import from Immich (Search)",
-            file = "SmartSearchImportDialog.lua",
-        },
-        {
             title = "Find in Lightroom (Immich Search)",
             file = "SearchInLightroomDialog.lua",
         },
@@ -45,10 +41,6 @@ return {
         {
             title = "Import from Immich",
             file = "ImportDialog.lua",
-        },
-        {
-            title = "Import from Immich (Search)",
-            file = "SmartSearchImportDialog.lua",
         },
         {
             title = "Find in Lightroom (Immich Search)",

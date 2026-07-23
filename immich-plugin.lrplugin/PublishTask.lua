@@ -150,12 +150,12 @@ local function processPublishOnePhotoGroup(
             -- After sort: items[1]=export (primary), items[2..]=original/extra renditions.
             local id, errReason
             if i == 1 then
-                -- Primary export: dedup/replace via the plugin's stored Immich asset ID.
-                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
+                -- Primary export: dedup/replace via the stored rendered-export ID.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility, false)
             else
-                -- Stack secondaries have no stored ID and no safe way to resolve a prior
-                -- upload now that deviceAssetId is gone; upload fresh.
-                id, errReason = immich:uploadAsset(item.path, visibility)
+                -- Stack secondary = the original master: dedup/replace via the stored
+                -- original ID so re-publish updates it instead of creating a duplicate.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility, true)
             end
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
@@ -165,6 +165,9 @@ local function processPublishOnePhotoGroup(
                 table.insert(assetIds, id)
                 if primaryId == nil then
                     primaryId = id
+                else
+                    -- Secondary original: persist its ID.
+                    MetadataTask.setImmichOriginalAssetId(photo, id)
                 end
                 item.rendition:recordPublishedPhotoId(id)
                 item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
@@ -227,9 +230,14 @@ local function processPublishOnePhotoGroup(
                 else
                     local originalPath = StackManager.getOriginalFilePath(photo)
                     if originalPath then
-                        -- Untracked orphan secondary: upload fresh (no stored ID to dedup against).
-                        local origId = immich:uploadAsset(originalPath, visibility)
+                        -- Orphan secondary re: Lightroom's publish lifecycle (not tracked via
+                        -- recordPublishedPhotoId), but its Immich ID is persisted separately
+                        -- (immichOriginalAssetId) and deduped against the original field, so a
+                        -- re-publish replaces the same original instead of piling up duplicates.
+                        local origId =
+                            StackManager.uploadOneAssetOrReplace(immich, photo, originalPath, visibility, true)
                         if origId then
+                            MetadataTask.setImmichOriginalAssetId(photo, origId)
                             -- Warn once per publish run to keep the post-publish dialog concise.
                             if not stackWarnings._orphanOriginalsWarned then
                                 table.insert(

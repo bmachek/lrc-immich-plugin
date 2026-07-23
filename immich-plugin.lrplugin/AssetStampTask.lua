@@ -105,12 +105,15 @@ function AssetStampTask.reconcile(verbose)
         end
     end
 
-    -- setImmichAssetId opens its own private write-access transaction per photo, so no outer
-    -- write gate is needed here (and nesting write access would be wrong).
+    -- A photo imported from Immich has that Immich asset as its master, so stamp the
+    -- original-ID field (not the derivative/export field). This keeps a later rendered
+    -- export from resolving to — and replacing/deleting — the imported original.
+    -- setImmichOriginalAssetId opens its own private write-access transaction per photo, so
+    -- no outer write gate is needed here (and nesting write access would be wrong).
     local stamped = 0
     for _, e in ipairs(toStamp) do
-        if Util.nilOrEmpty(MetadataTask.getImmichAssetId(e.photo)) then
-            if MetadataTask.setImmichAssetId(e.photo, e.id) then
+        if Util.nilOrEmpty(MetadataTask.getImmichOriginalAssetId(e.photo)) then
+            if MetadataTask.setImmichOriginalAssetId(e.photo, e.id) then
                 stamped = stamped + 1
             end
         end

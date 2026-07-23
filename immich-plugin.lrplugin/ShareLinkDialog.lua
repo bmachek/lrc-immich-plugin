@@ -38,7 +38,7 @@ return {
         local assetIds = {}
         local skipped = 0
         for _, photo in ipairs(photos) do
-            local id = MetadataTask.getImmichAssetId(photo)
+            local id = MetadataTask.getAnyImmichAssetId(photo)
             if Util.nilOrEmpty(id) then
                 skipped = skipped + 1
             else

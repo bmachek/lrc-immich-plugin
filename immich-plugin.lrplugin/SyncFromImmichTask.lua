@@ -66,7 +66,7 @@ function SyncFromImmichTask.run(options)
                 break
             end
 
-            local assetId = MetadataTask.getImmichAssetId(photo)
+            local assetId = MetadataTask.getAnyImmichAssetId(photo)
             if Util.nilOrEmpty(assetId) then
                 skippedNoId = skippedNoId + 1
             else

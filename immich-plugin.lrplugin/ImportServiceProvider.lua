@@ -23,11 +23,16 @@ local function getExistingAssetIds()
     local existing = {}
     local ok = LrTasks.pcall(function()
         local catalog = LrApplication.activeCatalog()
-        local photos = catalog:findPhotosWithProperty(_PLUGIN, "immichAssetId")
-        for _, photo in ipairs(photos or {}) do
-            local id = MetadataTask.getImmichAssetId(photo)
-            if not Util.nilOrEmpty(id) then
-                existing[id] = true
+        -- Collect both the derivative-export ID and the original-master ID: a photo may carry
+        -- either (or both), and imported photos only carry the original ID. Enumerate both
+        -- plugin properties since findPhotosWithProperty only returns photos that have that field.
+        for _, field in ipairs({ "immichAssetId", "immichOriginalAssetId" }) do
+            local photos = catalog:findPhotosWithProperty(_PLUGIN, field)
+            for _, photo in ipairs(photos or {}) do
+                local id = photo:getPropertyForPlugin(_PLUGIN, field)
+                if not Util.nilOrEmpty(id) then
+                    existing[id] = true
+                end
             end
         end
     end)
