@@ -28,6 +28,9 @@ return {
         if prefs.syncForceLrHttp == nil then
             prefs.syncForceLrHttp = false
         end
+        if prefs.syncPreview == nil then
+            prefs.syncPreview = true
+        end
 
         local f = LrView.osFactory()
         local share = LrView.share
@@ -112,12 +115,21 @@ return {
                     value = bind("syncForceLrHttp"),
                 }),
             }),
+
+            f:separator({ fill_horizontal = 1 }),
+            f:row({
+                f:static_text({ title = "", width = share("sync_label") }),
+                f:checkbox({
+                    title = "Preview changes before running (show a summary to confirm)",
+                    value = bind("syncPreview"),
+                }),
+            }),
         })
 
         local result = LrDialogs.presentModalDialog({
             title = "Sync with Immich",
             contents = contents,
-            actionVerb = "Sync",
+            actionVerb = prefs.syncPreview and "Continue" or "Sync",
         })
 
         if result == "ok" then
@@ -129,6 +141,7 @@ return {
                 deleteInImmich = prefs.syncDeleteInImmich,
                 rejectInLr = prefs.syncRejectInLr,
                 forceLrHttp = prefs.syncForceLrHttp,
+                preview = prefs.syncPreview,
             })
         end
     end),

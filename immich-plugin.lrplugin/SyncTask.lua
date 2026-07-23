@@ -184,11 +184,317 @@ local function uploadPhoto(immich, photo, opts, failures)
     return originalId, exportId
 end
 
--- opts: { direction, uploadContent, stackOriginals, pushMetadata, deleteInImmich, rejectInLr, forceLrHttp }
-function SyncTask.run(opts)
-    opts = opts or {}
+-- Phase A analysis: which Immich assets are missing from the catalog and would be downloaded.
+-- Returns the asset list, or nil + an error message on failure.
+local function analyzeDownload(immich, catalog)
+    local assets = immich:getAllAssets()
+    if not assets then
+        return nil, "Failed to list Immich assets. Check logs."
+    end
+    local existing = collectExistingAssetIds(catalog)
+    local toDownload = {}
+    for _, asset in ipairs(assets) do
+        if not existing[asset.id] then
+            table.insert(toDownload, asset)
+        end
+    end
+    return toDownload
+end
+
+-- Phase B analysis: which catalog photos are new or edited since their last sync. Returns the
+-- upload item list ({ photo, filename, reason }) and the count of unchanged (skipped) photos.
+local function analyzeUpload(photos)
+    local toUpload = {}
+    local skipped = 0
+    for _, photo in ipairs(photos) do
+        local stored = MetadataTask.getAnyImmichAssetId(photo)
+        local syncTime = MetadataTask.getImmichSyncTime(photo) or 0
+        local lastEdit = photo:getRawMetadata("lastEditTime") or 0
+        local isNew = Util.nilOrEmpty(stored)
+        local isEdited = (not isNew) and (lastEdit > syncTime)
+        if isNew or isEdited then
+            table.insert(toUpload, {
+                photo = photo,
+                filename = photo:getFormattedMetadata("fileName"),
+                reason = isNew and "new" or "edited",
+            })
+        else
+            skipped = skipped + 1
+        end
+    end
+    return toUpload, skipped
+end
+
+-- Phase C analysis (LR -> Immich): assets from the manifest whose source photo is gone.
+local function analyzeDelete(catalog)
+    local items = {}
+    for assetId, uuid in pairs(loadManifest()) do
+        if not catalog:findPhotoByUuid(uuid) then
+            table.insert(items, { assetId = assetId, uuid = uuid })
+        end
+    end
+    return items
+end
+
+-- Phase C analysis (Immich -> LR): catalog photos whose Immich asset was deleted/trashed. This
+-- queries Immich once per stamped photo, so it can be slow on large catalogs.
+local function analyzeReject(immich, photos, progress)
+    local toReject = {}
+    local total = #photos
+    for i, photo in ipairs(photos) do
+        if progress:isCanceled() then
+            break
+        end
+        local id = MetadataTask.getAnyImmichAssetId(photo)
+        if not Util.nilOrEmpty(id) then
+            local info = immich:getAssetInfo(id)
+            if not info or info.isTrashed then
+                table.insert(toReject, photo)
+            end
+        end
+        progress:setPortionComplete(i, total)
+    end
+    return toReject
+end
+
+-- Build the full delta plan without transferring anything. Returns the plan table, or
+-- nil + an error message if a fatal problem occurred (e.g. Immich asset listing failed).
+function SyncTask.analyze(opts, catalog, immich, progress)
     local doDownload = opts.direction ~= "upload"
     local doUpload = opts.direction ~= "download"
+    local plan = { download = {}, upload = {}, delete = {}, reject = {}, skipped = 0, photos = nil }
+
+    if doDownload and not progress:isCanceled() then
+        progress:setCaption("Fetching Immich asset list...")
+        local toDownload, err = analyzeDownload(immich, catalog)
+        if not toDownload then
+            return nil, err
+        end
+        plan.download = toDownload
+    end
+
+    -- Phases B and C all iterate the catalog photo list.
+    if doUpload or opts.deleteInImmich or opts.rejectInLr then
+        plan.photos = catalog:getAllPhotos()
+    end
+
+    if doUpload and plan.photos and not progress:isCanceled() then
+        progress:setCaption("Checking Lightroom for new/edited photos...")
+        plan.upload, plan.skipped = analyzeUpload(plan.photos)
+    end
+
+    if opts.deleteInImmich and not progress:isCanceled() then
+        plan.delete = analyzeDelete(catalog)
+    end
+
+    if opts.rejectInLr and plan.photos and not progress:isCanceled() then
+        progress:setCaption("Checking Immich for deleted assets...")
+        plan.reject = analyzeReject(immich, plan.photos, progress)
+    end
+
+    return plan
+end
+
+-- Present the optional wizard step: a read-only summary of everything the plan would do, so the
+-- user can confirm before anything is transferred. Returns true if the user chose to proceed.
+function SyncTask.presentPreview(opts, plan)
+    local f = LrView.osFactory()
+    local doDownload = opts.direction ~= "upload"
+    local doUpload = opts.direction ~= "download"
+
+    local column = { spacing = 2 }
+
+    local function section(heading, lines, enabled)
+        if not enabled then
+            return
+        end
+        table.insert(
+            column,
+            f:static_text({
+                title = string.format("%s: %d", heading, #lines),
+                font = "<system/bold>",
+            })
+        )
+        local body
+        if #lines == 0 then
+            body = "    (nothing)"
+        else
+            local shown = {}
+            local maxShown = 500
+            for i = 1, math.min(#lines, maxShown) do
+                table.insert(shown, "    " .. lines[i])
+            end
+            if #lines > maxShown then
+                table.insert(shown, string.format("    …and %d more", #lines - maxShown))
+            end
+            body = table.concat(shown, "\n")
+        end
+        table.insert(column, f:static_text({ title = body, font = "<system/small>" }))
+        table.insert(column, f:static_text({ title = "" }))
+    end
+
+    local downloadLines = {}
+    for _, asset in ipairs(plan.download) do
+        table.insert(downloadLines, asset.originalFileName or asset.id)
+    end
+    local uploadLines = {}
+    for _, item in ipairs(plan.upload) do
+        table.insert(uploadLines, item.filename .. " (" .. item.reason .. ")")
+    end
+    local deleteLines = {}
+    for _, item in ipairs(plan.delete) do
+        table.insert(deleteLines, item.assetId)
+    end
+    local rejectLines = {}
+    for _, photo in ipairs(plan.reject) do
+        table.insert(rejectLines, photo:getFormattedMetadata("fileName"))
+    end
+
+    section("Download to Lightroom", downloadLines, doDownload)
+    section("Upload to Immich", uploadLines, doUpload)
+    section("Delete in Immich", deleteLines, opts.deleteInImmich)
+    section("Reject in Lightroom", rejectLines, opts.rejectInLr)
+    table.insert(
+        column,
+        f:static_text({
+            title = string.format("Unchanged (skipped): %d", plan.skipped),
+            font = "<system/small>",
+        })
+    )
+
+    local contents = f:column({
+        spacing = f:control_spacing(),
+        margin = 10,
+        f:static_text({
+            title = "Review the changes below. Nothing has been transferred yet.",
+            font = "<system/bold>",
+        }),
+        f:scrolled_view({
+            width = 520,
+            height = 360,
+            f:column(column),
+        }),
+    })
+
+    local result = LrDialogs.presentModalDialog({
+        title = "Immich sync – preview",
+        contents = contents,
+        actionVerb = "Run sync",
+        cancelVerb = "Back",
+    })
+    return result == "ok"
+end
+
+-- Carry out a plan produced by SyncTask.analyze. Returns the stats table and appends any
+-- per-item problems to failures.
+function SyncTask.execute(opts, plan, catalog, immich, progress, failures)
+    local stats = { downloaded = 0, uploaded = 0, deleted = 0, rejected = 0, skipped = plan.skipped }
+
+    --------------------------------------------------------------------------
+    -- Phase A: download delta
+    --------------------------------------------------------------------------
+    if #plan.download > 0 and not progress:isCanceled() then
+        local importDir = prefs.importPath
+        if not LrFileUtils.exists(importDir) then
+            LrFileUtils.createDirectory(importDir)
+        end
+        local folder = LrPathUtils.child(importDir, SYNC_SUBFOLDER)
+        if not LrFileUtils.exists(folder) then
+            LrFileUtils.createDirectory(folder)
+        end
+
+        local total = #plan.download
+        local pathToId = {}
+        for i, asset in ipairs(plan.download) do
+            if progress:isCanceled() then
+                break
+            end
+            local dest = LrPathUtils.child(folder, asset.originalFileName or (asset.id .. ".bin"))
+            if immich:downloadAssetToFile(asset.id, dest, opts.forceLrHttp) then
+                pathToId[dest] = asset.id
+                stats.downloaded = stats.downloaded + 1
+            else
+                table.insert(failures, (asset.originalFileName or asset.id) .. " (download failed)")
+            end
+            progress:setPortionComplete(i, total)
+            progress:setCaption(string.format("Downloading %d of %d", i, total))
+        end
+
+        if next(pathToId) ~= nil then
+            -- Hand off to Lightroom's Import UI; imported photos are stamped
+            -- (immichOriginalAssetId) by AssetStampTask once they land in the catalog.
+            catalog:triggerImportUI(folder)
+            AssetStampTask.pollAfterImport(pathToId)
+        end
+    end
+
+    --------------------------------------------------------------------------
+    -- Phase B: upload delta
+    --------------------------------------------------------------------------
+    if #plan.upload > 0 and not progress:isCanceled() then
+        local total = #plan.upload
+        for i, item in ipairs(plan.upload) do
+            if progress:isCanceled() then
+                break
+            end
+            local originalId, exportId = uploadPhoto(immich, item.photo, opts, failures)
+            if originalId or exportId then
+                MetadataTask.setImmichSyncTime(item.photo, LrDate.currentTime())
+                stats.uploaded = stats.uploaded + 1
+            end
+            progress:setPortionComplete(i, total)
+            progress:setCaption(string.format("Uploading (%d of %d)", i, total))
+        end
+    end
+
+    --------------------------------------------------------------------------
+    -- Phase C: deletions (opt-in)
+    --------------------------------------------------------------------------
+    -- LR -> Immich: delete assets whose source photo was removed from the catalog.
+    if opts.deleteInImmich and not progress:isCanceled() then
+        for _, item in ipairs(plan.delete) do
+            if immich:deleteAsset(item.assetId) then
+                stats.deleted = stats.deleted + 1
+            end
+        end
+        -- Rebuild the manifest from the current catalog state (includes freshly uploaded IDs).
+        local current = {}
+        for _, photo in ipairs(plan.photos or {}) do
+            local uuid = photo:getRawMetadata("uuid")
+            if uuid then
+                for _, getter in ipairs({ MetadataTask.getImmichAssetId, MetadataTask.getImmichOriginalAssetId }) do
+                    local id = getter(photo)
+                    if not Util.nilOrEmpty(id) then
+                        current[id] = uuid
+                    end
+                end
+            end
+        end
+        saveManifest(current)
+    end
+
+    -- Immich -> LR: flag photos whose Immich asset was deleted as rejected (SDK cannot
+    -- delete catalog photos), and clear their stored IDs.
+    if opts.rejectInLr and #plan.reject > 0 and not progress:isCanceled() then
+        catalog:withWriteAccessDo("Immich sync: reject deleted", function()
+            for _, photo in ipairs(plan.reject) do
+                photo:setRawMetadata("pickStatus", -1)
+            end
+        end, { timeout = 30 })
+        for _, photo in ipairs(plan.reject) do
+            MetadataTask.setImmichAssetId(photo, nil)
+            MetadataTask.setImmichOriginalAssetId(photo, nil)
+            stats.rejected = stats.rejected + 1
+        end
+    end
+
+    return stats
+end
+
+-- opts: { direction, uploadContent, stackOriginals, pushMetadata, deleteInImmich, rejectInLr,
+--         forceLrHttp, preview }
+function SyncTask.run(opts)
+    opts = opts or {}
 
     LrTasks.startAsyncTask(function()
         AssetStampTask.reconcile(false)
@@ -203,160 +509,36 @@ function SyncTask.run(opts)
             return
         end
 
-        local progress = LrProgressScope({ title = "Syncing with Immich...", caption = "Starting..." })
         local failures = {}
-        local stats = { downloaded = 0, uploaded = 0, deleted = 0, rejected = 0, skipped = 0 }
 
         --------------------------------------------------------------------------
-        -- Phase A: download delta
+        -- Step 1: analyze (build the delta plan; transfers nothing).
         --------------------------------------------------------------------------
-        if doDownload and not progress:isCanceled() then
-            progress:setCaption("Fetching Immich asset list...")
-            local assets = immich:getAllAssets()
-            if not assets then
-                progress:done()
-                ErrorHandler.handleError("Failed to list Immich assets. Check logs.", "SyncTask: getAllAssets nil")
-                return
-            end
+        local analyzeScope = LrProgressScope({ title = "Analyzing Immich sync...", caption = "Starting..." })
+        local plan, err = SyncTask.analyze(opts, catalog, immich, analyzeScope)
+        local canceled = analyzeScope:isCanceled()
+        analyzeScope:done()
 
-            local existing = collectExistingAssetIds(catalog)
-            local toDownload = {}
-            for _, asset in ipairs(assets) do
-                if not existing[asset.id] then
-                    table.insert(toDownload, asset)
-                end
-            end
-
-            if #toDownload > 0 then
-                local importDir = prefs.importPath
-                if not LrFileUtils.exists(importDir) then
-                    LrFileUtils.createDirectory(importDir)
-                end
-                local folder = LrPathUtils.child(importDir, SYNC_SUBFOLDER)
-                if not LrFileUtils.exists(folder) then
-                    LrFileUtils.createDirectory(folder)
-                end
-
-                local pathToId = {}
-                for i, asset in ipairs(toDownload) do
-                    if progress:isCanceled() then
-                        break
-                    end
-                    local dest = LrPathUtils.child(folder, asset.originalFileName or (asset.id .. ".bin"))
-                    if immich:downloadAssetToFile(asset.id, dest, opts.forceLrHttp) then
-                        pathToId[dest] = asset.id
-                        stats.downloaded = stats.downloaded + 1
-                    else
-                        table.insert(failures, (asset.originalFileName or asset.id) .. " (download failed)")
-                    end
-                    progress:setPortionComplete(i, #toDownload)
-                    progress:setCaption(string.format("Downloading %d of %d", i, #toDownload))
-                end
-
-                if next(pathToId) ~= nil then
-                    -- Hand off to Lightroom's Import UI; imported photos are stamped
-                    -- (immichOriginalAssetId) by AssetStampTask once they land in the catalog.
-                    catalog:triggerImportUI(folder)
-                    AssetStampTask.pollAfterImport(pathToId)
-                end
-            end
+        if not plan then
+            ErrorHandler.handleError(err or "Sync analysis failed.", "SyncTask: analyze failed")
+            return
+        end
+        if canceled then
+            return
         end
 
         --------------------------------------------------------------------------
-        -- Phase B / C need the catalog photo list.
+        -- Step 2 (optional): preview and confirm.
         --------------------------------------------------------------------------
-        local photos
-        if doUpload or opts.deleteInImmich or opts.rejectInLr then
-            photos = catalog:getAllPhotos()
+        if opts.preview and not SyncTask.presentPreview(opts, plan) then
+            return
         end
 
         --------------------------------------------------------------------------
-        -- Phase B: upload delta
+        -- Step 3: execute the plan.
         --------------------------------------------------------------------------
-        if doUpload and photos and not progress:isCanceled() then
-            local total = #photos
-            for i, photo in ipairs(photos) do
-                if progress:isCanceled() then
-                    break
-                end
-
-                local stored = MetadataTask.getAnyImmichAssetId(photo)
-                local syncTime = MetadataTask.getImmichSyncTime(photo) or 0
-                local lastEdit = photo:getRawMetadata("lastEditTime") or 0
-                local isNew = Util.nilOrEmpty(stored)
-                local isEdited = (not isNew) and (lastEdit > syncTime)
-
-                if isNew or isEdited then
-                    local originalId, exportId = uploadPhoto(immich, photo, opts, failures)
-                    if originalId or exportId then
-                        MetadataTask.setImmichSyncTime(photo, LrDate.currentTime())
-                        stats.uploaded = stats.uploaded + 1
-                    end
-                else
-                    stats.skipped = stats.skipped + 1
-                end
-
-                progress:setPortionComplete(i, total)
-                progress:setCaption(string.format("Uploading (%d of %d)", i, total))
-            end
-        end
-
-        --------------------------------------------------------------------------
-        -- Phase C: deletions (opt-in)
-        --------------------------------------------------------------------------
-        -- LR -> Immich: delete assets whose source photo was removed from the catalog.
-        if opts.deleteInImmich and not progress:isCanceled() then
-            local prev = loadManifest()
-            for assetId, uuid in pairs(prev) do
-                if not catalog:findPhotoByUuid(uuid) then
-                    if immich:deleteAsset(assetId) then
-                        stats.deleted = stats.deleted + 1
-                    end
-                end
-            end
-            -- Rebuild the manifest from the current catalog state (includes freshly uploaded IDs).
-            local current = {}
-            for _, photo in ipairs(photos or {}) do
-                local uuid = photo:getRawMetadata("uuid")
-                if uuid then
-                    for _, getter in ipairs({ MetadataTask.getImmichAssetId, MetadataTask.getImmichOriginalAssetId }) do
-                        local id = getter(photo)
-                        if not Util.nilOrEmpty(id) then
-                            current[id] = uuid
-                        end
-                    end
-                end
-            end
-            saveManifest(current)
-        end
-
-        -- Immich -> LR: flag photos whose Immich asset was deleted as rejected (SDK cannot
-        -- delete catalog photos), and clear their stored IDs.
-        if opts.rejectInLr and photos and not progress:isCanceled() then
-            local toReject = {}
-            for _, photo in ipairs(photos) do
-                local id = MetadataTask.getAnyImmichAssetId(photo)
-                if not Util.nilOrEmpty(id) then
-                    local info = immich:getAssetInfo(id)
-                    if not info or info.isTrashed then
-                        table.insert(toReject, photo)
-                    end
-                end
-            end
-            if #toReject > 0 then
-                catalog:withWriteAccessDo("Immich sync: reject deleted", function()
-                    for _, photo in ipairs(toReject) do
-                        photo:setRawMetadata("pickStatus", -1)
-                    end
-                end, { timeout = 30 })
-                for _, photo in ipairs(toReject) do
-                    MetadataTask.setImmichAssetId(photo, nil)
-                    MetadataTask.setImmichOriginalAssetId(photo, nil)
-                    stats.rejected = stats.rejected + 1
-                end
-            end
-        end
-
+        local progress = LrProgressScope({ title = "Syncing with Immich...", caption = "Starting..." })
+        local stats = SyncTask.execute(opts, plan, catalog, immich, progress, failures)
         progress:done()
 
         --------------------------------------------------------------------------
