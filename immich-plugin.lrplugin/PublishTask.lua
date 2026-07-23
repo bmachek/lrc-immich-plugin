@@ -391,6 +391,18 @@ local function processPublishSingleRenditionRenditions(
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
                 exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
+                -- Optionally stack the export with an already-present original in Immich (from a
+                -- prior publish/export or an import), without re-uploading it. Verified live, so a
+                -- since-deleted original is skipped.
+                if exportParams.stackWithExistingOriginal then
+                    local r = StackManager.stackExportWithExistingOriginal(immich, photo, id)
+                    if r == false then
+                        table.insert(
+                            stackWarnings,
+                            photo:getFormattedMetadata("fileName") .. ": failed to stack with existing Immich original"
+                        )
+                    end
+                end
                 if albumCreationStrategy == "folder" then
                     local folderName = rendition.photo:getFormattedMetadata("folderName")
                     local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
@@ -489,6 +501,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             .. tostring(exportParams.url)
             .. " | stackOriginalExport="
             .. tostring(exportParams.stackOriginalExport)
+            .. " | stackWithExistingOriginal="
+            .. tostring(exportParams.stackWithExistingOriginal)
             .. " | stackLrStacks="
             .. tostring(exportParams.stackLrStacks)
             .. " | albumCreationStrategy="

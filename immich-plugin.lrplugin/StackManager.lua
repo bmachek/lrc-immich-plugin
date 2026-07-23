@@ -28,6 +28,32 @@ function StackManager.uploadOneAssetOrReplace(immich, photo, path, visibility, i
 end
 
 --------------------------------------------------------------------------------
+-- Stack a freshly uploaded rendered export with a *previously uploaded* original that is
+-- still present on the server, without re-uploading the original. Uses the stored
+-- immichOriginalAssetId, verified live via checkIfAssetExistsEnhanced (which also clears a
+-- stale ID when the original no longer exists on the server). Returns:
+--   true  = stack created
+--   false = an original was found but the stack call failed
+--   nil   = nothing to do (no stored original, it no longer exists, or it is the same asset)
+function StackManager.stackExportWithExistingOriginal(immich, photo, exportAssetId)
+    if not immich or not photo or Util.nilOrEmpty(exportAssetId) then
+        return nil
+    end
+    -- isOriginal=true resolves (and validates) the original-master ID, clearing it if the
+    -- asset was deleted in Immich so we never stack against a stale/foreign asset.
+    local originalId = immich:checkIfAssetExistsEnhanced(photo, true)
+    if Util.nilOrEmpty(originalId) or originalId == exportAssetId then
+        return nil
+    end
+    local stackId = immich:createStack({ exportAssetId, originalId })
+    if not stackId then
+        return false
+    end
+    log:trace("stackExportWithExistingOriginal: stacked export " .. exportAssetId .. " with original " .. originalId)
+    return true
+end
+
+--------------------------------------------------------------------------------
 -- Check if a photo has been edited in Lightroom.
 -- When a cache is provided it is used exclusively; no fallback queries are made.
 -- When no cache is provided, falls back to direct catalog queries.

@@ -74,6 +74,14 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
                         value = bind("stackOriginalExport"),
                     }),
                     f:checkbox({
+                        title = "Stack export with existing Immich original (no re-upload)",
+                        value = bind("stackWithExistingOriginal"),
+                        tooltip = "When a photo already has a known original asset in Immich"
+                            .. " (from a previous upload or an import), stack the rendered export with it"
+                            .. " instead of uploading the original again. Skipped if the original no longer"
+                            .. " exists on the server.",
+                    }),
+                    f:checkbox({
                         title = "Preserve Lightroom stacks in Immich",
                         value = bind("stackLrStacks"),
                     }),

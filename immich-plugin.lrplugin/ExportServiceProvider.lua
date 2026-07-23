@@ -16,6 +16,7 @@ return {
         { key = "albumMode", default = "none" },
         { key = "originalFileMode", default = "none" },
         { key = "stackOriginalExport", default = false },
+        { key = "stackWithExistingOriginal", default = false },
         { key = "stackLrStacks", default = false },
         { key = "lockedFolderMode", default = "none" },
     },

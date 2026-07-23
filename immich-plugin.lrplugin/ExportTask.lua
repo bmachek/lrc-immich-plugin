@@ -534,6 +534,7 @@ local function processSingleRenditionRenditions(
                     atLeastSomeSuccess = true
                     MetadataTask.setImmichAssetId(photo, id)
                     exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
+                    local stackedOriginalThisRun = false
                     if originalFileMode and originalFileMode ~= "none" then
                         local shouldStack = (originalFileMode == "all")
                             or (originalFileMode == "edited" and StackManager.hasEdits(photo, editedPhotosCache))
@@ -545,7 +546,21 @@ local function processSingleRenditionRenditions(
                                     stackWarnings,
                                     photo:getFormattedMetadata("fileName") .. ": " .. stackError
                                 )
+                            else
+                                stackedOriginalThisRun = true
                             end
+                        end
+                    end
+                    -- No fresh original uploaded for this photo: optionally stack the export with an
+                    -- already-present original in Immich (from a prior upload or an import), without
+                    -- re-uploading it. Verified live, so a since-deleted original is skipped.
+                    if not stackedOriginalThisRun and exportParams.stackWithExistingOriginal then
+                        local r = StackManager.stackExportWithExistingOriginal(immich, photo, id)
+                        if r == false then
+                            table.insert(
+                                stackWarnings,
+                                photo:getFormattedMetadata("fileName") .. ": failed to stack with existing Immich original"
+                            )
                         end
                     end
                     if useAlbum then
@@ -647,6 +662,8 @@ function ExportTask.processRenderedPhotos(functionContext, exportContext)
             .. tostring(exportParams.originalFileMode)
             .. " | stackOriginalExport="
             .. tostring(exportParams.stackOriginalExport)
+            .. " | stackWithExistingOriginal="
+            .. tostring(exportParams.stackWithExistingOriginal)
             .. " | stackLrStacks="
             .. tostring(exportParams.stackLrStacks)
             .. " | albumMode="
