@@ -69,6 +69,20 @@ function Util.getExtension(path)
     return string.lower(string.match(path, "%.([^%.]+)$") or "")
 end
 
+-- Convert a Lightroom (Cocoa) timestamp to an ISO 8601 string with a timezone
+-- offset. LrDate.timeToW3CDate emits local time without a zone (e.g.
+-- "2026-07-24T07:41:39"), which Immich's validator rejects; append the local
+-- UTC offset (or "Z") so the string matches the expected ISO 8601 format.
+function Util.toISO8601(cocoaTime)
+    local base = LrDate.timeToW3CDate(cocoaTime)
+    local tz = os.date("%z")
+    local sign, hh, mm = tostring(tz):match("([%+%-])(%d%d)(%d%d)")
+    if sign then
+        return base .. sign .. hh .. ":" .. mm
+    end
+    return base .. "Z"
+end
+
 function Util.cutApiKey(key)
     if key == nil or type(key) ~= "string" then
         return "(no key)"

@@ -95,7 +95,7 @@ return {
 
             local expiresAt = nil
             if props.expiry and props.expiry > 0 then
-                expiresAt = LrDate.timeToW3CDate(LrDate.currentTime() + props.expiry)
+                expiresAt = Util.toISO8601(LrDate.currentTime() + props.expiry)
             end
 
             local immich = ImmichAPI:new(prefs.url, prefs.apiKey)
