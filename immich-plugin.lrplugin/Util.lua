@@ -121,6 +121,22 @@ function Util.getLogfilePath()
     end
 end
 
+-- Returns true if a global Immich connection (URL + API key) is configured.
+-- Otherwise shows a message directing the user to the Plugin Manager and returns
+-- false. Used by the Library/Help menu tasks (Import, Sync, Search, Share links).
+function Util.ensureConnected()
+    if Util.nilOrEmpty(prefs.url) or Util.nilOrEmpty(prefs.apiKey) then
+        LrDialogs.message(
+            "Immich is not configured yet.",
+            "Set the Immich server URL and API key in the Plug-in Manager"
+                .. " (File → Plug-in Manager → Immich) and try again.",
+            "info"
+        )
+        return false
+    end
+    return true
+end
+
 -- Resolve the effective Immich URL/API key for an export or publish preset.
 -- When the preset opts into the global (plugin-wide) connection, use the shared
 -- prefs configured in Plugin Manager; otherwise use the preset's own values.

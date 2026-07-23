@@ -3,7 +3,6 @@ local getImmichAlbums = ImportServiceProvider.getImmichAlbums
 local loadAlbumPhotos = ImportServiceProvider.loadAlbumPhotos
 local loadSearchPhotos = ImportServiceProvider.loadSearchPhotos
 local getAlbumTitleById = ImportServiceProvider.getAlbumTitleById
-local showConfigurationDialog = ImportServiceProvider.showConfigurationDialog
 
 --[[
     Unified "Import from Immich" dialog. Lets the user pick the import source:
@@ -15,12 +14,7 @@ local showConfigurationDialog = ImportServiceProvider.showConfigurationDialog
 
 return {
     LrTasks.startAsyncTask(function()
-        if Util.nilOrEmpty(prefs.apiKey) or Util.nilOrEmpty(prefs.url) then
-            showConfigurationDialog()
-        end
-
-        -- If still not configured (user cancelled the config dialog), stop.
-        if Util.nilOrEmpty(prefs.apiKey) or Util.nilOrEmpty(prefs.url) then
+        if not Util.ensureConnected() then
             return
         end
 
@@ -53,6 +47,11 @@ return {
             end
 
             props.searchQuery = prefs.lastSearchQuery or ""
+
+            -- Import destination settings (previously in the separate import config dialog).
+            props.importPath = prefs.importPath or ""
+            props.importBatchSize = prefs.importBatchSize or 2
+            props.stampAfterImport = prefs.stampAfterImport ~= false
 
             local isAlbum = function(v)
                 return v == "album"
@@ -136,6 +135,71 @@ return {
                         }),
                     }),
                 }),
+
+                -- Import destination settings (shared by both modes).
+                f:separator({ fill_horizontal = 1 }),
+                f:row({
+                    f:static_text({
+                        title = "Import to:",
+                        alignment = "right",
+                        width = LrView.share("import_label"),
+                    }),
+                    f:edit_field({
+                        value = LrView.bind("importPath"),
+                        truncation = "middle",
+                        immediate = true,
+                        fill_horizontal = 1,
+                        width_in_chars = 28,
+                        validate = function(_, path)
+                            if not Util.nilOrEmpty(path) and not LrFileUtils.exists(path) then
+                                return false, path, "Selected path does not exist"
+                            end
+                            return true, path, ""
+                        end,
+                    }),
+                    f:push_button({
+                        title = "Browse...",
+                        action = function()
+                            local directory = LrDialogs.runOpenPanel({
+                                title = "Choose Import Directory",
+                                prompt = "Select",
+                                canChooseFiles = false,
+                                canChooseDirectories = true,
+                                canCreateDirectories = true,
+                                allowsMultipleSelection = false,
+                            })
+                            if directory and directory[1] then
+                                props.importPath = directory[1]
+                            end
+                        end,
+                    }),
+                }),
+                f:row({
+                    f:static_text({
+                        title = "Batch size:",
+                        alignment = "right",
+                        width = LrView.share("import_label"),
+                    }),
+                    f:edit_field({
+                        value = LrView.bind("importBatchSize"),
+                        width_in_chars = 5,
+                        immediate = true,
+                        validate = function(_, value)
+                            local n = tonumber(value)
+                            if not n or n < 1 then
+                                return false, value, "Batch size must be a positive integer (>= 1)."
+                            end
+                            return true, tostring(math.floor(n + 0.5)), ""
+                        end,
+                    }),
+                }),
+                f:row({
+                    f:static_text({ title = "", width = LrView.share("import_label") }),
+                    f:checkbox({
+                        title = "Stamp Immich asset IDs onto imported photos automatically",
+                        value = LrView.bind("stampAfterImport"),
+                    }),
+                }),
             })
 
             local result = LrDialogs.presentModalDialog({
@@ -147,6 +211,19 @@ return {
             if result ~= "ok" then
                 return
             end
+
+            -- Persist import destination settings.
+            if Util.nilOrEmpty(props.importPath) then
+                LrDialogs.message(
+                    "No import folder set.",
+                    "Choose a folder to import photos into before importing.",
+                    "warning"
+                )
+                return
+            end
+            prefs.importPath = props.importPath
+            prefs.importBatchSize = tonumber(props.importBatchSize) or 2
+            prefs.stampAfterImport = props.stampAfterImport == true
 
             prefs.lastImportMode = props.importMode
 

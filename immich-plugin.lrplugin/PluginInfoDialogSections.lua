@@ -23,7 +23,14 @@ function PluginInfoDialogSections.sectionsForBottomOfDialog(f, propertyTable)
 
     return {
 
-        SharedDialogSections.getServerConnectionSection(f, propertyTable),
+        SharedDialogSections.getServerConnectionSection(f, propertyTable, {
+            intro = "These credentials are the global Immich connection used by the Library/File menu"
+                .. " actions — Import from Immich, Sync with Immich, Find in Lightroom (search),"
+                .. " Create share link and Pull metadata.\n"
+                .. "Export and Publish presets have their own connection, but each can be set to reuse"
+                .. " this global one via the \"Use global server connection\" checkbox in its settings.\n"
+                .. "Create an API key in Immich under Account Settings → API Keys.",
+        }),
         {
             bind_to_object = propertyTable,
 

@@ -69,10 +69,6 @@ return {
             title = "Pull metadata from Immich",
             file = "SyncFromImmichDialog.lua",
         },
-        {
-            title = "Immich import configuration",
-            file = "ImportConfiguration.lua",
-        },
     },
 
     LrPluginInfoProvider = "PluginInfo.lua",

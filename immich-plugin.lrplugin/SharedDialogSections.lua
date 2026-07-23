@@ -156,6 +156,20 @@ function SharedDialogSections.getServerConnectionSection(f, propertyTable, opts)
         bind_to_object = propertyTable,
     }
 
+    if opts and opts.intro then
+        table.insert(
+            section,
+            f:row({
+                f:static_text({
+                    title = opts.intro,
+                    font = "<system/small>",
+                    fill_horizontal = 1,
+                    height_in_lines = -1,
+                }),
+            })
+        )
+    end
+
     if allowGlobal then
         table.insert(
             section,

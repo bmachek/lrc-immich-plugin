@@ -2,9 +2,6 @@ require("ImmichAPI")
 require("MetadataTask")
 require("AssetStampTask")
 
-local ImportServiceProvider = require("ImportServiceProvider")
-local showConfigurationDialog = ImportServiceProvider.showConfigurationDialog
-
 -- Expiry options in seconds (0 = never).
 local EXPIRY_ITEMS = {
     { title = "Never", value = 0 },
@@ -15,12 +12,7 @@ local EXPIRY_ITEMS = {
 
 return {
     LrTasks.startAsyncTask(function()
-        if Util.nilOrEmpty(prefs.apiKey) or Util.nilOrEmpty(prefs.url) then
-            showConfigurationDialog()
-        end
-
-        -- If still not configured (user cancelled the config dialog), stop.
-        if Util.nilOrEmpty(prefs.apiKey) or Util.nilOrEmpty(prefs.url) then
+        if not Util.ensureConnected() then
             return
         end
 
