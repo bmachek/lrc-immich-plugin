@@ -146,8 +146,14 @@ end
 
 -- Register a fresh { path -> id } map, then poll reconcile a few times so quick Add-in-place
 -- imports get stamped automatically. Whatever is left stays persisted for later reconcile.
+-- Auto-polling is skipped when prefs.stampAfterImport is disabled; entries are still
+-- registered so a manual "Stamp imported Immich IDs" run can reconcile them later.
 function AssetStampTask.pollAfterImport(map)
     AssetStampTask.registerPending(map)
+    if prefs.stampAfterImport == false then
+        log:trace("AssetStampTask.pollAfterImport: auto-stamp disabled; entries left pending for manual reconcile")
+        return
+    end
     LrTasks.startAsyncTask(function()
         for _ = 1, 12 do
             LrTasks.sleep(5)

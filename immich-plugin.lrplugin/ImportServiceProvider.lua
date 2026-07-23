@@ -275,6 +275,7 @@ local function showConfigurationDialog()
         propertyTable.apiKey = ""
         propertyTable.importPath = ""
         propertyTable.importBatchSize = prefs.importBatchSize or 2
+        propertyTable.stampAfterImport = prefs.stampAfterImport ~= false
 
         if prefs.url ~= nil then
             propertyTable.url = prefs.url
@@ -414,6 +415,28 @@ local function showConfigurationDialog()
                     end,
                 }),
             }),
+
+            f:row({
+                f:static_text({
+                    title = "",
+                    width = share("labelWidth"),
+                }),
+                f:checkbox({
+                    title = "Stamp Immich asset IDs onto imported photos automatically",
+                    value = bind("stampAfterImport"),
+                }),
+            }),
+            f:row({
+                f:static_text({
+                    title = "",
+                    width = share("labelWidth"),
+                }),
+                f:static_text({
+                    title = "When off, run \"Stamp imported Immich IDs\" manually to link imported photos.",
+                    font = "<system/small>",
+                    fill_horizontal = 1,
+                }),
+            }),
         })
 
         -- Show the dialog
@@ -438,6 +461,7 @@ local function showConfigurationDialog()
                     prefs.apiKey = propertyTable.apiKey
                     prefs.importPath = propertyTable.importPath
                     prefs.importBatchSize = tonumber(propertyTable.importBatchSize) or 2
+                    prefs.stampAfterImport = propertyTable.stampAfterImport == true
                     log:info("Configuration saved successfully")
                 else
                     log:error("Connection test failed for URL: " .. propertyTable.url)
