@@ -7,6 +7,9 @@
 local API_BASE_PATH = "/api"
 local HTTP_TIMEOUT_DEFAULT = 30
 local HTTP_TIMEOUT_UPLOAD = 300
+-- Smart search runs CLIP ML inference server-side, which can exceed the default
+-- timeout on a cold model or large library.
+local HTTP_TIMEOUT_SEARCH = 120
 
 local SUCCESS_STATUS_GET = 200
 local SUCCESS_STATUS_POST = { [200] = true, [201] = true }
@@ -305,7 +308,7 @@ function ImmichAPI:searchSmart(query)
     local page = 1
     repeat
         local postBody = { query = query, page = page, size = 250 }
-        local response = self:doPostRequest("/search/smart", postBody)
+        local response = self:doPostRequest("/search/smart", postBody, HTTP_TIMEOUT_SEARCH)
 
         if not response or type(response) ~= "table" or not response.assets then
             log:error("searchSmart: search/smart failed for query: " .. query .. " (page " .. page .. ")")
@@ -1274,7 +1277,7 @@ end
 -- HTTP request layer
 -- ---------------------------------------------------------------------------
 
-function ImmichAPI:doPostRequest(apiPath, postBody)
+function ImmichAPI:doPostRequest(apiPath, postBody, timeout)
     if not ensureConnectivity(self) then
         return nil
     end
@@ -1288,7 +1291,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
         JSON:encode(postBody),
         self:createHeaders(),
         "POST",
-        HTTP_TIMEOUT_DEFAULT
+        timeout or HTTP_TIMEOUT_DEFAULT
     )
 
     if not headers then
