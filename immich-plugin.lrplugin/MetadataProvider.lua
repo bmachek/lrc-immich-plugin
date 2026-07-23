@@ -23,9 +23,20 @@ return {
             browsable = true,
             searchable = true,
         },
+        {
+            -- Lightroom time (LrDate.currentTime()) of the last successful sync/upload of this
+            -- photo to Immich, stored as a string. Used by the Sync task to decide whether a
+            -- photo has been edited since it was last synced (re-upload delta).
+            id = "immichSyncTime",
+            title = "Immich Last Sync Time",
+            dataType = "string",
+            readOnly = true,
+            browsable = false,
+            searchable = false,
+        },
     },
 
-    schemaVersion = 11,
+    schemaVersion = 12,
     -- noAutoUpdate = true,
 
     -- updateFromEarlierSchemaVersion = MetadataTask.updateFromEarlierSchemaVersion

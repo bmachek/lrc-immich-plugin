@@ -35,6 +35,10 @@ return {
             title = "Create Immich share link",
             file = "ShareLinkDialog.lua",
         },
+        {
+            title = "Sync with Immich",
+            file = "SyncDialog.lua",
+        },
     },
 
     LrExportMenuItems = {
@@ -49,6 +53,10 @@ return {
         {
             title = "Create Immich share link",
             file = "ShareLinkDialog.lua",
+        },
+        {
+            title = "Sync with Immich",
+            file = "SyncDialog.lua",
         },
     },
 

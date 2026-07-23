@@ -2,6 +2,7 @@ MetadataTask = {}
 
 local keyAssetId = "immichAssetId"
 local keyOriginalAssetId = "immichOriginalAssetId"
+local keySyncTime = "immichSyncTime"
 
 -- Set or clear a stored Immich asset ID field on a photo. Pass nil or "" to clear
 -- (e.g. when the asset was deleted in Immich).
@@ -81,4 +82,14 @@ end
 -- Photos imported from Immich only have the original ID set.
 function MetadataTask.getAnyImmichAssetId(photo)
     return MetadataTask.getImmichAssetId(photo) or MetadataTask.getImmichOriginalAssetId(photo)
+end
+
+-- Last successful sync time (LrDate.currentTime() as a string). Used by the Sync task's
+-- re-upload delta: a photo is "edited since last sync" when lastEditTime > this value.
+function MetadataTask.setImmichSyncTime(photo, time)
+    return setField(photo, keySyncTime, time and tostring(time) or nil)
+end
+
+function MetadataTask.getImmichSyncTime(photo)
+    return tonumber(getField(photo, keySyncTime))
 end

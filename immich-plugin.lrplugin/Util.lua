@@ -47,6 +47,20 @@ function Util.nilOrEmpty(val)
     end
 end
 
+-- Quote a single argument for a shell command line. On Windows, LrTasks.execute runs the
+-- string through cmd.exe, which uses double quotes; elsewhere (macOS) it goes through
+-- /bin/sh, which uses single quotes. Used to build curl commands with untrusted values
+-- (paths, API keys, URLs) safely.
+function Util.shellQuote(arg)
+    arg = tostring(arg or "")
+    if WIN_ENV then
+        -- cmd.exe: wrap in double quotes and escape embedded double quotes.
+        return '"' .. arg:gsub('"', '""') .. '"'
+    end
+    -- POSIX sh: wrap in single quotes; close-escape-reopen any embedded single quote.
+    return "'" .. arg:gsub("'", "'\\''") .. "'"
+end
+
 -- Get lowercase file extension from path (e.g. "photo.dng" -> "dng")
 function Util.getExtension(path)
     if not path or type(path) ~= "string" then

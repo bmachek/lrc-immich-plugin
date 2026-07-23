@@ -137,6 +137,75 @@ function ImmichAPI:downloadAsset(assetId)
     end
 end
 
+-- Detect once whether a system `curl` binary is available. curl ships by default on macOS
+-- and Windows 10 1803+ (System32\curl.exe on PATH), so no binary needs shipping.
+local curlChecked, curlPresent = false, false
+local function curlAvailable()
+    if not curlChecked then
+        curlChecked = true
+        -- Route stdout/stderr to the null device so the probe stays silent.
+        local devnull = WIN_ENV and "NUL" or "/dev/null"
+        local ok = LrTasks.pcall(function()
+            local rc = LrTasks.execute("curl --version > " .. devnull .. " 2>&1")
+            curlPresent = (rc == 0)
+        end)
+        if not ok then
+            curlPresent = false
+        end
+        log:info("curlAvailable: " .. tostring(curlPresent))
+    end
+    return curlPresent
+end
+
+-- Download an asset's original bytes straight to destPath. Prefers streaming via the system
+-- curl binary (constant memory) over LrHttp.get, which loads the whole asset into a Lua
+-- string. Falls back to LrHttp.get when curl is absent or forceLrHttp is set. Returns true
+-- on success, false otherwise.
+function ImmichAPI:downloadAssetToFile(assetId, destPath, forceLrHttp)
+    if Util.nilOrEmpty(assetId) or Util.nilOrEmpty(destPath) then
+        log:warn("downloadAssetToFile: assetId or destPath empty")
+        return false
+    end
+
+    local assetUrl = string.format("%s%s/assets/%s/original", self.url, self.apiBasePath, assetId)
+
+    if not forceLrHttp and curlAvailable() then
+        -- -f fail on HTTP errors, -s silent, -S still show errors, -L follow redirects.
+        local cmd = table.concat({
+            "curl -f -s -S -L",
+            "-H " .. Util.shellQuote("x-api-key: " .. (type(self.apiKey) == "string" and self.apiKey or "")),
+            "-o " .. Util.shellQuote(destPath),
+            Util.shellQuote(assetUrl),
+        }, " ")
+        local rc = -1
+        local ok = LrTasks.pcall(function()
+            rc = LrTasks.execute(cmd)
+        end)
+        if ok and rc == 0 and LrFileUtils.exists(destPath) then
+            log:trace("downloadAssetToFile: curl downloaded " .. assetId .. " -> " .. destPath)
+            return true
+        end
+        log:warn(
+            "downloadAssetToFile: curl failed (rc=" .. tostring(rc) .. ") for " .. assetId .. "; falling back to LrHttp"
+        )
+    end
+
+    -- Fallback: in-memory download, then write to disk.
+    local body = self:downloadAsset(assetId)
+    if body == nil then
+        return false
+    end
+    local file = io.open(destPath, "wb")
+    if not file then
+        log:error("downloadAssetToFile: cannot open " .. destPath .. " for writing")
+        return false
+    end
+    file:write(body)
+    file:close()
+    body = nil -- luacheck: ignore 311
+    return true
+end
+
 function ImmichAPI:hasLivePhotoVideo(assetId)
     if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No asset ID provided. Check logs.", "hasLivePhotoVideo: assetId empty")
@@ -255,6 +324,35 @@ function ImmichAPI:searchSmart(query)
     until not page
 
     log:trace("searchSmart: Retrieved " .. #assets .. " assets for query: " .. query)
+    return assets
+end
+
+-- Enumerate every (non-trashed) asset in the library, paginated. Used by the Sync task's
+-- download delta. Returns an array of { id, originalFileName } or nil on failure.
+function ImmichAPI:getAllAssets()
+    local assets = {}
+    local page = 1
+    repeat
+        local postBody = { page = page, size = 1000, withDeleted = false }
+        local response = self:doPostRequest("/search/metadata", postBody)
+
+        if not response or type(response) ~= "table" or not response.assets then
+            log:error("getAllAssets: search/metadata failed (page " .. page .. ")")
+            return nil
+        end
+
+        for _, asset in ipairs(response.assets.items or {}) do
+            table.insert(assets, {
+                id = asset.id,
+                originalFileName = asset.originalFileName,
+            })
+        end
+
+        -- nextPage is a string page number (or nil/JSON null when there are no more pages).
+        page = tonumber(response.assets.nextPage)
+    until not page
+
+    log:trace("getAllAssets: retrieved " .. #assets .. " asset(s)")
     return assets
 end
 
@@ -541,6 +639,33 @@ function ImmichAPI:setAssetDate(assetId, isoDate)
         return false
     end
     log:trace("setAssetDate: " .. assetId .. " -> " .. tostring(isoDate))
+    return true
+end
+
+-- Push editable metadata onto an existing asset via PUT /assets/:id. Only the non-nil keys
+-- of `fields` are sent. Supported: isFavorite (bool), rating (number), description (string),
+-- latitude/longitude (number), dateTimeOriginal (ISO string). Used by the Sync task to push
+-- Lightroom metadata for uploaded originals (nothing is baked into a RAW). Returns true on success.
+function ImmichAPI:updateAsset(assetId, fields)
+    if Util.nilOrEmpty(assetId) or type(fields) ~= "table" then
+        log:warn("updateAsset: assetId empty or fields not a table")
+        return false
+    end
+    local body = {}
+    for _, key in ipairs({ "isFavorite", "rating", "description", "latitude", "longitude", "dateTimeOriginal" }) do
+        if fields[key] ~= nil then
+            body[key] = fields[key]
+        end
+    end
+    if next(body) == nil then
+        return true -- nothing to update
+    end
+    local parsedResponse = self:doCustomRequest("PUT", "/assets/" .. assetId, body)
+    if parsedResponse == nil then
+        log:error("updateAsset: failed to update metadata on " .. assetId)
+        return false
+    end
+    log:trace("updateAsset: updated " .. assetId)
     return true
 end
 

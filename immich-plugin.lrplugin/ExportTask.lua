@@ -559,7 +559,8 @@ local function processSingleRenditionRenditions(
                         if r == false then
                             table.insert(
                                 stackWarnings,
-                                photo:getFormattedMetadata("fileName") .. ": failed to stack with existing Immich original"
+                                photo:getFormattedMetadata("fileName")
+                                    .. ": failed to stack with existing Immich original"
                             )
                         end
                     end
