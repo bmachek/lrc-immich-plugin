@@ -136,7 +136,7 @@ return {
                     cancelVerb = "Close",
                 })
                 if btn == "ok" then
-                    LrShell.openUrlInBrowser(url)
+                    LrHttp.openUrlInBrowser(url)
                 end
             end)
         end)

@@ -911,7 +911,7 @@ function PublishTask.viewForSharingSettings(f, publishSettings, info)
                     title = "Open",
                     action = function()
                         if not Util.nilOrEmpty(ctx.shareUrl) then
-                            LrShell.openUrlInBrowser(ctx.shareUrl)
+                            LrHttp.openUrlInBrowser(ctx.shareUrl)
                         end
                     end,
                 }),
