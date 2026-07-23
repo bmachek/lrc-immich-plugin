@@ -32,6 +32,10 @@ return {
             file = "SmartSearchImportDialog.lua",
         },
         {
+            title = "Find in Lightroom (Immich Search)",
+            file = "SearchInLightroomDialog.lua",
+        },
+        {
             title = "Sync from Immich",
             file = "SyncFromImmichDialog.lua",
         },
@@ -59,6 +63,22 @@ return {
             file = "SmartSearchImportDialog.lua",
         },
         {
+            title = "Find in Lightroom (Immich Search)",
+            file = "SearchInLightroomDialog.lua",
+        },
+        {
+            title = "Sync from Immich",
+            file = "SyncFromImmichDialog.lua",
+        },
+        {
+            title = "Create Immich share link",
+            file = "ShareLinkDialog.lua",
+        },
+        {
+            title = "Stamp imported Immich IDs",
+            file = "StampImportedDialog.lua",
+        },
+        {
             title = "Immich import configuration",
             file = "ImportConfiguration.lua",
         },
@@ -68,5 +88,5 @@ return {
 
     LrPluginInfoURL = "https://github.com/bmachek/lrc-immich-plugin/",
 
-    VERSION = { major = 4, minor = 4, revision = 0, build = 0 },
+    VERSION = { major = 5, minor = 0, revision = 0, build = 0 },
 }
