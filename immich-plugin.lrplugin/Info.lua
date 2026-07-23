@@ -36,20 +36,8 @@ return {
             file = "SearchInLightroomDialog.lua",
         },
         {
-            title = "Sync from Immich",
-            file = "SyncFromImmichDialog.lua",
-        },
-        {
             title = "Create Immich share link",
             file = "ShareLinkDialog.lua",
-        },
-        {
-            title = "Stamp imported Immich IDs",
-            file = "StampImportedDialog.lua",
-        },
-        {
-            title = "Immich import configuration",
-            file = "ImportConfiguration.lua",
         },
     },
 
@@ -67,16 +55,20 @@ return {
             file = "SearchInLightroomDialog.lua",
         },
         {
-            title = "Sync from Immich",
-            file = "SyncFromImmichDialog.lua",
-        },
-        {
             title = "Create Immich share link",
             file = "ShareLinkDialog.lua",
         },
+    },
+
+
+    LrHelpMenuItems = {
         {
             title = "Stamp imported Immich IDs",
             file = "StampImportedDialog.lua",
+        },
+        {
+            title = "Sync from Immich",
+            file = "SyncFromImmichDialog.lua",
         },
         {
             title = "Immich import configuration",
