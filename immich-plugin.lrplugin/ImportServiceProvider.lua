@@ -27,9 +27,9 @@ local function getExistingAssetIds()
         -- either (or both), and imported photos only carry the original ID. Enumerate both
         -- plugin properties since findPhotosWithProperty only returns photos that have that field.
         for _, field in ipairs({ "immichAssetId", "immichOriginalAssetId" }) do
-            local photos = catalog:findPhotosWithProperty(_PLUGIN, field)
+            local photos = catalog:findPhotosWithProperty(_PLUGIN.id, field)
             for _, photo in ipairs(photos or {}) do
-                local id = photo:getPropertyForPlugin(_PLUGIN, field)
+                local id = photo:getPropertyForPlugin(_PLUGIN.id, field)
                 if not Util.nilOrEmpty(id) then
                     existing[id] = true
                 end

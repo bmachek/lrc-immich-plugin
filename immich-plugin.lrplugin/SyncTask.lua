@@ -45,9 +45,9 @@ end
 local function collectExistingAssetIds(catalog)
     local existing = {}
     for _, field in ipairs({ "immichAssetId", "immichOriginalAssetId" }) do
-        local photos = catalog:findPhotosWithProperty(_PLUGIN, field)
+        local photos = catalog:findPhotosWithProperty(_PLUGIN.id, field)
         for _, photo in ipairs(photos or {}) do
-            local id = photo:getPropertyForPlugin(_PLUGIN, field)
+            local id = photo:getPropertyForPlugin(_PLUGIN.id, field)
             if not Util.nilOrEmpty(id) then
                 existing[id] = true
             end
@@ -295,84 +295,169 @@ function SyncTask.analyze(opts, catalog, immich, progress)
     return plan
 end
 
--- Present the optional wizard step: a read-only summary of everything the plan would do, so the
--- user can confirm before anything is transferred. Returns true if the user chose to proceed.
+-- Which asset kinds an upload config produces: originals (RAW) and/or exports (edits). A photo
+-- uploaded as "both" counts toward both totals.
+local function uploadContentFlags(opts)
+    local content = opts.uploadContent or "original"
+    local raws = content == "original" or content == "both"
+    local edits = content == "export" or content == "both"
+    return raws, edits
+end
+
+-- Render a plain-text report from a list of { heading, lines } sections plus optional footer
+-- lines. Used for the detailed "Save summary to file" export in both the preview and completion
+-- dialogs.
+local function formatReport(title, sections, footer)
+    local out = { title, os.date("Generated %Y-%m-%d %H:%M:%S"), "" }
+    for _, s in ipairs(sections) do
+        table.insert(out, string.format("%s (%d)", s.heading, #s.lines))
+        if #s.lines == 0 then
+            table.insert(out, "  (none)")
+        else
+            for _, line in ipairs(s.lines) do
+                table.insert(out, "  " .. line)
+            end
+        end
+        table.insert(out, "")
+    end
+    for _, line in ipairs(footer or {}) do
+        table.insert(out, line)
+    end
+    return table.concat(out, "\n")
+end
+
+-- Prompt for a location and write the given text there. Runs synchronously from a button action.
+local function saveSummaryToFile(defaultName, text)
+    local path = LrDialogs.runSavePanel({
+        title = "Save Immich sync summary",
+        requiredFileType = "txt",
+        initialFile = defaultName,
+        canCreateDirectories = true,
+    })
+    if not path then
+        return
+    end
+    local file = io.open(path, "w")
+    if not file then
+        LrDialogs.message("Could not save summary", "Unable to write to " .. path, "critical")
+        return
+    end
+    file:write(text)
+    file:close()
+    LrDialogs.showBezel("Sync summary saved")
+end
+
+-- Full detailed report of the planned changes (filenames, asset IDs, paths) for the preview
+-- "Save summary to file" button.
+local function buildPreviewText(opts, plan)
+    local doDownload = opts.direction ~= "upload"
+    local doUpload = opts.direction ~= "download"
+    local sections = {}
+
+    if doDownload then
+        local lines = {}
+        for _, asset in ipairs(plan.download) do
+            table.insert(lines, string.format("%s  [id %s]", asset.originalFileName or "?", asset.id))
+        end
+        table.insert(sections, { heading = "Download to Lightroom", lines = lines })
+    end
+
+    if doUpload then
+        local lines = {}
+        for _, item in ipairs(plan.upload) do
+            table.insert(
+                lines,
+                string.format("%s  (%s)  %s", item.filename, item.reason, item.photo:getRawMetadata("path") or "?")
+            )
+        end
+        table.insert(
+            sections,
+            { heading = "Upload to Immich (content: " .. (opts.uploadContent or "original") .. ")", lines = lines }
+        )
+    end
+
+    if opts.deleteInImmich then
+        local lines = {}
+        for _, item in ipairs(plan.delete) do
+            table.insert(lines, string.format("id %s  (was uuid %s)", item.assetId, item.uuid))
+        end
+        table.insert(sections, { heading = "Delete in Immich", lines = lines })
+    end
+
+    if opts.rejectInLr then
+        local lines = {}
+        for _, photo in ipairs(plan.reject) do
+            table.insert(
+                lines,
+                string.format(
+                    "%s  [id %s]  %s",
+                    photo:getFormattedMetadata("fileName"),
+                    MetadataTask.getAnyImmichAssetId(photo) or "?",
+                    photo:getRawMetadata("path") or "?"
+                )
+            )
+        end
+        table.insert(sections, { heading = "Reject in Lightroom", lines = lines })
+    end
+
+    return formatReport(
+        "Immich sync – planned changes (nothing transferred yet)",
+        sections,
+        { string.format("Unchanged (skipped): %d", plan.skipped) }
+    )
+end
+
+-- Present the optional wizard step: a concise summary of what the plan would do, so the user can
+-- confirm before anything is transferred. A "Save summary to file" button exports the full
+-- per-item detail. Returns true if the user chose to proceed.
 function SyncTask.presentPreview(opts, plan)
     local f = LrView.osFactory()
     local doDownload = opts.direction ~= "upload"
     local doUpload = opts.direction ~= "download"
+    local rawOn, editOn = uploadContentFlags(opts)
 
-    local column = { spacing = 2 }
+    local rows = {}
+    local function countRow(label, count)
+        table.insert(rows, f:static_text({ title = string.format("%s  %d", label, count), font = "<system/bold>" }))
+    end
+    local function subRow(label, count)
+        table.insert(rows, f:static_text({ title = string.format("      %s  %d", label, count) }))
+    end
 
-    local function section(heading, lines, enabled)
-        if not enabled then
-            return
+    if doDownload then
+        countRow("Download to Lightroom:", #plan.download)
+    end
+    if doUpload then
+        countRow("Upload to Immich:", #plan.upload)
+        if rawOn then
+            subRow("originals (RAW):", #plan.upload)
         end
-        table.insert(
-            column,
-            f:static_text({
-                title = string.format("%s: %d", heading, #lines),
-                font = "<system/bold>",
-            })
-        )
-        local body
-        if #lines == 0 then
-            body = "    (nothing)"
-        else
-            local shown = {}
-            local maxShown = 500
-            for i = 1, math.min(#lines, maxShown) do
-                table.insert(shown, "    " .. lines[i])
-            end
-            if #lines > maxShown then
-                table.insert(shown, string.format("    …and %d more", #lines - maxShown))
-            end
-            body = table.concat(shown, "\n")
+        if editOn then
+            subRow("edits (exports):", #plan.upload)
         end
-        table.insert(column, f:static_text({ title = body, font = "<system/small>" }))
-        table.insert(column, f:static_text({ title = "" }))
     end
+    if opts.deleteInImmich then
+        countRow("Delete in Immich:", #plan.delete)
+    end
+    if opts.rejectInLr then
+        countRow("Reject in Lightroom:", #plan.reject)
+    end
+    table.insert(rows, f:static_text({ title = string.format("Unchanged (skipped):  %d", plan.skipped) }))
 
-    local downloadLines = {}
-    for _, asset in ipairs(plan.download) do
-        table.insert(downloadLines, asset.originalFileName or asset.id)
-    end
-    local uploadLines = {}
-    for _, item in ipairs(plan.upload) do
-        table.insert(uploadLines, item.filename .. " (" .. item.reason .. ")")
-    end
-    local deleteLines = {}
-    for _, item in ipairs(plan.delete) do
-        table.insert(deleteLines, item.assetId)
-    end
-    local rejectLines = {}
-    for _, photo in ipairs(plan.reject) do
-        table.insert(rejectLines, photo:getFormattedMetadata("fileName"))
-    end
-
-    section("Download to Lightroom", downloadLines, doDownload)
-    section("Upload to Immich", uploadLines, doUpload)
-    section("Delete in Immich", deleteLines, opts.deleteInImmich)
-    section("Reject in Lightroom", rejectLines, opts.rejectInLr)
-    table.insert(
-        column,
-        f:static_text({
-            title = string.format("Unchanged (skipped): %d", plan.skipped),
-            font = "<system/small>",
-        })
-    )
+    local detailText = buildPreviewText(opts, plan)
 
     local contents = f:column({
         spacing = f:control_spacing(),
         margin = 10,
-        f:static_text({
-            title = "Review the changes below. Nothing has been transferred yet.",
-            font = "<system/bold>",
-        }),
-        f:scrolled_view({
-            width = 520,
-            height = 360,
-            f:column(column),
+        f:static_text({ title = "Review the changes. Nothing has been transferred yet.", font = "<system/bold>" }),
+        f:separator({ fill_horizontal = 1 }),
+        f:column(rows),
+        f:separator({ fill_horizontal = 1 }),
+        f:push_button({
+            title = "Save summary to file…",
+            action = function()
+                saveSummaryToFile("immich-sync-plan.txt", detailText)
+            end,
         }),
     })
 
@@ -380,15 +465,25 @@ function SyncTask.presentPreview(opts, plan)
         title = "Immich sync – preview",
         contents = contents,
         actionVerb = "Run sync",
-        cancelVerb = "Back",
+        cancelVerb = "Cancel",
     })
     return result == "ok"
 end
 
--- Carry out a plan produced by SyncTask.analyze. Returns the stats table and appends any
+-- Carry out a plan produced by SyncTask.analyze. Returns the stats table and a detailed report
+-- table (per-item filenames/IDs/paths for the "Save summary to file" export), and appends any
 -- per-item problems to failures.
 function SyncTask.execute(opts, plan, catalog, immich, progress, failures)
-    local stats = { downloaded = 0, uploaded = 0, deleted = 0, rejected = 0, skipped = plan.skipped }
+    local stats = {
+        downloaded = 0,
+        uploaded = 0,
+        uploadedOriginals = 0,
+        uploadedExports = 0,
+        deleted = 0,
+        rejected = 0,
+        skipped = plan.skipped,
+    }
+    local report = { downloaded = {}, uploaded = {}, deleted = {}, rejected = {} }
 
     --------------------------------------------------------------------------
     -- Phase A: download delta
@@ -413,6 +508,11 @@ function SyncTask.execute(opts, plan, catalog, immich, progress, failures)
             if immich:downloadAssetToFile(asset.id, dest, opts.forceLrHttp) then
                 pathToId[dest] = asset.id
                 stats.downloaded = stats.downloaded + 1
+                table.insert(report.downloaded, {
+                    filename = asset.originalFileName or asset.id,
+                    assetId = asset.id,
+                    path = dest,
+                })
             else
                 table.insert(failures, (asset.originalFileName or asset.id) .. " (download failed)")
             end
@@ -441,6 +541,18 @@ function SyncTask.execute(opts, plan, catalog, immich, progress, failures)
             if originalId or exportId then
                 MetadataTask.setImmichSyncTime(item.photo, LrDate.currentTime())
                 stats.uploaded = stats.uploaded + 1
+                if originalId then
+                    stats.uploadedOriginals = stats.uploadedOriginals + 1
+                end
+                if exportId then
+                    stats.uploadedExports = stats.uploadedExports + 1
+                end
+                table.insert(report.uploaded, {
+                    filename = item.filename,
+                    path = item.photo:getRawMetadata("path"),
+                    originalId = originalId,
+                    exportId = exportId,
+                })
             end
             progress:setPortionComplete(i, total)
             progress:setCaption(string.format("Uploading (%d of %d)", i, total))
@@ -455,6 +567,7 @@ function SyncTask.execute(opts, plan, catalog, immich, progress, failures)
         for _, item in ipairs(plan.delete) do
             if immich:deleteAsset(item.assetId) then
                 stats.deleted = stats.deleted + 1
+                table.insert(report.deleted, item.assetId)
             end
         end
         -- Rebuild the manifest from the current catalog state (includes freshly uploaded IDs).
@@ -482,13 +595,134 @@ function SyncTask.execute(opts, plan, catalog, immich, progress, failures)
             end
         end, { timeout = 30 })
         for _, photo in ipairs(plan.reject) do
+            table.insert(report.rejected, {
+                filename = photo:getFormattedMetadata("fileName"),
+                assetId = MetadataTask.getAnyImmichAssetId(photo),
+            })
             MetadataTask.setImmichAssetId(photo, nil)
             MetadataTask.setImmichOriginalAssetId(photo, nil)
             stats.rejected = stats.rejected + 1
         end
     end
 
-    return stats
+    return stats, report
+end
+
+-- Full detailed report of what actually happened (filenames, real asset IDs, paths, and any
+-- problems) for the completion dialog's "Save summary to file" button.
+local function buildCompletionText(opts, stats, report, failures)
+    local sections = {}
+
+    local downloadLines = {}
+    for _, item in ipairs(report.downloaded) do
+        table.insert(downloadLines, string.format("%s  [id %s]  -> %s", item.filename, item.assetId, item.path))
+    end
+    table.insert(sections, { heading = "Downloaded to Lightroom", lines = downloadLines })
+
+    local uploadLines = {}
+    for _, item in ipairs(report.uploaded) do
+        table.insert(
+            uploadLines,
+            string.format(
+                "%s  original=%s  export=%s  %s",
+                item.filename,
+                item.originalId or "-",
+                item.exportId or "-",
+                item.path or "?"
+            )
+        )
+    end
+    table.insert(sections, { heading = "Uploaded to Immich", lines = uploadLines })
+
+    if opts.deleteInImmich then
+        local deleteLines = {}
+        for _, assetId in ipairs(report.deleted) do
+            table.insert(deleteLines, "id " .. assetId)
+        end
+        table.insert(sections, { heading = "Deleted in Immich", lines = deleteLines })
+    end
+
+    if opts.rejectInLr then
+        local rejectLines = {}
+        for _, item in ipairs(report.rejected) do
+            table.insert(rejectLines, string.format("%s  [id %s]", item.filename, item.assetId or "?"))
+        end
+        table.insert(sections, { heading = "Rejected in Lightroom", lines = rejectLines })
+    end
+
+    if failures and #failures > 0 then
+        table.insert(sections, { heading = "Problems", lines = failures })
+    end
+
+    return formatReport(
+        "Immich sync – results",
+        sections,
+        { string.format("Unchanged (skipped): %d", stats.skipped) }
+    )
+end
+
+-- Present the completion summary: a concise count breakdown (uploads split into originals/edits)
+-- with a "Save summary to file" button that exports the full per-item detail.
+function SyncTask.presentCompletion(opts, stats, report, failures)
+    local f = LrView.osFactory()
+    local doDownload = opts.direction ~= "upload"
+    local doUpload = opts.direction ~= "download"
+
+    local rows = {}
+    local function countRow(label, count)
+        table.insert(rows, f:static_text({ title = string.format("%s  %d", label, count), font = "<system/bold>" }))
+    end
+    local function subRow(label, count)
+        table.insert(rows, f:static_text({ title = string.format("      %s  %d", label, count) }))
+    end
+
+    if doDownload then
+        countRow("Downloaded to Lightroom:", stats.downloaded)
+    end
+    if doUpload then
+        countRow("Uploaded to Immich:", stats.uploaded)
+        subRow("originals (RAW):", stats.uploadedOriginals)
+        subRow("edits (exports):", stats.uploadedExports)
+    end
+    if opts.deleteInImmich then
+        countRow("Deleted in Immich:", stats.deleted)
+    end
+    if opts.rejectInLr then
+        countRow("Rejected in Lightroom:", stats.rejected)
+    end
+    table.insert(rows, f:static_text({ title = string.format("Unchanged (skipped):  %d", stats.skipped) }))
+
+    if failures and #failures > 0 then
+        table.insert(rows, f:separator({ fill_horizontal = 1 }))
+        table.insert(rows, f:static_text({
+            title = string.format("%d item(s) had problems – see saved summary for details.", #failures),
+            text_color = LrColor(0.7, 0.2, 0.2),
+        }))
+    end
+
+    local detailText = buildCompletionText(opts, stats, report, failures)
+
+    local contents = f:column({
+        spacing = f:control_spacing(),
+        margin = 10,
+        f:static_text({ title = "Immich sync complete.", font = "<system/bold>" }),
+        f:separator({ fill_horizontal = 1 }),
+        f:column(rows),
+        f:separator({ fill_horizontal = 1 }),
+        f:push_button({
+            title = "Save summary to file…",
+            action = function()
+                saveSummaryToFile("immich-sync-summary.txt", detailText)
+            end,
+        }),
+    })
+
+    LrDialogs.presentModalDialog({
+        title = "Immich sync complete",
+        contents = contents,
+        actionVerb = "Done",
+        cancelVerb = "< exclude >",
+    })
 end
 
 -- opts: { direction, uploadContent, stackOriginals, pushMetadata, deleteInImmich, rejectInLr,
@@ -538,24 +772,13 @@ function SyncTask.run(opts)
         -- Step 3: execute the plan.
         --------------------------------------------------------------------------
         local progress = LrProgressScope({ title = "Syncing with Immich...", caption = "Starting..." })
-        local stats = SyncTask.execute(opts, plan, catalog, immich, progress, failures)
+        local stats, report = SyncTask.execute(opts, plan, catalog, immich, progress, failures)
         progress:done()
 
         --------------------------------------------------------------------------
         -- Summary
         --------------------------------------------------------------------------
-        local lines = {
-            stats.downloaded .. " downloaded",
-            stats.uploaded .. " uploaded",
-        }
-        if opts.deleteInImmich then
-            table.insert(lines, stats.deleted .. " deleted in Immich")
-        end
-        if opts.rejectInLr then
-            table.insert(lines, stats.rejected .. " rejected in Lightroom")
-        end
-        table.insert(lines, stats.skipped .. " unchanged")
-        LrDialogs.message("Immich sync complete", table.concat(lines, "\n"), "info")
+        SyncTask.presentCompletion(opts, stats, report, failures)
 
         Util.reportUploadFailuresAndWarnings(failures, nil)
     end)

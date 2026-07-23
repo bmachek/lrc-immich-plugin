@@ -93,9 +93,9 @@ function SearchInLightroomTask.run(options)
             -- either against the search results, de-duplicating photos that carry both.
             local seen = {}
             for _, field in ipairs({ "immichAssetId", "immichOriginalAssetId" }) do
-                local stampedPhotos = catalog:findPhotosWithProperty(_PLUGIN, field)
+                local stampedPhotos = catalog:findPhotosWithProperty(_PLUGIN.id, field)
                 for _, photo in ipairs(stampedPhotos or {}) do
-                    local assetId = photo:getPropertyForPlugin(_PLUGIN, field)
+                    local assetId = photo:getPropertyForPlugin(_PLUGIN.id, field)
                     if
                         not Util.nilOrEmpty(assetId)
                         and matchedIds[tostring(assetId)]
