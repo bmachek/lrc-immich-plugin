@@ -150,7 +150,6 @@ function SearchInLightroomTask.run(options)
             end, { timeout = 30 })
         end)
 
-
         local wroteCollection = LrTasks.pcall(function()
             catalog:withWriteAccessDo("Immich search results: " .. query, function()
                 if collection then
