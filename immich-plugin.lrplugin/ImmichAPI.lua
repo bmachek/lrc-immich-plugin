@@ -324,7 +324,7 @@ function ImmichAPI:searchSmart(query)
 
         -- nextPage is a string page number (or nil/JSON null when there are no more pages).
         page = tonumber(response.assets.nextPage)
-    until not page
+    until not page or page > 5 -- Limit to 5 pages (1250 results) to avoid long-running searches.
 
     log:trace("searchSmart: Retrieved " .. #assets .. " assets for query: " .. query)
     return assets

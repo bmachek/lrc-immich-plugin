@@ -137,10 +137,22 @@ function SearchInLightroomTask.run(options)
         -- collection's contents rather than piling up duplicates.
         local collection
         local collectionName = buildCollectionName(query)
-        local wrote = LrTasks.pcall(function()
+        local set
+        local wroteCollectionSet = LrTasks.pcall(function()
+            catalog:withWriteAccessDo("Immich search collection set", function()
+                set = catalog:createCollectionSet("Immich search results", nil, true)
+            end, { timeout = 30 })
+        end)
+
+        local wroteCollection = LrTasks.pcall(function()
             catalog:withWriteAccessDo("Immich search: " .. collectionName, function()
-                local set = catalog:createCollectionSet("Immich search results", nil, true)
                 collection = catalog:createCollection(collectionName, set, true)
+            end, { timeout = 30 })
+        end)
+
+
+        local wroteCollection = LrTasks.pcall(function()
+            catalog:withWriteAccessDo("Immich search results: " .. query, function()
                 if collection then
                     local existing = collection:getPhotos()
                     if existing and #existing > 0 then
@@ -151,7 +163,7 @@ function SearchInLightroomTask.run(options)
             end, { timeout = 30 })
         end)
 
-        if not wrote or not collection then
+        if not wroteCollectionSet or not collection then
             ErrorHandler.handleError(
                 "Failed to create the search results collection. Check logs.",
                 "SearchInLightroomTask: collection creation failed"
