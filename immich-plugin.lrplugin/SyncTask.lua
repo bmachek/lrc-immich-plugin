@@ -694,10 +694,13 @@ function SyncTask.presentCompletion(opts, stats, report, failures)
 
     if failures and #failures > 0 then
         table.insert(rows, f:separator({ fill_horizontal = 1 }))
-        table.insert(rows, f:static_text({
-            title = string.format("%d item(s) had problems – see saved summary for details.", #failures),
-            text_color = LrColor(0.7, 0.2, 0.2),
-        }))
+        table.insert(
+            rows,
+            f:static_text({
+                title = string.format("%d item(s) had problems – see saved summary for details.", #failures),
+                text_color = LrColor(0.7, 0.2, 0.2),
+            })
+        )
     end
 
     local detailText = buildCompletionText(opts, stats, report, failures)
