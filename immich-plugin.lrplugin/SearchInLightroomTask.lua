@@ -150,7 +150,7 @@ function SearchInLightroomTask.run(options)
             end, { timeout = 30 })
         end)
 
-        local wroteCollection = LrTasks.pcall(function()
+        local adddedPhotos = LrTasks.pcall(function()
             catalog:withWriteAccessDo("Immich search results: " .. query, function()
                 if collection then
                     local existing = collection:getPhotos()
@@ -162,7 +162,7 @@ function SearchInLightroomTask.run(options)
             end, { timeout = 30 })
         end)
 
-        if not wroteCollectionSet or not collection then
+        if not wroteCollectionSet or not collection or not adddedPhotos or not wroteCollection then
             ErrorHandler.handleError(
                 "Failed to create the search results collection. Check logs.",
                 "SearchInLightroomTask: collection creation failed"
