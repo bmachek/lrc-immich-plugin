@@ -451,6 +451,7 @@ Access: `local LrHttp = import 'LrHttp'`
 - `LrHttp.get(url, headers?)` → body, headers
 - `LrHttp.post(url, body, headers?, method?)` → body, headers
 - `LrHttp.postMultipart(url, content, headers?)` → body, headers
+- `LrHttp.openUrlInBrowser(url)` — open a URL in the default browser
 
 ---
 
@@ -519,7 +520,7 @@ Used for inter-process communication. See `remote_control_socket_example.lrdevpl
 
 ### LrShell (Namespace)
 - `LrShell.openPathInShell(path)` — reveal in Finder/Explorer
-- `LrShell.openUrlInBrowser(url)`
+- Note: to open a URL in the browser use `LrHttp.openUrlInBrowser(url)` — `LrShell` has no such method
 
 ---
 

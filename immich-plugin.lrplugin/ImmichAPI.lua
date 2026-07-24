@@ -7,6 +7,9 @@
 local API_BASE_PATH = "/api"
 local HTTP_TIMEOUT_DEFAULT = 30
 local HTTP_TIMEOUT_UPLOAD = 300
+-- Smart search runs CLIP ML inference server-side, which can exceed the default
+-- timeout on a cold model or large library.
+local HTTP_TIMEOUT_SEARCH = 120
 
 local SUCCESS_STATUS_GET = 200
 local SUCCESS_STATUS_POST = { [200] = true, [201] = true }
@@ -137,6 +140,75 @@ function ImmichAPI:downloadAsset(assetId)
     end
 end
 
+-- Detect once whether a system `curl` binary is available. curl ships by default on macOS
+-- and Windows 10 1803+ (System32\curl.exe on PATH), so no binary needs shipping.
+local curlChecked, curlPresent = false, false
+local function curlAvailable()
+    if not curlChecked then
+        curlChecked = true
+        -- Route stdout/stderr to the null device so the probe stays silent.
+        local devnull = WIN_ENV and "NUL" or "/dev/null"
+        local ok = LrTasks.pcall(function()
+            local rc = LrTasks.execute("curl --version > " .. devnull .. " 2>&1")
+            curlPresent = (rc == 0)
+        end)
+        if not ok then
+            curlPresent = false
+        end
+        log:info("curlAvailable: " .. tostring(curlPresent))
+    end
+    return curlPresent
+end
+
+-- Download an asset's original bytes straight to destPath. Prefers streaming via the system
+-- curl binary (constant memory) over LrHttp.get, which loads the whole asset into a Lua
+-- string. Falls back to LrHttp.get when curl is absent or forceLrHttp is set. Returns true
+-- on success, false otherwise.
+function ImmichAPI:downloadAssetToFile(assetId, destPath, forceLrHttp)
+    if Util.nilOrEmpty(assetId) or Util.nilOrEmpty(destPath) then
+        log:warn("downloadAssetToFile: assetId or destPath empty")
+        return false
+    end
+
+    local assetUrl = string.format("%s%s/assets/%s/original", self.url, self.apiBasePath, assetId)
+
+    if not forceLrHttp and curlAvailable() then
+        -- -f fail on HTTP errors, -s silent, -S still show errors, -L follow redirects.
+        local cmd = table.concat({
+            "curl -f -s -S -L",
+            "-H " .. Util.shellQuote("x-api-key: " .. (type(self.apiKey) == "string" and self.apiKey or "")),
+            "-o " .. Util.shellQuote(destPath),
+            Util.shellQuote(assetUrl),
+        }, " ")
+        local rc = -1
+        local ok = LrTasks.pcall(function()
+            rc = LrTasks.execute(cmd)
+        end)
+        if ok and rc == 0 and LrFileUtils.exists(destPath) then
+            log:trace("downloadAssetToFile: curl downloaded " .. assetId .. " -> " .. destPath)
+            return true
+        end
+        log:warn(
+            "downloadAssetToFile: curl failed (rc=" .. tostring(rc) .. ") for " .. assetId .. "; falling back to LrHttp"
+        )
+    end
+
+    -- Fallback: in-memory download, then write to disk.
+    local body = self:downloadAsset(assetId)
+    if body == nil then
+        return false
+    end
+    local file = io.open(destPath, "wb")
+    if not file then
+        log:error("downloadAssetToFile: cannot open " .. destPath .. " for writing")
+        return false
+    end
+    file:write(body)
+    file:close()
+    body = nil -- luacheck: ignore 311
+    return true
+end
+
 function ImmichAPI:hasLivePhotoVideo(assetId)
     if Util.nilOrEmpty(assetId) then
         ErrorHandler.handleError("No asset ID provided. Check logs.", "hasLivePhotoVideo: assetId empty")
@@ -220,6 +292,70 @@ function ImmichAPI:getAlbumAssets(albumId)
     until not page
 
     log:trace("getAlbumAssets: Retrieved " .. #assets .. " assets for album ID: " .. albumId)
+    return assets
+end
+
+-- Run Immich's smart (CLIP) search for a free-text query and return the matching assets.
+-- Returns the same { id, originalFileName } shape as getAlbumAssets so callers can reuse the
+-- same downloader. Returns nil on request failure (distinct from an empty table = no matches).
+function ImmichAPI:searchSmart(query)
+    if Util.nilOrEmpty(query) then
+        ErrorHandler.handleError("No search query provided. Check logs.", "searchSmart: query empty")
+        return nil
+    end
+
+    local assets = {}
+    local page = 1
+    repeat
+        local postBody = { query = query, page = page, size = 250 }
+        local response = self:doPostRequest("/search/smart", postBody, HTTP_TIMEOUT_SEARCH)
+
+        if not response or type(response) ~= "table" or not response.assets then
+            log:error("searchSmart: search/smart failed for query: " .. query .. " (page " .. page .. ")")
+            return nil
+        end
+
+        for _, asset in ipairs(response.assets.items or {}) do
+            table.insert(assets, {
+                id = asset.id,
+                originalFileName = asset.originalFileName,
+            })
+        end
+
+        -- nextPage is a string page number (or nil/JSON null when there are no more pages).
+        page = tonumber(response.assets.nextPage)
+    until not page or page > 5 -- Limit to 5 pages (1250 results) to avoid long-running searches.
+
+    log:trace("searchSmart: Retrieved " .. #assets .. " assets for query: " .. query)
+    return assets
+end
+
+-- Enumerate every (non-trashed) asset in the library, paginated. Used by the Sync task's
+-- download delta. Returns an array of { id, originalFileName } or nil on failure.
+function ImmichAPI:getAllAssets()
+    local assets = {}
+    local page = 1
+    repeat
+        local postBody = { page = page, size = 1000, withDeleted = false }
+        local response = self:doPostRequest("/search/metadata", postBody)
+
+        if not response or type(response) ~= "table" or not response.assets then
+            log:error("getAllAssets: search/metadata failed (page " .. page .. ")")
+            return nil
+        end
+
+        for _, asset in ipairs(response.assets.items or {}) do
+            table.insert(assets, {
+                id = asset.id,
+                originalFileName = asset.originalFileName,
+            })
+        end
+
+        -- nextPage is a string page number (or nil/JSON null when there are no more pages).
+        page = tonumber(response.assets.nextPage)
+    until not page
+
+    log:trace("getAllAssets: retrieved " .. #assets .. " asset(s)")
     return assets
 end
 
@@ -506,6 +642,33 @@ function ImmichAPI:setAssetDate(assetId, isoDate)
         return false
     end
     log:trace("setAssetDate: " .. assetId .. " -> " .. tostring(isoDate))
+    return true
+end
+
+-- Push editable metadata onto an existing asset via PUT /assets/:id. Only the non-nil keys
+-- of `fields` are sent. Supported: isFavorite (bool), rating (number), description (string),
+-- latitude/longitude (number), dateTimeOriginal (ISO string). Used by the Sync task to push
+-- Lightroom metadata for uploaded originals (nothing is baked into a RAW). Returns true on success.
+function ImmichAPI:updateAsset(assetId, fields)
+    if Util.nilOrEmpty(assetId) or type(fields) ~= "table" then
+        log:warn("updateAsset: assetId empty or fields not a table")
+        return false
+    end
+    local body = {}
+    for _, key in ipairs({ "isFavorite", "rating", "description", "latitude", "longitude", "dateTimeOriginal" }) do
+        if fields[key] ~= nil then
+            body[key] = fields[key]
+        end
+    end
+    if next(body) == nil then
+        return true -- nothing to update
+    end
+    local parsedResponse = self:doCustomRequest("PUT", "/assets/" .. assetId, body)
+    if parsedResponse == nil then
+        log:error("updateAsset: failed to update metadata on " .. assetId)
+        return false
+    end
+    log:trace("updateAsset: updated " .. assetId)
     return true
 end
 
@@ -896,10 +1059,18 @@ end
 -- asset (e.g. an external-library RAW sharing this photo's name/date) as a replace
 -- target would trash it. When no stored ID exists, callers upload a fresh asset.
 -- Returns the assetId if found and still present, nil otherwise.
-function ImmichAPI:checkIfAssetExistsEnhanced(photo)
+-- Resolve a prior upload of this photo so a re-upload replaces it instead of duplicating.
+-- isOriginal selects which stored ID to use: the original/RAW master (immichOriginalAssetId)
+-- when uploading an original, or the rendered/derivative export (immichAssetId) otherwise.
+-- Keying by the kind of file being uploaded is what prevents a rendered export from
+-- resolving to (and, via replaceAsset, deleting) the original RAW asset.
+function ImmichAPI:checkIfAssetExistsEnhanced(photo, isOriginal)
     require("MetadataTask")
 
-    local storedAssetId = MetadataTask.getImmichAssetId(photo)
+    local getStored = isOriginal and MetadataTask.getImmichOriginalAssetId or MetadataTask.getImmichAssetId
+    local clearStored = isOriginal and MetadataTask.setImmichOriginalAssetId or MetadataTask.setImmichAssetId
+
+    local storedAssetId = getStored(photo)
     if storedAssetId and storedAssetId ~= "" then
         -- Verify the asset still exists (and is not trashed) in Immich.
         local assetInfo = self:getAssetInfo(storedAssetId)
@@ -911,7 +1082,7 @@ function ImmichAPI:checkIfAssetExistsEnhanced(photo)
         log:trace(
             "checkIfAssetExistsEnhanced: Stored assetId " .. storedAssetId .. " no longer exists, clearing metadata"
         )
-        MetadataTask.setImmichAssetId(photo, nil)
+        clearStored(photo, nil)
     end
 
     return nil
@@ -988,10 +1159,125 @@ function ImmichAPI:getAlbumAssetIds(albumId)
 end
 
 -- ---------------------------------------------------------------------------
+-- Shared links
+-- ---------------------------------------------------------------------------
+
+-- Create an "individual" shared link covering the given asset IDs.
+-- opts: { expiresAt = ISO-8601 string or nil, password = string or nil, allowDownload = bool }
+-- Returns the full share URL (<serverUrl>/share/<key>) on success; nil + error reason otherwise.
+function ImmichAPI:createSharedLink(assetIds, opts)
+    if type(assetIds) ~= "table" or #assetIds == 0 then
+        ErrorHandler.handleError("No assets to share. Check logs.", "createSharedLink: empty assetIds")
+        return nil
+    end
+    opts = opts or {}
+
+    local postBody = {
+        type = "INDIVIDUAL",
+        assetIds = assetIds,
+        allowDownload = opts.allowDownload ~= false,
+        allowUpload = false,
+    }
+    if not Util.nilOrEmpty(opts.expiresAt) then
+        postBody.expiresAt = opts.expiresAt
+    end
+    if not Util.nilOrEmpty(opts.password) then
+        postBody.password = opts.password
+    end
+
+    local response, errReason = self:doPostRequest("/shared-links", postBody)
+    if not response or Util.nilOrEmpty(response.key) then
+        log:error("createSharedLink: no key returned in response")
+        return nil, errReason
+    end
+
+    log:trace("createSharedLink: created link for " .. #assetIds .. " asset(s)")
+    return self.url .. "/share/" .. response.key
+end
+
+-- Create an "album" shared link for a whole album.
+-- opts: { expiresAt = ISO-8601 string or nil, password = string or nil, allowDownload = bool }
+-- Returns the full share URL (<serverUrl>/share/<key>) on success; nil + error reason otherwise.
+function ImmichAPI:createAlbumSharedLink(albumId, opts)
+    if Util.nilOrEmpty(albumId) then
+        ErrorHandler.handleError("No album to share. Check logs.", "createAlbumSharedLink: albumId empty")
+        return nil
+    end
+    opts = opts or {}
+
+    local postBody = {
+        type = "ALBUM",
+        albumId = albumId,
+        allowDownload = opts.allowDownload ~= false,
+        allowUpload = false,
+    }
+    if not Util.nilOrEmpty(opts.expiresAt) then
+        postBody.expiresAt = opts.expiresAt
+    end
+    if not Util.nilOrEmpty(opts.password) then
+        postBody.password = opts.password
+    end
+
+    local response, errReason = self:doPostRequest("/shared-links", postBody)
+    if not response or Util.nilOrEmpty(response.key) then
+        log:error("createAlbumSharedLink: no key returned in response")
+        return nil, errReason
+    end
+
+    log:trace("createAlbumSharedLink: created link for album " .. albumId)
+    return self.url .. "/share/" .. response.key
+end
+
+-- ---------------------------------------------------------------------------
+-- Users / album sharing
+-- ---------------------------------------------------------------------------
+
+-- List Immich users available to share with. Returns an array of { id, name, email }
+-- (nil on failure). Requires the API key's account to be allowed to list users.
+function ImmichAPI:getAllUsers()
+    local parsedResponse = self:doGetRequest("/users")
+    if type(parsedResponse) ~= "table" then
+        log:warn("getAllUsers: unexpected response")
+        return nil
+    end
+
+    local users = {}
+    for i = 1, #parsedResponse do
+        local row = parsedResponse[i]
+        if row and row.id then
+            table.insert(users, { id = row.id, name = row.name, email = row.email })
+        end
+    end
+    return users
+end
+
+-- Share an album with a single user. role: "viewer" | "editor". Returns true on success.
+function ImmichAPI:addUserToAlbum(albumId, userId, role)
+    if Util.nilOrEmpty(albumId) then
+        ErrorHandler.handleError("Immich album ID missing. Check logs.", "addUserToAlbum: albumId empty")
+        return false
+    end
+    if Util.nilOrEmpty(userId) then
+        ErrorHandler.handleError("No user selected. Check logs.", "addUserToAlbum: userId empty")
+        return false
+    end
+
+    local apiPath = "/albums/" .. albumId .. "/users"
+    local postBody = { albumUsers = { { userId = userId, role = role or "viewer" } } }
+
+    local parsedResponse = self:doCustomRequest("PUT", apiPath, postBody)
+    if parsedResponse == nil then
+        log:error("addUserToAlbum: unable to share album (" .. albumId .. ") with user (" .. tostring(userId) .. ")")
+        return false
+    end
+    return true
+end
+
+-- ---------------------------------------------------------------------------
 -- HTTP request layer
 -- ---------------------------------------------------------------------------
 
-function ImmichAPI:doPostRequest(apiPath, postBody)
+function ImmichAPI:doPostRequest(apiPath, postBody, timeout)
     if not ensureConnectivity(self) then
         return nil
     end
@@ -1005,7 +1291,7 @@ function ImmichAPI:doPostRequest(apiPath, postBody)
         JSON:encode(postBody),
         self:createHeaders(),
         "POST",
-        HTTP_TIMEOUT_DEFAULT
+        timeout or HTTP_TIMEOUT_DEFAULT
     )
 
     if not headers then

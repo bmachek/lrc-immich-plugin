@@ -14,16 +14,43 @@ require("ImmichAPI")
 StackManager = {}
 
 --------------------------------------------------------------------------------
--- Upload a primary asset for a photo, replacing the asset the plugin previously
--- uploaded when its Immich ID is resolvable from stored Lightroom metadata.
--- Returns Immich asset id or nil.
-function StackManager.uploadOneAssetOrReplace(immich, photo, path, visibility)
-    local existingId = immich:checkIfAssetExistsEnhanced(photo)
+-- Upload an asset for a photo, replacing the asset the plugin previously uploaded when
+-- its Immich ID is resolvable from stored Lightroom metadata. isOriginal selects which
+-- stored ID to dedup against (original master vs rendered export) so an original never
+-- resolves to a derivative and vice versa. Returns Immich asset id or nil.
+function StackManager.uploadOneAssetOrReplace(immich, photo, path, visibility, isOriginal)
+    local existingId = immich:checkIfAssetExistsEnhanced(photo, isOriginal)
     if existingId == nil then
         return immich:uploadAsset(path, visibility)
     else
         return immich:replaceAsset(existingId, path, visibility)
     end
+end
+
+--------------------------------------------------------------------------------
+-- Stack a freshly uploaded rendered export with a *previously uploaded* original that is
+-- still present on the server, without re-uploading the original. Uses the stored
+-- immichOriginalAssetId, verified live via checkIfAssetExistsEnhanced (which also clears a
+-- stale ID when the original no longer exists on the server). Returns:
+--   true  = stack created
+--   false = an original was found but the stack call failed
+--   nil   = nothing to do (no stored original, it no longer exists, or it is the same asset)
+function StackManager.stackExportWithExistingOriginal(immich, photo, exportAssetId)
+    if not immich or not photo or Util.nilOrEmpty(exportAssetId) then
+        return nil
+    end
+    -- isOriginal=true resolves (and validates) the original-master ID, clearing it if the
+    -- asset was deleted in Immich so we never stack against a stale/foreign asset.
+    local originalId = immich:checkIfAssetExistsEnhanced(photo, true)
+    if Util.nilOrEmpty(originalId) or originalId == exportAssetId then
+        return nil
+    end
+    local stackId = immich:createStack({ exportAssetId, originalId })
+    if not stackId then
+        return false
+    end
+    log:trace("stackExportWithExistingOriginal: stacked export " .. exportAssetId .. " with original " .. originalId)
+    return true
 end
 
 --------------------------------------------------------------------------------
@@ -275,15 +302,18 @@ function StackManager.processPhotoWithStack(immich, rendition, editedAssetId, ex
 
     log:trace("Uploading original file: " .. originalPath)
 
-    -- The original is a stack secondary; the plugin never persists its Immich ID,
-    -- and with deviceAssetId/deviceId removed from Immich there is no safe way to
-    -- resolve a prior upload of it. Upload fresh — a re-export may create a duplicate
-    -- original rather than risk resolving (and later trashing) a foreign asset.
-    local originalAssetId = immich:uploadAsset(originalPath, visibility)
+    -- The original is a stack secondary. Its Immich ID is persisted separately
+    -- (immichOriginalAssetId), so a re-export replaces the same original instead of
+    -- creating a duplicate. Deduping against the original field (never the export field)
+    -- means a rendered export can never resolve to — and delete — the original RAW.
+    local originalAssetId = StackManager.uploadOneAssetOrReplace(immich, photo, originalPath, visibility, true)
 
     if not originalAssetId then
         return editedAssetId, "Failed to upload original file"
     end
+
+    require("MetadataTask")
+    MetadataTask.setImmichOriginalAssetId(photo, originalAssetId)
 
     -- Create stack with edited as primary, original as secondary
     local stackId = immich:createStack({ editedAssetId, originalAssetId })
