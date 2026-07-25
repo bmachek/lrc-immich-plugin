@@ -1,5 +1,6 @@
 # lrc-immich-plugin
 [![Github All Releases](https://img.shields.io/github/downloads/bmachek/lrc-immich-plugin/total.svg)]()
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 Lightroom Classic plug‑in to upload and download photos between Lightroom Classic and an Immich server using the Immich API.  
 Provides both **Export** and **Publish Services**, plus tools to **import assets from Immich back into Lightroom**.
@@ -68,3 +69,7 @@ You can find the Wiki from the repository home page under the **Wiki** tab.
 - [Min Idzelis for giving ideas with his Immich Plug‑in](https://github.com/midzelis/mi.Immich.Publisher)
 
 ---
+
+## License
+
+Licensed under the [GNU General Public License v3.0](LICENSE).

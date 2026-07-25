@@ -1,3 +1,6 @@
+-- Licensed under the GNU General Public License v3.0 (GPL-3.0).
+-- See the LICENSE file in the repository root for details.
+
 return {
 
     LrSdkVersion = 3.0,
