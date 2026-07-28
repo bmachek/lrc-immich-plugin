@@ -47,12 +47,40 @@ function Util.nilOrEmpty(val)
     end
 end
 
+-- Quote a single argument for a shell command line. On Windows, LrTasks.execute runs the
+-- string through cmd.exe, which uses double quotes; elsewhere (macOS) it goes through
+-- /bin/sh, which uses single quotes. Used to build curl commands with untrusted values
+-- (paths, API keys, URLs) safely.
+function Util.shellQuote(arg)
+    arg = tostring(arg or "")
+    if WIN_ENV then
+        -- cmd.exe: wrap in double quotes and escape embedded double quotes.
+        return '"' .. arg:gsub('"', '""') .. '"'
+    end
+    -- POSIX sh: wrap in single quotes; close-escape-reopen any embedded single quote.
+    return "'" .. arg:gsub("'", "'\\''") .. "'"
+end
+
 -- Get lowercase file extension from path (e.g. "photo.dng" -> "dng")
 function Util.getExtension(path)
     if not path or type(path) ~= "string" then
         return ""
     end
     return string.lower(string.match(path, "%.([^%.]+)$") or "")
+end
+
+-- Convert a Lightroom (Cocoa) timestamp to an ISO 8601 string with a timezone
+-- offset. LrDate.timeToW3CDate emits local time without a zone (e.g.
+-- "2026-07-24T07:41:39"), which Immich's validator rejects; append the local
+-- UTC offset (or "Z") so the string matches the expected ISO 8601 format.
+function Util.toISO8601(cocoaTime)
+    local base = LrDate.timeToW3CDate(cocoaTime)
+    local tz = os.date("%z")
+    local sign, hh, mm = tostring(tz):match("([%+%-])(%d%d)(%d%d)")
+    if sign then
+        return base .. sign .. hh .. ":" .. mm
+    end
+    return base .. "Z"
 end
 
 function Util.cutApiKey(key)
@@ -93,6 +121,36 @@ function Util.getLogfilePath()
     end
 end
 
+-- Returns true if a global Immich connection (URL + API key) is configured.
+-- Otherwise shows a message directing the user to the Plugin Manager and returns
+-- false. Used by the Library/Help menu tasks (Import, Sync, Search, Share links).
+function Util.ensureConnected()
+    if Util.nilOrEmpty(prefs.url) or Util.nilOrEmpty(prefs.apiKey) then
+        LrDialogs.message(
+            "Immich is not configured yet.",
+            "Set the Immich server URL and API key in the Plug-in Manager"
+                .. " (File → Plug-in Manager → Immich) and try again.",
+            "info"
+        )
+        return false
+    end
+    return true
+end
+
+-- Resolve the effective Immich URL/API key for an export or publish preset.
+-- When the preset opts into the global (plugin-wide) connection, use the shared
+-- prefs configured in Plugin Manager; otherwise use the preset's own values.
+-- Returns: url, apiKey.
+function Util.resolveConnection(settings)
+    if settings and settings.useGlobalConnection then
+        return prefs.url, prefs.apiKey
+    end
+    if settings then
+        return settings.url, settings.apiKey
+    end
+    return nil, nil
+end
+
 -- Shared by Export and Publish: validate export context and connect to Immich.
 -- contextLabel: "Export" or "Publish" (used in error messages and task name).
 -- Returns: exportSession, exportParams, immich or nil.
@@ -106,15 +164,17 @@ function Util.validateExportContextAndConnect(exportContext, contextLabel)
     end
     local exportSession = exportContext.exportSession
     local exportParams = exportContext.propertyTable
-    local settingsText = (contextLabel == "Publish") and "plugin settings" or "export settings"
-    if Util.nilOrEmpty(exportParams.url) or Util.nilOrEmpty(exportParams.apiKey) then
+    local url, apiKey = Util.resolveConnection(exportParams)
+    local settingsText = exportParams.useGlobalConnection and "the plugin manager (global connection)"
+        or ((contextLabel == "Publish") and "plugin settings" or "export settings")
+    if Util.nilOrEmpty(url) or Util.nilOrEmpty(apiKey) then
         ErrorHandler.handleError(
-            "Configure Immich URL and API key in the " .. settingsText .. ".",
+            "Configure Immich URL and API key in " .. settingsText .. ".",
             (contextLabel or "Export") .. "Task: URL or API key not set"
         )
         return nil
     end
-    local immich = ImmichAPI:new(exportParams.url, exportParams.apiKey)
+    local immich = ImmichAPI:new(url, apiKey)
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in " .. settingsText .. ".",

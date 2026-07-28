@@ -69,6 +69,57 @@ local function addAssetToPublishAlbum(immich, albumCreationStrategy, albumId, al
 end
 
 --------------------------------------------------------------------------------
+-- True if the current publish settings request uploading original files at all.
+local function publishWantsOriginals(exportParams)
+    local mode = exportParams.originalFileMode
+    return exportParams.stackOriginalExport == true
+        or mode == "edited"
+        or mode == "all"
+        or mode == "original_only"
+        or mode == "original_plus_jpeg_if_edited"
+end
+
+--------------------------------------------------------------------------------
+-- Per-photo decision: should the disk original be uploaded (as an untracked stack
+-- secondary) for this photo, given the publish settings?
+local function shouldUploadPublishOriginal(exportParams, photo, editedPhotosCache)
+    if exportParams.stackOriginalExport == true then
+        return true
+    end
+    local mode = exportParams.originalFileMode
+    if mode == "all" or mode == "original_only" or mode == "original_plus_jpeg_if_edited" then
+        return true
+    end
+    if mode == "edited" then
+        return StackManager.hasEdits(photo, editedPhotosCache)
+    end
+    return false
+end
+
+--------------------------------------------------------------------------------
+-- When publish settings request originals, ask the user whether to upload them,
+-- warning that originals are untracked orphans in Immich. Remembers the choice
+-- via a "don't show again" preference. Returns true to upload originals.
+local function confirmOrphanOriginals(exportParams)
+    if not publishWantsOriginals(exportParams) then
+        return false
+    end
+    local action = LrDialogs.promptForActionWithDoNotShow({
+        actionPrefKey = "immichPublishUploadOrphanOriginals",
+        message = "Upload original files in Publish?",
+        info = "Original files uploaded during Publish are stacked with the exported photo but are NOT tracked by"
+            .. " Lightroom.\n\nThey will not be updated when you re-publish, and will NOT be removed from Immich when"
+            .. " you remove photos from this collection or delete the collection — they remain as orphans you must"
+            .. " clean up manually in Immich.",
+        verbBtns = {
+            { verb = "skip", label = "Skip originals" },
+            { verb = "upload", label = "Upload originals" },
+        },
+    })
+    return action == "upload"
+end
+
+--------------------------------------------------------------------------------
 -- Process one photo group in original+export publish flow.
 -- Mutates failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto.
 local function processPublishOnePhotoGroup(
@@ -81,7 +132,10 @@ local function processPublishOnePhotoGroup(
     stackWarnings,
     atLeastSomeSuccess,
     exportedPrimaryByPhoto,
-    visibility
+    visibility,
+    exportParams,
+    editedPhotosCache,
+    allowOrphanOriginals
 )
     if not items or not items[1] then
         return
@@ -96,12 +150,12 @@ local function processPublishOnePhotoGroup(
             -- After sort: items[1]=export (primary), items[2..]=original/extra renditions.
             local id, errReason
             if i == 1 then
-                -- Primary export: dedup/replace via the plugin's stored Immich asset ID.
-                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
+                -- Primary export: dedup/replace via the stored rendered-export ID.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility, false)
             else
-                -- Stack secondaries have no stored ID and no safe way to resolve a prior
-                -- upload now that deviceAssetId is gone; upload fresh.
-                id, errReason = immich:uploadAsset(item.path, visibility)
+                -- Stack secondary = the original master: dedup/replace via the stored
+                -- original ID so re-publish updates it instead of creating a duplicate.
+                id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility, true)
             end
             UploadHelpers.safeDeleteTempFile(item.path)
             if not id then
@@ -111,6 +165,9 @@ local function processPublishOnePhotoGroup(
                 table.insert(assetIds, id)
                 if primaryId == nil then
                     primaryId = id
+                else
+                    -- Secondary original: persist its ID.
+                    MetadataTask.setImmichOriginalAssetId(photo, id)
                 end
                 item.rendition:recordPublishedPhotoId(id)
                 item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
@@ -137,11 +194,15 @@ local function processPublishOnePhotoGroup(
     elseif #items == 1 then
         -- One rendition arrived. Since LR_exportOriginalFile is never set, Lightroom always
         -- delivers the rendered export (never an original-copy rendition), so item.role = "export".
-        -- Always treat the single rendition as the export.
-        -- Do NOT upload the disk original: assets uploaded outside of recordPublishedPhotoId
-        -- cannot be tracked by Lightroom and become orphans when the photo is removed from the
-        -- publish collection (deletePhotosFromPublishedCollection only cleans up assets
-        -- registered via recordPublishedPhotoId). Warn instead.
+        -- Always treat the single rendition as the tracked export primary.
+        --
+        -- The disk original can optionally be uploaded as a stack secondary (allowOrphanOriginals,
+        -- confirmed by the user). Such assets are uploaded outside recordPublishedPhotoId, so
+        -- Lightroom cannot track them: they are NOT updated on re-publish and NOT removed when the
+        -- photo leaves the collection (deletePhotosFromPublishedCollection only cleans up assets
+        -- registered via recordPublishedPhotoId). They become orphans the user must clean up in
+        -- Immich. When the user declines (or the settings don't request originals), only the export
+        -- is uploaded and we warn instead.
         local item = items[1]
         log:info("original+export [" .. filename .. "]: single rendition, uploading as export")
         local id, errReason = StackManager.uploadOneAssetOrReplace(immich, photo, item.path, visibility)
@@ -154,14 +215,59 @@ local function processPublishOnePhotoGroup(
             MetadataTask.setImmichAssetId(photo, primaryId)
             item.rendition:recordPublishedPhotoId(id)
             item.rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
-            -- Warn once per publish run (not once per photo) to keep the post-publish dialog concise.
-            if not stackWarnings._originalNotUploadedWarned then
-                table.insert(
-                    stackWarnings,
-                    "Originals not uploaded in publish mode to avoid untracked orphans in Immich"
-                        .. " (applies to all photos in this run)"
-                )
-                stackWarnings._originalNotUploadedWarned = true
+
+            local wantsOriginal = exportParams and shouldUploadPublishOriginal(exportParams, photo, editedPhotosCache)
+            if wantsOriginal and allowOrphanOriginals then
+                if string.upper(exportParams.LR_format or "") == "ORIGINAL" then
+                    -- 'Original / no reformat' makes the export a byte-for-byte copy of the source,
+                    -- so uploading the disk original would create two identical assets. Skip.
+                    table.insert(
+                        stackWarnings,
+                        filename
+                            .. ": skipped original+export stack — 'Original / no reformat' produces an identical copy."
+                            .. " Switch to any rendered format (e.g. JPEG, TIFF, PNG)."
+                    )
+                else
+                    local originalPath = StackManager.getOriginalFilePath(photo)
+                    if originalPath then
+                        -- Orphan secondary re: Lightroom's publish lifecycle (not tracked via
+                        -- recordPublishedPhotoId), but its Immich ID is persisted separately
+                        -- (immichOriginalAssetId) and deduped against the original field, so a
+                        -- re-publish replaces the same original instead of piling up duplicates.
+                        local origId =
+                            StackManager.uploadOneAssetOrReplace(immich, photo, originalPath, visibility, true)
+                        if origId then
+                            MetadataTask.setImmichOriginalAssetId(photo, origId)
+                            -- Warn once per publish run to keep the post-publish dialog concise.
+                            if not stackWarnings._orphanOriginalsWarned then
+                                table.insert(
+                                    stackWarnings,
+                                    "Original files were uploaded as untracked assets: Lightroom will not update or"
+                                        .. " remove them from Immich, so clean up orphaned originals manually"
+                                        .. " (applies to all photos in this run)"
+                                )
+                                stackWarnings._orphanOriginalsWarned = true
+                            end
+                            if not immich:createStack({ id, origId }) then
+                                table.insert(stackWarnings, filename .. ": failed to create original+export stack")
+                            end
+                        else
+                            table.insert(stackWarnings, filename .. ": failed to upload original file")
+                        end
+                    else
+                        table.insert(stackWarnings, filename .. ": original file not accessible; uploaded export only")
+                    end
+                end
+            elseif wantsOriginal then
+                -- User declined the orphan upload: keep export-only behavior and warn once.
+                if not stackWarnings._originalNotUploadedWarned then
+                    table.insert(
+                        stackWarnings,
+                        "Originals not uploaded in publish mode to avoid untracked orphans in Immich"
+                            .. " (applies to all photos in this run)"
+                    )
+                    stackWarnings._originalNotUploadedWarned = true
+                end
             end
             exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = primaryId, photo = photo }
             addAssetToPublishAlbum(
@@ -190,7 +296,10 @@ local function processPublishStackOriginalExportRenditions(
     albumCreationStrategy,
     albumId,
     albumAssetIds,
-    visibility
+    visibility,
+    exportParams,
+    editedPhotosCache,
+    allowOrphanOriginals
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
@@ -223,7 +332,10 @@ local function processPublishStackOriginalExportRenditions(
                 stackWarnings,
                 atLeastSomeSuccess,
                 exportedPrimaryByPhoto,
-                visibility
+                visibility,
+                exportParams,
+                editedPhotosCache,
+                allowOrphanOriginals
             )
         end
         -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
@@ -279,6 +391,18 @@ local function processPublishSingleRenditionRenditions(
                 rendition:recordPublishedPhotoId(id)
                 rendition:recordPublishedPhotoUrl(immich:getAssetUrl(id))
                 exportedPrimaryByPhoto[photo.localIdentifier] = { assetId = id, photo = photo }
+                -- Optionally stack the export with an already-present original in Immich (from a
+                -- prior publish/export or an import), without re-uploading it. Verified live, so a
+                -- since-deleted original is skipped.
+                if exportParams.stackWithExistingOriginal then
+                    local r = StackManager.stackExportWithExistingOriginal(immich, photo, id)
+                    if r == false then
+                        table.insert(
+                            stackWarnings,
+                            photo:getFormattedMetadata("fileName") .. ": failed to stack with existing Immich original"
+                        )
+                    end
+                end
                 if albumCreationStrategy == "folder" then
                     local folderName = rendition.photo:getFormattedMetadata("folderName")
                     local folderBasedAlbumId = immich:createOrGetAlbumFolderBased(folderName)
@@ -313,7 +437,9 @@ local function runPublishExport(
     albumCreationStrategy,
     albumId,
     albumAssetIds,
-    visibility
+    visibility,
+    editedPhotosCache,
+    allowOrphanOriginals
 )
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     local useStacking = exportParams.stackOriginalExport
@@ -332,7 +458,10 @@ local function runPublishExport(
                 albumCreationStrategy,
                 albumId,
                 albumAssetIds,
-                visibility
+                visibility,
+                exportParams,
+                editedPhotosCache,
+                allowOrphanOriginals
             )
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
@@ -369,9 +498,11 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         "=== Publish START: "
             .. nPhotos
             .. " photos | url="
-            .. tostring(exportParams.url)
+            .. tostring((Util.resolveConnection(exportParams)))
             .. " | stackOriginalExport="
             .. tostring(exportParams.stackOriginalExport)
+            .. " | stackWithExistingOriginal="
+            .. tostring(exportParams.stackWithExistingOriginal)
             .. " | stackLrStacks="
             .. tostring(exportParams.stackLrStacks)
             .. " | albumCreationStrategy="
@@ -381,7 +512,8 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
             .. " ==="
     )
 
-    local progressTitle = (prefs and prefs.url and prefs.url ~= "") and prefs.url or "Immich"
+    local resolvedUrl = Util.resolveConnection(exportParams)
+    local progressTitle = (resolvedUrl and resolvedUrl ~= "") and resolvedUrl or "Immich"
     -- Use LrProgressScope tied to functionContext rather than exportContext:configureProgress.
     -- configureProgress creates a scope managed by LR's render pipeline, which closes the bar
     -- when rendering completes — potentially long before all uploads are done. LrProgressScope
@@ -393,6 +525,16 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     })
 
     local visibility = resolveLockedFolder(exportParams)
+
+    -- Ask once whether to upload (untracked) originals when settings request them.
+    local allowOrphanOriginals = confirmOrphanOriginals(exportParams)
+    -- The "edited" mode needs a catalog-wide edit cache to decide per photo.
+    local editedPhotosCache = nil
+    if allowOrphanOriginals and exportParams.originalFileMode == "edited" then
+        editedPhotosCache = StackManager.getEditedPhotosCache()
+    end
+    log:info("Publish upload originals (orphans): " .. tostring(allowOrphanOriginals))
+
     local failures, stackWarnings = runPublishExport(
         immich,
         exportContext,
@@ -402,7 +544,9 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         albumCreationStrategy,
         albumId,
         albumAssetIds,
-        visibility
+        visibility,
+        editedPhotosCache,
+        allowOrphanOriginals
     )
     progressScope:done()
 
@@ -421,7 +565,7 @@ end
 function PublishTask.addCommentToPublishedPhoto(publishSettings, remotePhotoId, commentText) end
 
 function PublishTask.getCommentsFromPublishedCollection(publishSettings, arrayOfPhotoInfo, commentCallback)
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -491,14 +635,15 @@ function PublishTask.deletePhotosFromPublishedCollection(
     deletedCallback,
     localCollectionId
 )
-    if Util.nilOrEmpty(publishSettings.url) or Util.nilOrEmpty(publishSettings.apiKey) then
+    local resolvedUrl, resolvedApiKey = Util.resolveConnection(publishSettings)
+    if Util.nilOrEmpty(resolvedUrl) or Util.nilOrEmpty(resolvedApiKey) then
         ErrorHandler.handleError(
             "Configure Immich in plugin settings.",
             "deletePhotosFromPublishedCollection: URL or API key not set"
         )
         return nil
     end
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -610,7 +755,7 @@ function PublishTask.deletePhotosFromPublishedCollection(
 end
 
 function PublishTask.deletePublishedCollection(publishSettings, info)
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -638,7 +783,7 @@ function PublishTask.deletePublishedCollection(publishSettings, info)
 end
 
 function PublishTask.renamePublishedCollection(publishSettings, info)
-    local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+    local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
     if not immich:checkConnectivity() then
         ErrorHandler.handleError(
             "Immich connection not working. Check URL and API key in plugin settings.",
@@ -677,9 +822,149 @@ function PublishTask.getCollectionBehaviorInfo(publishSettings)
     }
 end
 
+-- Sharing UI shown when editing the settings of an already-published Immich album collection.
+-- Lets the user generate an album share link and share the album with individual Immich users.
+function PublishTask.viewForSharingSettings(f, publishSettings, info)
+    local ctx = info.pluginContext or {}
+    local settings = info.publishedCollection:getCollectionInfoSummary().collectionSettings or {}
+    local strategy = settings.albumCreationStrategy or "collection"
+    local albumId = info.publishedCollection:getRemoteId()
+
+    if strategy == "folder" then
+        return f:group_box({
+            title = "Immich album sharing",
+            fill_horizontal = 1,
+            f:static_text({
+                title = "This collection creates one album per folder, so it has no single album to share.",
+                fill_horizontal = 1,
+            }),
+        })
+    end
+
+    if Util.nilOrEmpty(albumId) then
+        return f:group_box({
+            title = "Immich album sharing",
+            fill_horizontal = 1,
+            f:static_text({
+                title = "Publish this collection to Immich first, then reopen these settings"
+                    .. " to create a share link or share with users.",
+                fill_horizontal = 1,
+            }),
+        })
+    end
+
+    ctx.shareUrl = ""
+    ctx.shareRole = "viewer"
+    ctx.selectedShareUser = 0
+    ctx.immichShareUsers = { { title = "Loading users...", value = 0 } }
+
+    -- Populate the user picker asynchronously (same pattern as the album picker below).
+    LrTasks.startAsyncTask(function()
+        local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
+        local users = immich:getAllUsers()
+        local items = { { title = "Please select", value = 0 } }
+        if users then
+            for _, u in ipairs(users) do
+                local label = u.name or u.email or u.id
+                if u.name and u.email then
+                    label = u.name .. " (" .. u.email .. ")"
+                end
+                table.insert(items, { title = label, value = u.id })
+            end
+        end
+        ctx.immichShareUsers = items
+    end)
+
+    local bind = LrView.bind
+    local share = LrView.share
+
+    return f:group_box({
+        bind_to_object = ctx,
+        title = "Immich album sharing",
+        fill_horizontal = 1,
+        f:column({
+            spacing = share("inter_control_spacing"),
+            fill_horizontal = 1,
+            f:row({
+                f:push_button({
+                    title = "Generate share link",
+                    action = function()
+                        LrTasks.startAsyncTask(function()
+                            local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
+                            local url = immich:createAlbumSharedLink(albumId, {})
+                            if Util.nilOrEmpty(url) then
+                                ErrorHandler.handleError(
+                                    "Could not create share link. Check logs.",
+                                    "viewForSharingSettings: createAlbumSharedLink returned nil"
+                                )
+                            else
+                                ctx.shareUrl = url
+                            end
+                        end)
+                    end,
+                }),
+                f:edit_field({
+                    value = bind("shareUrl"),
+                    fill_horizontal = 1,
+                    width_in_chars = 24,
+                    tooltip = "Select to copy the share link",
+                }),
+                f:push_button({
+                    title = "Open",
+                    action = function()
+                        if not Util.nilOrEmpty(ctx.shareUrl) then
+                            LrHttp.openUrlInBrowser(ctx.shareUrl)
+                        end
+                    end,
+                }),
+            }),
+            f:separator({ fill_horizontal = 1 }),
+            f:row({
+                f:static_text({ title = "Share with user:" }),
+                f:popup_menu({
+                    items = bind("immichShareUsers"),
+                    value = bind("selectedShareUser"),
+                    width = share("field_width"),
+                }),
+                f:popup_menu({
+                    items = {
+                        { title = "Viewer", value = "viewer" },
+                        { title = "Editor", value = "editor" },
+                    },
+                    value = bind("shareRole"),
+                }),
+                f:push_button({
+                    title = "Share",
+                    action = function()
+                        LrTasks.startAsyncTask(function()
+                            if Util.nilOrEmpty(ctx.selectedShareUser) or ctx.selectedShareUser == 0 then
+                                LrDialogs.message("Select a user to share with.", nil, "warning")
+                                return
+                            end
+                            local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
+                            if immich:addUserToAlbum(albumId, ctx.selectedShareUser, ctx.shareRole) then
+                                LrDialogs.message(
+                                    "Album shared",
+                                    "Shared with the selected user as " .. tostring(ctx.shareRole) .. ".",
+                                    "info"
+                                )
+                            else
+                                ErrorHandler.handleError(
+                                    "Could not share album with user. Check logs.",
+                                    "viewForSharingSettings: addUserToAlbum failed"
+                                )
+                            end
+                        end)
+                    end,
+                }),
+            }),
+        }),
+    })
+end
+
 function PublishTask.viewForCollectionSettings(f, publishSettings, info)
     if info.publishedCollection ~= nil then
-        return f:row({}) -- No settings for existing published collections.
+        return PublishTask.viewForSharingSettings(f, publishSettings, info)
     end
 
     info.pluginContext.albumCreationStrategy = "collection"
@@ -687,7 +972,7 @@ function PublishTask.viewForCollectionSettings(f, publishSettings, info)
     info.pluginContext.immichAlbums = { { title = "Please select", value = 0 } }
 
     LrTasks.startAsyncTask(function()
-        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
         local albums = immich:getAlbumsWODate()
         if albums == nil then
             albums = {}
@@ -765,7 +1050,7 @@ function PublishTask.updateCollectionSettings(publishSettings, info)
     end
     local props = info.collectionSettings
     if props.albumCreationStrategy == "existing" and props.remoteId then
-        local immich = ImmichAPI:new(publishSettings.url, publishSettings.apiKey)
+        local immich = ImmichAPI:new(Util.resolveConnection(publishSettings))
         if not immich:checkConnectivity() then
             log:warn("updateCollectionSettings: Immich connection not available")
             return

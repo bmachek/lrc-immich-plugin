@@ -1,5 +1,6 @@
 # lrc-immich-plugin
 [![Github All Releases](https://img.shields.io/github/downloads/bmachek/lrc-immich-plugin/total.svg)]()
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W7X2240HF4)
 
@@ -64,13 +65,13 @@ You can find the Wiki from the repository home page under the **Wiki** tab.
 
 ## Credits
 
-- **All contributors** to this project.
+- **All supporters and contributors** of this project.
 - [Jeffrey Friedl for `JSON.lua`](http://regex.info/blog/lua/json)
 - [Enrique García Cota for `inspect.lua`](https://github.com/kikito/inspect.lua)
 - [Min Idzelis for giving ideas with his Immich Plug‑in](https://github.com/midzelis/mi.Immich.Publisher)
 
 ---
 
-## Star History
+## License
 
-[![Star History Chart](https://api.star-history.com/svg?repos=bmachek/lrc-immich-plugin&type=Date)](https://www.star-history.com/#bmachek/lrc-immich-plugin&Date)
+Licensed under the [GNU General Public License v3.0](LICENSE).

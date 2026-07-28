@@ -74,6 +74,14 @@ function SharedDialogSections.getOriginalFilesSection(f, propertyTable)
                         value = bind("stackOriginalExport"),
                     }),
                     f:checkbox({
+                        title = "Stack export with existing Immich original (no re-upload)",
+                        value = bind("stackWithExistingOriginal"),
+                        tooltip = "When a photo already has a known original asset in Immich"
+                            .. " (from a previous upload or an import), stack the rendered export with it"
+                            .. " instead of uploading the original again. Skipped if the original no longer"
+                            .. " exists on the server.",
+                    }),
+                    f:checkbox({
                         title = "Preserve Lightroom stacks in Immich",
                         value = bind("stackLrStacks"),
                     }),
@@ -124,31 +132,78 @@ function SharedDialogSections.getLockedFolderSection(f, propertyTable)
     }
 end
 
--- Generate the Shared 'Immich Server connection' dialog section
-function SharedDialogSections.getServerConnectionSection(f, propertyTable)
+-- Generate the Shared 'Immich Server connection' dialog section.
+-- opts.allowGlobal (Export/Publish presets): adds a checkbox to reuse the global
+-- connection configured in Plugin Manager; the per-preset fields are disabled
+-- while it is checked. Omit opts for the Plugin Manager section itself, which
+-- edits the global connection directly.
+function SharedDialogSections.getServerConnectionSection(f, propertyTable, opts)
     local bind = LrView.bind
     local share = LrView.share
+    local allowGlobal = opts and opts.allowGlobal
+    -- Per-preset fields stay editable unless the preset opts into the global connection.
+    local fieldsEnabled = allowGlobal
+            and bind({
+                key = "useGlobalConnection",
+                transform = function(value)
+                    return not value
+                end,
+            })
+        or true
 
-    return {
+    local section = {
         title = "Immich Server connection",
         bind_to_object = propertyTable,
+    }
+
+    if opts and opts.intro then
+        table.insert(
+            section,
+            f:row({
+                f:static_text({
+                    title = opts.intro,
+                    font = "<system/small>",
+                    fill_horizontal = 1,
+                    height_in_lines = -1,
+                }),
+            })
+        )
+    end
+
+    if allowGlobal then
+        table.insert(
+            section,
+            f:row({
+                f:checkbox({
+                    title = "Use global server connection (configured in Plugin Manager)",
+                    value = bind("useGlobalConnection"),
+                }),
+            })
+        )
+    end
+
+    table.insert(
+        section,
         f:row({
             f:static_text({
                 title = "URL:",
                 alignment = "right",
                 width = share("labelWidth"),
+                enabled = fieldsEnabled,
             }),
             f:edit_field({
                 value = bind("url"),
                 truncation = "middle",
                 immediate = false,
                 fill_horizontal = 1,
+                enabled = fieldsEnabled,
                 validate = function(_, url)
                     return ImmichAPI.validateUrlForDialog(url, propertyTable.url, propertyTable.apiKey)
                 end,
             }),
             f:push_button({
                 title = "Test connection",
+                enabled = fieldsEnabled,
                 action = function()
                     LrTasks.startAsyncTask(function()
                         local _, message, api =
@@ -160,21 +215,29 @@ function SharedDialogSections.getServerConnectionSection(f, propertyTable)
                     end)
                 end,
             }),
-        }),
+        })
+    )
+
+    table.insert(
+        section,
         f:row({
             f:static_text({
                 title = "API Key:",
                 alignment = "right",
                 width = share("labelWidth"),
+                enabled = fieldsEnabled,
             }),
             f:password_field({
                 value = bind("apiKey"),
                 truncation = "middle",
                 immediate = false,
                 fill_horizontal = 1,
+                enabled = fieldsEnabled,
             }),
-        }),
-    }
+        })
+    )
+
+    return section
 end
 
 function SharedDialogSections.setupOriginalFileObservers(propertyTable)

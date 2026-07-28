@@ -30,6 +30,7 @@ globals = {
     "WIN_ENV",
     "_PLUGIN",
     -- Plugin's own modules, loaded as side-effect requires from Init.lua / Info.lua
+    "AssetStampTask",
     "ErrorHandler",
     "ExportDialogSections",
     "ExportTask",
@@ -39,8 +40,11 @@ globals = {
     "PluginInfoDialogSections",
     "PublishDialogSections",
     "PublishTask",
+    "SearchInLightroomTask",
     "SharedDialogSections",
     "StackManager",
+    "SyncFromImmichTask",
+    "SyncTask",
     "UploadHelpers",
     "Util",
 }

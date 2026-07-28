@@ -1,3 +1,6 @@
+-- Licensed under the GNU General Public License v3.0 (GPL-3.0).
+-- See the LICENSE file in the repository root for details.
+
 return {
 
     LrSdkVersion = 3.0,
@@ -28,8 +31,16 @@ return {
             file = "ImportDialog.lua",
         },
         {
-            title = "Immich import configuration",
-            file = "ImportConfiguration.lua",
+            title = "Find in Lightroom (Immich Search)",
+            file = "SearchInLightroomDialog.lua",
+        },
+        {
+            title = "Create Immich share link",
+            file = "ShareLinkDialog.lua",
+        },
+        {
+            title = "Sync with Immich",
+            file = "SyncDialog.lua",
         },
     },
 
@@ -39,8 +50,27 @@ return {
             file = "ImportDialog.lua",
         },
         {
-            title = "Immich import configuration",
-            file = "ImportConfiguration.lua",
+            title = "Find in Lightroom (Immich Search)",
+            file = "SearchInLightroomDialog.lua",
+        },
+        {
+            title = "Create Immich share link",
+            file = "ShareLinkDialog.lua",
+        },
+        {
+            title = "Sync with Immich",
+            file = "SyncDialog.lua",
+        },
+    },
+
+    LrHelpMenuItems = {
+        {
+            title = "Stamp imported Immich IDs",
+            file = "StampImportedDialog.lua",
+        },
+        {
+            title = "Pull metadata from Immich",
+            file = "SyncFromImmichDialog.lua",
         },
     },
 
@@ -48,5 +78,5 @@ return {
 
     LrPluginInfoURL = "https://github.com/bmachek/lrc-immich-plugin/",
 
-    VERSION = { major = 4, minor = 3, revision = 2, build = 0 },
+    VERSION = { major = 5, minor = 0, revision = 0, build = 0 },
 }
