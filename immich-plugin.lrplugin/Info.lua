@@ -31,6 +31,11 @@ return {
             title = "Immich import configuration",
             file = "ImportConfiguration.lua",
         },
+        {
+            title = "Reset Immich IDs for selected photos",
+            file = "ResetImmichIds.lua",
+            enabledWhen = "photosSelected",
+        },
     },
 
     LrExportMenuItems = {
