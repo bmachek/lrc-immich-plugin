@@ -73,4 +73,4 @@ You can find the Wiki from the repository home page under the **Wiki** tab.
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=bmachek/lrc-immich-plugin&type=Date)](https://www.star-history.com/#bmachek/lrc-immich-plugin&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=bmachek/lrc-immich-plugin&type=Date)](https://star-history.dera.page/#bmachek/lrc-immich-plugin&Date)
