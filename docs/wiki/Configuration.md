@@ -13,7 +13,7 @@ These two fields are required for every workflow (Export, Publish, and Import).
 | **URL** | Full base URL of your Immich server, e.g. `https://immich.example.com`. The plug‑in will auto‑correct common mistakes (missing scheme, trailing slash). Use **Test connection** to verify. |
 | **API Key** | An Immich API key with sufficient permissions. See [API Key Permissions](#api-key-permissions) below. |
 
-For **Export** and **Publish**, these are entered in the Export/Publish Service dialog.  
+For **Export** and **Publish**, these are entered in the Export/Publish Service dialog.
 For **Import**, they are saved globally in plug‑in preferences (accessible via the Import configuration dialog or the plug‑in menu).
 
 ---
@@ -59,7 +59,7 @@ Controls whether raw/original files are uploaded alongside the rendered export. 
 | **Always upload original only (no export)** | Skips the rendered export entirely; only the original is sent. |
 | **Always upload original + rendered export (if edited)** | Always sends the original; also sends the rendered export when the photo has edits. |
 
-> **Tip:** Uploading originals preserves RAW data at the cost of extra storage and upload time.  
+> **Tip:** Uploading originals preserves RAW data at the cost of extra storage and upload time.
 > **Warning:** If your export format is set to **Original** in Lightroom and you select an option that produces a separate export, the plug‑in will warn you because no distinct rendered file will be produced for stacking.
 
 ---
@@ -113,6 +113,12 @@ These settings appear in the **Import from Immich** configuration dialog, and ar
 | **Import Batch Size** | Number of assets downloaded in parallel. Default is `2`. Increase for faster imports on a fast network; decrease if you see timeouts or high memory usage. Must be a positive integer. |
 
 ---
+
+### Resetting Stored Immich Links
+
+The plug‑in stores the Immich asset ID on each Lightroom photo so later exports and publishes can update the existing asset. In some cases the asset ID can be accidentally duplicated and might need to be reset.
+
+To clear an assigned Immich asset ID, select the affected photos in Lightroom and choose **Library → Plug‑in Extras → Reset Immich IDs for selected photos**. After confirmation, the command clears only the stored Immich asset ID from the Lightroom catalog. It does not modify or delete anything on the Immich server. The next export or publish will upload the photo as a new asset.
 
 ### Plug‑in Preferences (Logging)
 

@@ -32,6 +32,48 @@ function MetadataTask.setImmichAssetId(photo, assetId)
     return success
 end
 
+-- Clear stored Immich asset IDs for a list of photos in one catalog write operation.
+-- This only changes Lightroom metadata and does not modify assets on the Immich server.
+function MetadataTask.clearImmichAssetIds(photos)
+    -- There is nothing to write when Lightroom has no selected photos.
+    if not photos or #photos == 0 then
+        return 0
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        log:warn("clearImmichAssetIds: Cannot access catalog")
+        return false, "Cannot access the Lightroom catalog."
+    end
+
+    local cleared = 0
+    -- Track callback completion separately because a catalog timeout may not raise an error.
+    local writeCompleted = false
+    local ok, err = LrTasks.pcall(function()
+        -- Use one private write transaction for the whole selection so the catalog is not
+        -- locked and unlocked once per photo.
+        catalog:withPrivateWriteAccessDo(function()
+            for _, photo in ipairs(photos) do
+                if photo then
+                    -- An empty string is the plugin's representation of a cleared asset ID.
+                    photo:setPropertyForPlugin(_PLUGIN, "immichAssetId", "")
+                    cleared = cleared + 1
+                end
+            end
+            writeCompleted = true
+        end, { timeout = 30 })
+    end)
+
+    if not ok or not writeCompleted then
+        local message = ok and "Timed out waiting for the Lightroom catalog." or tostring(err)
+        log:error("clearImmichAssetIds: Failed to clear metadata: " .. message)
+        return false, message
+    end
+
+    log:info("clearImmichAssetIds: Cleared IDs for " .. cleared .. " photos")
+    return cleared
+end
+
 function MetadataTask.getImmichAssetId(photo)
     if not photo then
         return nil
