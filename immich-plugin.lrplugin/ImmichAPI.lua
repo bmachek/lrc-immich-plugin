@@ -414,10 +414,12 @@ function ImmichAPI:uploadAsset(pathOrMessage, visibility)
 end
 
 -- Replaces an asset the plugin previously uploaded. immichId must come from a
--- trusted source (the Immich asset ID the plugin persisted in Lightroom photo
--- metadata via checkIfAssetExistsEnhanced) — since Immich removed deviceId there
--- is no longer any way to verify ownership of an asset resolved by filename/date,
--- so callers must never pass an id obtained from a heuristic match.
+-- trusted source: the Immich asset ID the plugin persisted in Lightroom photo
+-- metadata (Export, via checkIfAssetExistsEnhanced) or the published photo ID
+-- Lightroom itself recorded for this publish service (Publish, see PublishTask).
+-- Since Immich removed deviceId there is no longer any way to verify ownership of
+-- an asset resolved by filename/date, so callers must never pass an id obtained
+-- from a heuristic match.
 function ImmichAPI:replaceAsset(immichId, pathOrMessage, visibility)
     if Util.nilOrEmpty(immichId) then
         ErrorHandler.handleError("Immich asset ID missing. Check logs.", "replaceAsset: immichId empty")
@@ -889,6 +891,9 @@ function ImmichAPI:getActivities(albumId, assetId)
 end
 
 -- Resolve the Immich asset ID the plugin previously uploaded for this photo.
+-- Export only: the stored ID is global per photo, so it cannot distinguish between
+-- several publish services targeting the same photo. Publish resolves its replace
+-- target from Lightroom's per-service published photo IDs instead (see PublishTask).
 -- Immich removed deviceAssetId/deviceId, so the only trustworthy handle is the
 -- asset ID the plugin persisted in Lightroom photo metadata (MetadataTask). We no
 -- longer fall back to a deviceAssetId or filename+date search: without deviceId we
