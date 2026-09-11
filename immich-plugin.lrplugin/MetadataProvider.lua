@@ -13,7 +13,7 @@ return {
         },
     },
 
-    schemaVersion = 10,
+    schemaVersion = 13,
     -- noAutoUpdate = true,
 
     -- updateFromEarlierSchemaVersion = MetadataTask.updateFromEarlierSchemaVersion
