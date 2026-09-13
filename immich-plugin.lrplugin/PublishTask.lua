@@ -49,50 +49,124 @@ local function collectPublishedCollections(node, acc)
 end
 
 --------------------------------------------------------------------------------
--- Map photo.localIdentifier -> Immich asset ID for every photo this publish service
--- has already published, across all of its collections. Needed as a fallback when a
--- photo is published into a second collection of the same service: that rendition has
--- no published ID of its own yet, but the service already owns an asset for the photo.
-local function buildServicePublishedIdCache(publishedCollection)
-    local cache = {}
+-- All publish services of this plug-in. Lightroom reports a service's plug-in ID with
+-- a two character suffix, hence the substring comparison used elsewhere in this file.
+local function immichPublishServices()
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        return {}
+    end
+
+    local services = {}
+    -- Never let an unexpected catalog error take the caller down: without this list the
+    -- caller still works, it just cannot see the services other than its own.
+    local ok, err = LrTasks.pcall(function()
+        services = catalog:getPublishServices(_PLUGIN.id) or {}
+        if #services > 0 then
+            return
+        end
+        -- Catalogs that do not match on the bare plug-in ID: filter the full list instead.
+        services = {}
+        for _, service in ipairs(catalog:getPublishServices() or {}) do
+            if string.sub(service:getPluginId(), 1, -3) == _PLUGIN.id then
+                table.insert(services, service)
+            end
+        end
+    end)
+    if not ok then
+        log:warn("immichPublishServices: failed to read publish services: " .. tostring(err))
+        return {}
+    end
+    return services
+end
+
+--------------------------------------------------------------------------------
+-- Index of the Immich asset IDs Lightroom has recorded for this plug-in, split by
+-- publish service:
+--
+--   index.own[photo.localIdentifier] -> asset ID published by THIS service. Used as
+--     fallback when a photo is published into a second collection of the same
+--     service: that rendition has no published ID of its own yet, but the service
+--     already owns an asset for the photo.
+--   index.foreign[assetId] -> true for assets recorded by ANOTHER publish service of
+--     this plug-in. Those must never be replaced by this service, see
+--     resolvePublishedAssetId.
+local function buildPublishedIdIndex(publishedCollection)
+    local index = { own = {}, foreign = {} }
     if not publishedCollection then
-        return cache
+        return index
     end
 
     local ok, err = LrTasks.pcall(function()
-        local service = publishedCollection:getService()
-        if not service then
+        local ownService = publishedCollection:getService()
+        if not ownService then
             return
         end
-        local collections = {}
-        collectPublishedCollections(service, collections)
-        for _, collection in ipairs(collections) do
-            for _, publishedPhoto in ipairs(collection:getPublishedPhotos()) do
-                local photo = publishedPhoto:getPhoto()
-                local remoteId = publishedPhoto:getRemoteId()
-                if photo and remoteId and tostring(remoteId) ~= "" and cache[photo.localIdentifier] == nil then
-                    cache[photo.localIdentifier] = tostring(remoteId)
+        local services = immichPublishServices()
+        local ownServiceListed = false
+        for _, service in ipairs(services) do
+            if service.localIdentifier == ownService.localIdentifier then
+                ownServiceListed = true
+                break
+            end
+        end
+        if not ownServiceListed then
+            table.insert(services, ownService)
+        end
+        for _, service in ipairs(services) do
+            local isOwnService = service.localIdentifier == ownService.localIdentifier
+            local collections = {}
+            collectPublishedCollections(service, collections)
+            for _, collection in ipairs(collections) do
+                for _, publishedPhoto in ipairs(collection:getPublishedPhotos()) do
+                    local remoteId = publishedPhoto:getRemoteId()
+                    if remoteId and tostring(remoteId) ~= "" then
+                        remoteId = tostring(remoteId)
+                        if isOwnService then
+                            local photo = publishedPhoto:getPhoto()
+                            if photo and index.own[photo.localIdentifier] == nil then
+                                index.own[photo.localIdentifier] = remoteId
+                            end
+                        else
+                            index.foreign[remoteId] = true
+                        end
+                    end
                 end
             end
         end
     end)
     if not ok then
-        log:warn("buildServicePublishedIdCache: failed to read published photos: " .. tostring(err))
-        return {}
+        log:warn("buildPublishedIdIndex: failed to read published photos: " .. tostring(err))
+        return { own = {}, foreign = {} }
     end
-    return cache
+    return index
 end
 
 --------------------------------------------------------------------------------
 -- Resolve the Immich asset this publish service uploaded for the photo before, and
 -- verify it still exists (and is not trashed) on the server. Returns nil when the
 -- photo is new to this service or the asset is gone, so callers upload a fresh one.
-local function resolvePublishedAssetId(immich, rendition, photo, publishedIdCache)
+local function resolvePublishedAssetId(immich, rendition, photo, publishedIdIndex)
     local candidate = renditionPublishedPhotoId(rendition)
-    if candidate == nil and publishedIdCache and photo then
-        candidate = publishedIdCache[photo.localIdentifier]
+    if candidate == nil and publishedIdIndex and photo then
+        candidate = publishedIdIndex.own[photo.localIdentifier]
     end
     if Util.nilOrEmpty(candidate) then
+        return nil
+    end
+
+    -- Repair of catalogs written before asset identity was scoped per publish service:
+    -- back then a second service resolved the first service's asset and replaced it, and
+    -- recorded the replacement for itself. Both services ended up pointing at one asset
+    -- and kept overwriting each other, and marking photos to re-publish does not clear
+    -- those records. An asset another service of this plug-in has recorded is not ours to
+    -- replace: upload a fresh one, which makes this service's records its own again.
+    if publishedIdIndex and publishedIdIndex.foreign[candidate] then
+        log:info(
+            "resolvePublishedAssetId: asset "
+                .. candidate
+                .. " is recorded by another publish service, uploading a separate asset"
+        )
         return nil
     end
 
@@ -109,18 +183,18 @@ end
 --------------------------------------------------------------------------------
 -- Upload the tracked primary asset of a publish rendition, replacing the asset this
 -- service published before when that asset is still available.
-local function uploadPublishPrimary(immich, rendition, photo, path, visibility, publishedIdCache)
-    local existingId = resolvePublishedAssetId(immich, rendition, photo, publishedIdCache)
+local function uploadPublishPrimary(immich, rendition, photo, path, visibility, publishedIdIndex)
+    local existingId = resolvePublishedAssetId(immich, rendition, photo, publishedIdIndex)
     local id, errReason
     if existingId == nil then
         id, errReason = immich:uploadAsset(path, visibility)
     else
         id, errReason = immich:replaceAsset(existingId, path, visibility)
     end
-    -- Keep the cache current so a photo published into several collections of this
+    -- Keep the index current so a photo published into several collections of this
     -- service within one run resolves to the same asset in every one of them.
-    if id and publishedIdCache and photo then
-        publishedIdCache[photo.localIdentifier] = tostring(id)
+    if id and publishedIdIndex and photo then
+        publishedIdIndex.own[photo.localIdentifier] = tostring(id)
     end
     return id, errReason
 end
@@ -256,7 +330,7 @@ local function processPublishOnePhotoGroup(
     exportParams,
     editedPhotosCache,
     allowOrphanOriginals,
-    publishedIdCache
+    publishedIdIndex
 )
     if not items or not items[1] then
         return
@@ -273,7 +347,7 @@ local function processPublishOnePhotoGroup(
             if i == 1 then
                 -- Primary export: replace the asset this publish service uploaded before.
                 id, errReason =
-                    uploadPublishPrimary(immich, item.rendition, photo, item.path, visibility, publishedIdCache)
+                    uploadPublishPrimary(immich, item.rendition, photo, item.path, visibility, publishedIdIndex)
             else
                 -- Stack secondaries have no stored ID and no safe way to resolve a prior
                 -- upload now that deviceAssetId is gone; upload fresh.
@@ -325,7 +399,7 @@ local function processPublishOnePhotoGroup(
         local item = items[1]
         log:info("original+export [" .. filename .. "]: single rendition, uploading as export")
         local id, errReason =
-            uploadPublishPrimary(immich, item.rendition, photo, item.path, visibility, publishedIdCache)
+            uploadPublishPrimary(immich, item.rendition, photo, item.path, visibility, publishedIdIndex)
         UploadHelpers.safeDeleteTempFile(item.path)
         if not id then
             table.insert(failures, filename .. " (" .. (errReason or "Upload failed") .. ")")
@@ -415,7 +489,7 @@ local function processPublishStackOriginalExportRenditions(
     exportParams,
     editedPhotosCache,
     allowOrphanOriginals,
-    publishedIdCache
+    publishedIdIndex
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = { false }
@@ -452,7 +526,7 @@ local function processPublishStackOriginalExportRenditions(
                 exportParams,
                 editedPhotosCache,
                 allowOrphanOriginals,
-                publishedIdCache
+                publishedIdIndex
             )
         end
         -- Advance progress for every rendition, including failed renders, so the bar reaches 100%.
@@ -476,7 +550,7 @@ local function processPublishSingleRenditionRenditions(
     albumId,
     albumAssetIds,
     visibility,
-    publishedIdCache
+    publishedIdIndex
 )
     local failures, stackWarnings = {}, {}
     local atLeastSomeSuccess = false
@@ -491,7 +565,7 @@ local function processPublishSingleRenditionRenditions(
             local photo = rendition.photo
             -- Primary asset: replace the asset this publish service uploaded before.
             local id, errReason =
-                uploadPublishPrimary(immich, rendition, photo, pathOrMessage, visibility, publishedIdCache)
+                uploadPublishPrimary(immich, rendition, photo, pathOrMessage, visibility, publishedIdIndex)
 
             if not id then
                 table.insert(
@@ -541,7 +615,7 @@ local function runPublishExport(
     visibility,
     editedPhotosCache,
     allowOrphanOriginals,
-    publishedIdCache
+    publishedIdIndex
 )
     local failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto
     local useStacking = exportParams.stackOriginalExport
@@ -564,7 +638,7 @@ local function runPublishExport(
                 exportParams,
                 editedPhotosCache,
                 allowOrphanOriginals,
-                publishedIdCache
+                publishedIdIndex
             )
     else
         failures, stackWarnings, atLeastSomeSuccess, exportedPrimaryByPhoto = processPublishSingleRenditionRenditions(
@@ -577,7 +651,7 @@ local function runPublishExport(
             albumId,
             albumAssetIds,
             visibility,
-            publishedIdCache
+            publishedIdIndex
         )
     end
     if exportParams.stackLrStacks and next(exportedPrimaryByPhoto) then
@@ -637,13 +711,23 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
     log:info("Publish upload originals (orphans): " .. tostring(allowOrphanOriginals))
 
     -- Asset identity is scoped to this publish service (see notes at the top of this
-    -- file), so collect the IDs the service already published for its photos.
-    local publishedIdCache = buildServicePublishedIdCache(exportContext.publishedCollection)
-    local knownPublishedIds = 0
-    for _ in pairs(publishedIdCache) do
+    -- file), so collect the IDs this service already published for its photos, plus the
+    -- ones other services of this plug-in own and this service must not replace.
+    local publishedIdIndex = buildPublishedIdIndex(exportContext.publishedCollection)
+    local knownPublishedIds, foreignPublishedIds = 0, 0
+    for _ in pairs(publishedIdIndex.own) do
         knownPublishedIds = knownPublishedIds + 1
     end
-    log:info("Publish: " .. knownPublishedIds .. " photos already published by this service")
+    for _ in pairs(publishedIdIndex.foreign) do
+        foreignPublishedIds = foreignPublishedIds + 1
+    end
+    log:info(
+        "Publish: "
+            .. knownPublishedIds
+            .. " photos already published by this service, "
+            .. foreignPublishedIds
+            .. " assets owned by other publish services"
+    )
 
     local failures, stackWarnings = runPublishExport(
         immich,
@@ -657,7 +741,7 @@ function PublishTask.processRenderedPhotos(functionContext, exportContext)
         visibility,
         editedPhotosCache,
         allowOrphanOriginals,
-        publishedIdCache
+        publishedIdIndex
     )
     progressScope:done()
 
