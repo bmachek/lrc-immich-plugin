@@ -9,11 +9,12 @@ PublishTask = {}
 -- Asset identity in Publish
 --
 -- Lightroom records the remote (Immich) asset ID that was published for a photo per
--- publish service. That is exactly the scope Immich asset identity needs:
+-- published collection. Immich asset identity is scoped per publish service:
 --   * two publish services (e.g. one for full-res originals, one for watermarked web
 --     exports) must keep separate Immich assets for the same photo,
---   * two collections of the SAME service should keep pointing at one asset, which is
---     then added to both albums.
+--   * two collections of the SAME service must keep pointing at one asset, which is
+--     then added to both albums. Since a replace produces a new asset ID, the records
+--     of the sibling collections are re-pointed at it in the same run.
 -- The plugin metadata field (immichAssetId) holds a single ID per photo and cannot
 -- express this: publishing a photo through a second service found the first service's
 -- ID and replaced (destroyed) that asset. Publish therefore resolves the replace
@@ -84,18 +85,23 @@ end
 -- Index of the Immich asset IDs Lightroom has recorded for this plug-in, split by
 -- publish service:
 --
---   index.own[photo.localIdentifier] -> asset ID published by THIS service. Used as
---     fallback when a photo is published into a second collection of the same
---     service: that rendition has no published ID of its own yet, but the service
---     already owns an asset for the photo.
+--   index.own[photo.localIdentifier] -> asset IDs published by THIS service for the
+--     photo, one per collection that holds it, in discovery order. Several distinct
+--     IDs mean the collections drifted apart (a replace in one collection trashes the
+--     asset the others still record), so callers try each of them.
+--   index.records[photo.localIdentifier] -> the published-photo records of THIS service
+--     that carry an asset ID, with the local ID of their collection, so a replace can
+--     re-point the sibling collections at the new asset (see syncSiblingPublishedIds).
 --   index.foreign[assetId] -> true for assets recorded by ANOTHER publish service of
 --     this plug-in. Those must never be replaced by this service, see
 --     resolvePublishedAssetId.
+--   index.collectionId -> local ID of the collection being published.
 local function buildPublishedIdIndex(publishedCollection)
-    local index = { own = {}, foreign = {} }
+    local index = { own = {}, records = {}, foreign = {}, collectionId = nil }
     if not publishedCollection then
         return index
     end
+    index.collectionId = publishedCollection.localIdentifier
 
     local ok, err = LrTasks.pcall(function()
         local ownService = publishedCollection:getService()
@@ -124,8 +130,25 @@ local function buildPublishedIdIndex(publishedCollection)
                         remoteId = tostring(remoteId)
                         if isOwnService then
                             local photo = publishedPhoto:getPhoto()
-                            if photo and index.own[photo.localIdentifier] == nil then
-                                index.own[photo.localIdentifier] = remoteId
+                            if photo then
+                                local photoId = photo.localIdentifier
+                                local ids = index.own[photoId]
+                                if ids == nil then
+                                    ids = {}
+                                    index.own[photoId] = ids
+                                end
+                                if not Util.table_contains(ids, remoteId) then
+                                    table.insert(ids, remoteId)
+                                end
+                                local records = index.records[photoId]
+                                if records == nil then
+                                    records = {}
+                                    index.records[photoId] = records
+                                end
+                                table.insert(records, {
+                                    publishedPhoto = publishedPhoto,
+                                    collectionId = collection.localIdentifier,
+                                })
                             end
                         else
                             index.foreign[remoteId] = true
@@ -137,47 +160,112 @@ local function buildPublishedIdIndex(publishedCollection)
     end)
     if not ok then
         log:warn("buildPublishedIdIndex: failed to read published photos: " .. tostring(err))
-        return { own = {}, foreign = {} }
+        return { own = {}, records = {}, foreign = {}, collectionId = index.collectionId }
     end
     return index
 end
 
 --------------------------------------------------------------------------------
 -- Resolve the Immich asset this publish service uploaded for the photo before, and
--- verify it still exists (and is not trashed) on the server. Returns nil when the
--- photo is new to this service or the asset is gone, so callers upload a fresh one.
+-- verify it still exists (and is not trashed) on the server. The ID recorded for the
+-- collection being published is tried first, then the IDs its sibling collections
+-- recorded for the same photo: after a replace in a sibling, the own record points at
+-- the trashed predecessor while the sibling's record points at the live successor.
+-- Returns nil when the photo is new to this service or every recorded asset is gone,
+-- so callers upload a fresh one.
 local function resolvePublishedAssetId(immich, rendition, photo, publishedIdIndex)
-    local candidate = renditionPublishedPhotoId(rendition)
-    if candidate == nil and publishedIdIndex and photo then
-        candidate = publishedIdIndex.own[photo.localIdentifier]
+    local candidates = {}
+    local function addCandidate(id)
+        if not Util.nilOrEmpty(id) and not Util.table_contains(candidates, id) then
+            table.insert(candidates, id)
+        end
     end
-    if Util.nilOrEmpty(candidate) then
-        return nil
-    end
-
-    -- Repair of catalogs written before asset identity was scoped per publish service:
-    -- back then a second service resolved the first service's asset and replaced it, and
-    -- recorded the replacement for itself. Both services ended up pointing at one asset
-    -- and kept overwriting each other, and marking photos to re-publish does not clear
-    -- those records. An asset another service of this plug-in has recorded is not ours to
-    -- replace: upload a fresh one, which makes this service's records its own again.
-    if publishedIdIndex and publishedIdIndex.foreign[candidate] then
-        log:info(
-            "resolvePublishedAssetId: asset "
-                .. candidate
-                .. " is recorded by another publish service, uploading a separate asset"
-        )
-        return nil
+    addCandidate(renditionPublishedPhotoId(rendition))
+    if publishedIdIndex and photo then
+        for _, id in ipairs(publishedIdIndex.own[photo.localIdentifier] or {}) do
+            addCandidate(id)
+        end
     end
 
-    local assetInfo = immich:getAssetInfo(candidate)
-    if assetInfo and not assetInfo.isTrashed then
-        log:trace("resolvePublishedAssetId: reusing asset " .. candidate .. " published by this service")
-        return candidate
+    for _, candidate in ipairs(candidates) do
+        -- Repair of catalogs written before asset identity was scoped per publish service:
+        -- back then a second service resolved the first service's asset and replaced it, and
+        -- recorded the replacement for itself. Both services ended up pointing at one asset
+        -- and kept overwriting each other, and marking photos to re-publish does not clear
+        -- those records. An asset another service of this plug-in has recorded is not ours to
+        -- replace; a fresh upload makes this service's records its own again.
+        if publishedIdIndex and publishedIdIndex.foreign[candidate] then
+            log:info(
+                "resolvePublishedAssetId: asset "
+                    .. candidate
+                    .. " is recorded by another publish service, not reusing it"
+            )
+        else
+            local assetInfo = immich:getAssetInfo(candidate)
+            if assetInfo and not assetInfo.isTrashed then
+                log:trace("resolvePublishedAssetId: reusing asset " .. candidate .. " published by this service")
+                return candidate
+            end
+            log:trace("resolvePublishedAssetId: asset " .. candidate .. " no longer exists in Immich")
+        end
     end
 
-    log:trace("resolvePublishedAssetId: asset " .. candidate .. " no longer exists in Immich, uploading fresh")
+    if #candidates > 0 then
+        log:trace("resolvePublishedAssetId: none of " .. #candidates .. " recorded asset(s) is usable, uploading fresh")
+    end
     return nil
+end
+
+--------------------------------------------------------------------------------
+-- Lightroom keeps one published-photo record per collection, and a publish run only
+-- updates the record of the collection being published. After this service uploads or
+-- replaces the asset for a photo, re-point the records of its other collections at the
+-- same asset; otherwise they keep referring to the trashed predecessor and upload a
+-- second copy the next time they publish.
+local function syncSiblingPublishedIds(immich, publishedIdIndex, photo, assetId)
+    if not publishedIdIndex or not photo or Util.nilOrEmpty(assetId) then
+        return
+    end
+    local stale = {}
+    for _, record in ipairs(publishedIdIndex.records[photo.localIdentifier] or {}) do
+        if record.collectionId ~= publishedIdIndex.collectionId then
+            local okRead, remoteId = LrTasks.pcall(function()
+                return record.publishedPhoto:getRemoteId()
+            end)
+            if okRead and tostring(remoteId or "") ~= assetId then
+                table.insert(stale, record.publishedPhoto)
+            end
+        end
+    end
+    if #stale == 0 then
+        return
+    end
+
+    local catalog = LrApplication.activeCatalog()
+    if not catalog then
+        log:warn("syncSiblingPublishedIds: cannot access catalog")
+        return
+    end
+    local assetUrl = immich:getAssetUrl(assetId)
+    local updated = 0
+    local ok, err = LrTasks.pcall(function()
+        -- Timeout so the call waits for the catalog lock held by the running publish
+        -- instead of failing immediately.
+        catalog:withPrivateWriteAccessDo(function()
+            for _, publishedPhoto in ipairs(stale) do
+                publishedPhoto:setRemoteId(assetId)
+                if assetUrl then
+                    publishedPhoto:setRemoteUrl(assetUrl)
+                end
+                updated = updated + 1
+            end
+        end, { timeout = 5 })
+    end)
+    if not ok then
+        log:warn("syncSiblingPublishedIds: failed to update sibling collections: " .. tostring(err))
+        return
+    end
+    log:info("syncSiblingPublishedIds: " .. updated .. " sibling collection record(s) now point at " .. assetId)
 end
 
 --------------------------------------------------------------------------------
@@ -191,10 +279,12 @@ local function uploadPublishPrimary(immich, rendition, photo, path, visibility, 
     else
         id, errReason = immich:replaceAsset(existingId, path, visibility)
     end
-    -- Keep the index current so a photo published into several collections of this
-    -- service within one run resolves to the same asset in every one of them.
+    -- Keep the index and the sibling collections current so a photo published into
+    -- several collections of this service resolves to the same asset in every one of them.
     if id and publishedIdIndex and photo then
-        publishedIdIndex.own[photo.localIdentifier] = tostring(id)
+        id = tostring(id)
+        publishedIdIndex.own[photo.localIdentifier] = { id }
+        syncSiblingPublishedIds(immich, publishedIdIndex, photo, id)
     end
     return id, errReason
 end
